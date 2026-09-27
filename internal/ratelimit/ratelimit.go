@@ -1,4 +1,6 @@
-package ping
+// Package ratelimit is a keyed token bucket used by the ping ingress, the
+// API and the login form.
+package ratelimit
 
 import (
 	"sync"
@@ -14,7 +16,8 @@ type Limiter struct {
 	burst   int
 	buckets map[string]*bucket
 	ops     int
-	now     func() time.Time
+	// Now is the clock; tests replace it.
+	Now func() time.Time
 }
 
 type bucket struct {
@@ -22,12 +25,12 @@ type bucket struct {
 	seen time.Time
 }
 
-// NewLimiter allows perMin events per minute with the given burst.
-func NewLimiter(perMin, burst int) *Limiter {
+// New allows perMin events per minute with the given burst.
+func New(perMin, burst int) *Limiter {
 	if burst < 1 {
 		burst = 1
 	}
-	return &Limiter{perMin: perMin, burst: burst, buckets: map[string]*bucket{}, now: time.Now}
+	return &Limiter{perMin: perMin, burst: burst, buckets: map[string]*bucket{}, Now: time.Now}
 }
 
 // Allow reports whether one event for key may pass now, and if not, how
@@ -35,7 +38,7 @@ func NewLimiter(perMin, burst int) *Limiter {
 func (l *Limiter) Allow(key string) (bool, time.Duration) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	now := l.now()
+	now := l.Now()
 	b, ok := l.buckets[key]
 	if !ok {
 		b = &bucket{lim: rate.NewLimiter(rate.Every(time.Minute/time.Duration(l.perMin)), l.burst)}

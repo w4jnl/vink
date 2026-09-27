@@ -44,11 +44,12 @@ func DefaultConfig() Config {
 
 // Service is the application core.
 type Service struct {
-	db  *db.DB
-	bus *engine.Bus
-	log *slog.Logger
-	cfg Config
-	now func() time.Time
+	db       *db.DB
+	bus      *engine.Bus
+	log      *slog.Logger
+	cfg      Config
+	now      func() time.Time
+	keyCache keyCache
 }
 
 // New wires a service. The clock is time.Now unless SetClock is called.

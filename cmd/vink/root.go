@@ -42,6 +42,6 @@ func newRootCmd() *cobra.Command {
 	pf.BoolVarP(&g.debug, "debug", "d", false, "debug logging with colour")
 	pf.StringVar(&g.color, "color", "auto", "colour output: auto, always or never")
 
-	root.AddCommand(newVersionCmd(g), newMigrateCmd(), newServeCmd(g))
+	root.AddCommand(newVersionCmd(g), newMigrateCmd(), newServeCmd(g), newAdminCmd())
 	return root
 }

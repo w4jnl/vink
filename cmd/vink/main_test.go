@@ -10,7 +10,7 @@ import (
 
 func TestVersionCommand(t *testing.T) {
 	var out, errb bytes.Buffer
-	if code := run(context.Background(), []string{"version"}, &out, &errb); code != 0 {
+	if code := run(context.Background(), []string{"version"}, nil, &out, &errb); code != 0 {
 		t.Fatalf("exit %d: %s", code, errb.String())
 	}
 	if !strings.Contains(out.String(), "vink dev") || !strings.Contains(out.String(), "heartbeat and uptime monitor") {
@@ -20,7 +20,7 @@ func TestVersionCommand(t *testing.T) {
 
 func TestVersionJSON(t *testing.T) {
 	var out, errb bytes.Buffer
-	if code := run(context.Background(), []string{"version", "--json"}, &out, &errb); code != 0 {
+	if code := run(context.Background(), []string{"version", "--json"}, nil, &out, &errb); code != 0 {
 		t.Fatalf("exit %d: %s", code, errb.String())
 	}
 	var m map[string]string
@@ -34,7 +34,7 @@ func TestVersionJSON(t *testing.T) {
 
 func TestBadColorFlag(t *testing.T) {
 	var out, errb bytes.Buffer
-	if code := run(context.Background(), []string{"--color", "rainbow", "version"}, &out, &errb); code != 1 {
+	if code := run(context.Background(), []string{"--color", "rainbow", "version"}, nil, &out, &errb); code != 1 {
 		t.Fatalf("expected exit 1, got %d", code)
 	}
 	if !strings.Contains(errb.String(), "invalid --color") {

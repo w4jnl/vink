@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"time"
 
@@ -46,6 +47,15 @@ func (f *serverFlags) open(ctx context.Context) (*db.DB, *config.Config, error) 
 		return nil, nil, err
 	}
 	return d, cfg, nil
+}
+
+// dbMigrate applies pending migrations before a server-side command runs.
+func dbMigrate(cmd *cobra.Command, d *db.DB, log *slog.Logger) ([]string, error) {
+	applied, err := db.Migrate(cmd.Context(), d.Writer, log)
+	if err != nil {
+		return nil, fmt.Errorf("migrate: %w", err)
+	}
+	return applied, nil
 }
 
 func newMigrateCmd() *cobra.Command {

@@ -15,6 +15,7 @@ import (
 
 	"github.com/w4jnl/vink/internal/domain"
 	"github.com/w4jnl/vink/internal/http/middleware"
+	"github.com/w4jnl/vink/internal/ratelimit"
 	"github.com/w4jnl/vink/internal/service"
 )
 
@@ -33,8 +34,8 @@ type Handler struct {
 	svc       *service.Service
 	log       *slog.Logger
 	opts      Options
-	byMonitor *Limiter
-	byIP      *Limiter
+	byMonitor *ratelimit.Limiter
+	byIP      *ratelimit.Limiter
 	now       func() time.Time
 }
 
@@ -51,8 +52,8 @@ func New(svc *service.Service, log *slog.Logger, opts Options) *Handler {
 	}
 	return &Handler{
 		svc: svc, log: log, opts: opts,
-		byMonitor: NewLimiter(opts.RatePerMonitor, 30),
-		byIP:      NewLimiter(opts.RatePerIP, opts.RatePerIP),
+		byMonitor: ratelimit.New(opts.RatePerMonitor, 30),
+		byIP:      ratelimit.New(opts.RatePerIP, opts.RatePerIP),
 		now:       func() time.Time { return time.Now().UTC() },
 	}
 }
