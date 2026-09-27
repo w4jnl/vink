@@ -40,6 +40,10 @@ linters:
           disabled: true
   exclusions:
     generated: lax
+    rules:
+      - path: _test\.go
+        linters:
+          - noctx
     paths:
       - internal/db/.*\.sql\.go$
       - internal/db/models\.go$

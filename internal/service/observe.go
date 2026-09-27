@@ -20,21 +20,32 @@ type PingTarget struct {
 	Created bool
 }
 
-// ResolvePing maps a ping key and a monitor slug or id to a monitor.
-// Unknown key and unknown monitor both return ErrNotFound so nothing can
-// be enumerated. With create set, an unknown slug creates a heartbeat
-// monitor with the instance defaults.
+// ResolvePing maps a ping key and a monitor slug, or a bare monitor id,
+// to a monitor. Unknown key and unknown monitor both return ErrNotFound
+// so nothing can be enumerated. With create set, an unknown slug creates
+// a heartbeat monitor with the instance defaults. The id form needs no
+// key: a ULID's 80 random bits are the capability.
 func (s *Service) ResolvePing(ctx context.Context, key, slug, monitorID string, create bool) (*PingTarget, error) {
+	if monitorID != "" {
+		row, err := s.db.Read().GetMonitorByID(ctx, monitorID)
+		if err != nil {
+			return nil, notFoundIfNoRows(err, "monitor")
+		}
+		m, err := monitorFromRow(row)
+		if err != nil {
+			return nil, err
+		}
+		project, err := s.ProjectByID(ctx, m.ProjectID)
+		if err != nil {
+			return nil, err
+		}
+		return &PingTarget{Project: project, Monitor: m}, nil
+	}
 	project, err := s.ProjectByPingKey(ctx, key)
 	if err != nil {
 		return nil, err
 	}
-	var row db.Monitor
-	if monitorID != "" {
-		row, err = s.db.Read().GetMonitor(ctx, db.GetMonitorParams{ProjectID: project.ID, ID: monitorID})
-	} else {
-		row, err = s.db.Read().GetMonitorBySlug(ctx, db.GetMonitorBySlugParams{ProjectID: project.ID, Slug: slug})
-	}
+	row, err := s.db.Read().GetMonitorBySlug(ctx, db.GetMonitorBySlugParams{ProjectID: project.ID, Slug: slug})
 	if err == nil {
 		m, err := monitorFromRow(row)
 		if err != nil {
@@ -45,7 +56,7 @@ func (s *Service) ResolvePing(ctx context.Context, key, slug, monitorID string, 
 	if !db.IsNotFound(err) {
 		return nil, err
 	}
-	if !create || monitorID != "" || !domain.ValidSlug(slug) {
+	if !create || !domain.ValidSlug(slug) {
 		return nil, domain.NotFound("monitor")
 	}
 	sc := domain.Scope{OrgID: project.OrgID, ProjectID: project.ID, Role: domain.RoleMember, Actor: "ping:create"}

@@ -22,7 +22,7 @@ func TestResolvePing(t *testing.T) {
 	if err != nil || tgt.Monitor.ID != m.ID || tgt.Created {
 		t.Fatalf("resolve: %+v %v", tgt, err)
 	}
-	byID, err := f.svc.ResolvePing(ctx, f.project.PingKey, "", m.ID, false)
+	byID, err := f.svc.ResolvePing(ctx, "", "", m.ID, false)
 	if err != nil || byID.Monitor.ID != m.ID {
 		t.Fatalf("by id: %v", err)
 	}

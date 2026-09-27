@@ -1,0 +1,84 @@
+package http
+
+import (
+	"context"
+	"io"
+	"log/slog"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/w4jnl/vink/internal/config"
+	"github.com/w4jnl/vink/internal/db/dbtest"
+	"github.com/w4jnl/vink/internal/engine"
+	"github.com/w4jnl/vink/internal/service"
+)
+
+func testDeps(t *testing.T) Deps {
+	t.Helper()
+	d := dbtest.Open(t)
+	quiet := slog.New(slog.NewTextHandler(io.Discard, nil))
+	svc := service.New(d, nil, quiet, service.DefaultConfig())
+	sched := engine.NewScheduler(svc, svc.Bus(), quiet, nil)
+	return Deps{Cfg: config.Default(), Svc: svc, Log: quiet, Sched: sched}
+}
+
+func TestHealthAndReady(t *testing.T) {
+	d := testDeps(t)
+	h := Handler(d, true)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("GET", "/healthz", nil))
+	if rec.Code != 200 || !strings.HasPrefix(rec.Body.String(), "ok ") {
+		t.Fatalf("healthz: %d %q", rec.Code, rec.Body.String())
+	}
+	if rec.Header().Get("X-Request-Id") == "" {
+		t.Error("request id missing")
+	}
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("GET", "/readyz", nil))
+	if rec.Code != 503 {
+		t.Fatalf("readyz before the scheduler ticked: %d", rec.Code)
+	}
+	if _, err := d.Sched.RunOnce(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("GET", "/readyz", nil))
+	if rec.Code != 200 {
+		t.Fatalf("readyz after tick: %d %s", rec.Code, rec.Body.String())
+	}
+	// ping route is mounted on the main handler
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("GET", "/ping/nope/x", nil))
+	if rec.Code != 404 || rec.Body.String() != "not found\n" {
+		t.Fatalf("ping mounted: %d %q", rec.Code, rec.Body.String())
+	}
+	// and not when a separate ping listener is configured
+	rec = httptest.NewRecorder()
+	Handler(d, false).ServeHTTP(rec, httptest.NewRequest("GET", "/ping/nope/x", nil))
+	if rec.Body.String() == "not found\n" {
+		t.Fatal("ping must not be mounted on the main handler when split")
+	}
+}
+
+func TestServeStartsAndStops(t *testing.T) {
+	d := testDeps(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- Run(ctx, d.Log, "test", "127.0.0.1:0", Handler(d, true)) }()
+	time.Sleep(50 * time.Millisecond)
+	cancel()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Run did not stop")
+	}
+	if err := Run(context.Background(), d.Log, "bad", "256.0.0.1:1", http.NotFoundHandler()); err == nil {
+		t.Fatal("expected listen error")
+	}
+}
