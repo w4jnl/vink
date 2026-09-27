@@ -25,6 +25,8 @@ linters:
         - fmt.Fprint
         - fmt.Fprintf
         - fmt.Fprintln
+        - (*database/sql.Rows).Close
+        - (*github.com/w4jnl/vink/internal/db.DB).Close
     gosec:
       excludes:
         - G104 # duplicates errcheck

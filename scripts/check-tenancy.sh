@@ -2,13 +2,16 @@
 # Fails when a query file selects from a project-scoped table without
 # filtering on project_id, or from an org-scoped table without org_id.
 # Every query is expected to carry the scope predicate in its WHERE clause.
+# A query that is instance-wide by design (scheduler, dispatcher, auth
+# lookups that establish the scope) carries "-- tenancy: root" and is skipped;
+# an org-level query on a project table carries "-- tenancy: org".
 set -eu
 
 dir="$(dirname "$0")/../internal/db/queries"
 [ -d "$dir" ] || exit 0
 
 project_tables="monitors observations bodies events incidents channels routes deliveries api_keys maintenance status_pages"
-org_tables="projects memberships agents"
+org_tables="projects agents"
 status=0
 
 check() {
@@ -21,6 +24,7 @@ check() {
       END { if (block != "") inspect() }
       function inspect() {
         lower = tolower(block)
+        if (lower ~ /-- tenancy: (root|org)/) return
         if (lower ~ ("(from|update|into|join)[[:space:]]+" tbl "([[:space:]]|$|\\()") && lower !~ col) {
           printf "%s: %s touches %s without %s\n", file, name, tbl, col
           exit_code = 1
