@@ -123,6 +123,7 @@ type Monitor struct {
 	Tags         string
 	State        string
 	StateSince   int64
+	BaseAt       int64
 	LastObsAt    *int64
 	LastOkAt     *int64
 	NextDueAt    *int64

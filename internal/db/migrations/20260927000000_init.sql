@@ -75,6 +75,7 @@ CREATE TABLE monitors (
   tags TEXT NOT NULL DEFAULT '[]',
   state TEXT NOT NULL DEFAULT 'new' CHECK (state IN ('new', 'up', 'late', 'down', 'paused')),
   state_since INTEGER NOT NULL,
+  base_at INTEGER NOT NULL,
   last_obs_at INTEGER,
   last_ok_at INTEGER,
   next_due_at INTEGER,

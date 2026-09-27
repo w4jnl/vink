@@ -14,6 +14,8 @@ var (
 	ErrUnauthorized = errors.New("unauthorized")
 	ErrConflict     = errors.New("conflict")
 	ErrRateLimited  = errors.New("rate limited")
+	// ErrMethodNotAllowed is returned when a monitor restricts ping methods.
+	ErrMethodNotAllowed = errors.New("method not allowed")
 )
 
 // FieldError is one validation problem, tied to a field name the UI can

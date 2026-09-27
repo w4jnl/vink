@@ -23,7 +23,7 @@ SELECT * FROM projects WHERE org_id = ? ORDER BY slug;
 
 -- name: ListProjectsForUser :many
 -- tenancy: root (the user's memberships are the scope)
-SELECT p.*, o.slug AS org_slug, o.name AS org_name, m.role
+SELECT sqlc.embed(p), o.slug AS org_slug, o.name AS org_name, m.role
 FROM projects p
 JOIN orgs o ON o.id = p.org_id
 JOIN memberships m ON m.org_id = p.org_id
@@ -32,7 +32,7 @@ ORDER BY o.slug, p.slug;
 
 -- name: ListAllProjects :many
 -- tenancy: root (instance admin)
-SELECT p.*, o.slug AS org_slug, o.name AS org_name
+SELECT sqlc.embed(p), o.slug AS org_slug, o.name AS org_name
 FROM projects p JOIN orgs o ON o.id = p.org_id
 ORDER BY o.slug, p.slug;
 

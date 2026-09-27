@@ -20,6 +20,9 @@ type Monitor struct {
 
 	State      State
 	StateSince time.Time
+	// BaseAt is the instant the next expected ping is computed from: the
+	// creation time, the last ok, or the resume time.
+	BaseAt     time.Time
 	LastObsAt  *time.Time
 	LastOkAt   *time.Time
 	NextDueAt  *time.Time

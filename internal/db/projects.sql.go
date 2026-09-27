@@ -187,17 +187,9 @@ ORDER BY o.slug, p.slug
 `
 
 type ListAllProjectsRow struct {
-	ID               string
-	OrgID            string
-	Slug             string
-	Name             string
-	Timezone         string
-	PingKey          string
-	PingKeyPrev      *string
-	PingKeyPrevUntil *int64
-	CreatedAt        int64
-	OrgSlug          string
-	OrgName          string
+	Project Project
+	OrgSlug string
+	OrgName string
 }
 
 // tenancy: root (instance admin)
@@ -211,15 +203,15 @@ func (q *Queries) ListAllProjects(ctx context.Context) ([]ListAllProjectsRow, er
 	for rows.Next() {
 		var i ListAllProjectsRow
 		if err := rows.Scan(
-			&i.ID,
-			&i.OrgID,
-			&i.Slug,
-			&i.Name,
-			&i.Timezone,
-			&i.PingKey,
-			&i.PingKeyPrev,
-			&i.PingKeyPrevUntil,
-			&i.CreatedAt,
+			&i.Project.ID,
+			&i.Project.OrgID,
+			&i.Project.Slug,
+			&i.Project.Name,
+			&i.Project.Timezone,
+			&i.Project.PingKey,
+			&i.Project.PingKeyPrev,
+			&i.Project.PingKeyPrevUntil,
+			&i.Project.CreatedAt,
 			&i.OrgSlug,
 			&i.OrgName,
 		); err != nil {
@@ -283,18 +275,10 @@ ORDER BY o.slug, p.slug
 `
 
 type ListProjectsForUserRow struct {
-	ID               string
-	OrgID            string
-	Slug             string
-	Name             string
-	Timezone         string
-	PingKey          string
-	PingKeyPrev      *string
-	PingKeyPrevUntil *int64
-	CreatedAt        int64
-	OrgSlug          string
-	OrgName          string
-	Role             string
+	Project Project
+	OrgSlug string
+	OrgName string
+	Role    string
 }
 
 // tenancy: root (the user's memberships are the scope)
@@ -308,15 +292,15 @@ func (q *Queries) ListProjectsForUser(ctx context.Context, userID string) ([]Lis
 	for rows.Next() {
 		var i ListProjectsForUserRow
 		if err := rows.Scan(
-			&i.ID,
-			&i.OrgID,
-			&i.Slug,
-			&i.Name,
-			&i.Timezone,
-			&i.PingKey,
-			&i.PingKeyPrev,
-			&i.PingKeyPrevUntil,
-			&i.CreatedAt,
+			&i.Project.ID,
+			&i.Project.OrgID,
+			&i.Project.Slug,
+			&i.Project.Name,
+			&i.Project.Timezone,
+			&i.Project.PingKey,
+			&i.Project.PingKeyPrev,
+			&i.Project.PingKeyPrevUntil,
+			&i.Project.CreatedAt,
 			&i.OrgSlug,
 			&i.OrgName,
 			&i.Role,

@@ -54,9 +54,9 @@ func (q *Queries) CountMonitorsInOrg(ctx context.Context, orgID string) (int64, 
 }
 
 const createMonitor = `-- name: CreateMonitor :one
-INSERT INTO monitors (id, project_id, org_id, slug, name, kind, spec, tags, state, state_since, next_due_at, created_at, updated_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-RETURNING id, project_id, org_id, slug, name, kind, spec, tags, state, state_since, last_obs_at, last_ok_at, next_due_at, paused, fail_streak, ok_streak, run_started_at, run_id, agent_id, created_at, updated_at
+INSERT INTO monitors (id, project_id, org_id, slug, name, kind, spec, tags, state, state_since, base_at, next_due_at, created_at, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+RETURNING id, project_id, org_id, slug, name, kind, spec, tags, state, state_since, base_at, last_obs_at, last_ok_at, next_due_at, paused, fail_streak, ok_streak, run_started_at, run_id, agent_id, created_at, updated_at
 `
 
 type CreateMonitorParams struct {
@@ -70,6 +70,7 @@ type CreateMonitorParams struct {
 	Tags       string
 	State      string
 	StateSince int64
+	BaseAt     int64
 	NextDueAt  *int64
 	CreatedAt  int64
 	UpdatedAt  int64
@@ -87,6 +88,7 @@ func (q *Queries) CreateMonitor(ctx context.Context, arg CreateMonitorParams) (M
 		arg.Tags,
 		arg.State,
 		arg.StateSince,
+		arg.BaseAt,
 		arg.NextDueAt,
 		arg.CreatedAt,
 		arg.UpdatedAt,
@@ -103,6 +105,7 @@ func (q *Queries) CreateMonitor(ctx context.Context, arg CreateMonitorParams) (M
 		&i.Tags,
 		&i.State,
 		&i.StateSince,
+		&i.BaseAt,
 		&i.LastObsAt,
 		&i.LastOkAt,
 		&i.NextDueAt,
@@ -136,7 +139,7 @@ func (q *Queries) DeleteMonitor(ctx context.Context, arg DeleteMonitorParams) (i
 }
 
 const getMonitor = `-- name: GetMonitor :one
-SELECT id, project_id, org_id, slug, name, kind, spec, tags, state, state_since, last_obs_at, last_ok_at, next_due_at, paused, fail_streak, ok_streak, run_started_at, run_id, agent_id, created_at, updated_at FROM monitors WHERE project_id = ? AND id = ?
+SELECT id, project_id, org_id, slug, name, kind, spec, tags, state, state_since, base_at, last_obs_at, last_ok_at, next_due_at, paused, fail_streak, ok_streak, run_started_at, run_id, agent_id, created_at, updated_at FROM monitors WHERE project_id = ? AND id = ?
 `
 
 type GetMonitorParams struct {
@@ -158,6 +161,7 @@ func (q *Queries) GetMonitor(ctx context.Context, arg GetMonitorParams) (Monitor
 		&i.Tags,
 		&i.State,
 		&i.StateSince,
+		&i.BaseAt,
 		&i.LastObsAt,
 		&i.LastOkAt,
 		&i.NextDueAt,
@@ -174,7 +178,7 @@ func (q *Queries) GetMonitor(ctx context.Context, arg GetMonitorParams) (Monitor
 }
 
 const getMonitorByID = `-- name: GetMonitorByID :one
-SELECT id, project_id, org_id, slug, name, kind, spec, tags, state, state_since, last_obs_at, last_ok_at, next_due_at, paused, fail_streak, ok_streak, run_started_at, run_id, agent_id, created_at, updated_at FROM monitors WHERE id = ?
+SELECT id, project_id, org_id, slug, name, kind, spec, tags, state, state_since, base_at, last_obs_at, last_ok_at, next_due_at, paused, fail_streak, ok_streak, run_started_at, run_id, agent_id, created_at, updated_at FROM monitors WHERE id = ?
 `
 
 // tenancy: root (scheduler reload after a bus event)
@@ -192,6 +196,7 @@ func (q *Queries) GetMonitorByID(ctx context.Context, id string) (Monitor, error
 		&i.Tags,
 		&i.State,
 		&i.StateSince,
+		&i.BaseAt,
 		&i.LastObsAt,
 		&i.LastOkAt,
 		&i.NextDueAt,
@@ -208,7 +213,7 @@ func (q *Queries) GetMonitorByID(ctx context.Context, id string) (Monitor, error
 }
 
 const getMonitorBySlug = `-- name: GetMonitorBySlug :one
-SELECT id, project_id, org_id, slug, name, kind, spec, tags, state, state_since, last_obs_at, last_ok_at, next_due_at, paused, fail_streak, ok_streak, run_started_at, run_id, agent_id, created_at, updated_at FROM monitors WHERE project_id = ? AND slug = ?
+SELECT id, project_id, org_id, slug, name, kind, spec, tags, state, state_since, base_at, last_obs_at, last_ok_at, next_due_at, paused, fail_streak, ok_streak, run_started_at, run_id, agent_id, created_at, updated_at FROM monitors WHERE project_id = ? AND slug = ?
 `
 
 type GetMonitorBySlugParams struct {
@@ -230,6 +235,7 @@ func (q *Queries) GetMonitorBySlug(ctx context.Context, arg GetMonitorBySlugPara
 		&i.Tags,
 		&i.State,
 		&i.StateSince,
+		&i.BaseAt,
 		&i.LastObsAt,
 		&i.LastOkAt,
 		&i.NextDueAt,
@@ -246,7 +252,7 @@ func (q *Queries) GetMonitorBySlug(ctx context.Context, arg GetMonitorBySlugPara
 }
 
 const listDueMonitors = `-- name: ListDueMonitors :many
-SELECT id, project_id, org_id, slug, name, kind, spec, tags, state, state_since, last_obs_at, last_ok_at, next_due_at, paused, fail_streak, ok_streak, run_started_at, run_id, agent_id, created_at, updated_at FROM monitors
+SELECT id, project_id, org_id, slug, name, kind, spec, tags, state, state_since, base_at, last_obs_at, last_ok_at, next_due_at, paused, fail_streak, ok_streak, run_started_at, run_id, agent_id, created_at, updated_at FROM monitors
 WHERE paused = 0 AND next_due_at IS NOT NULL AND next_due_at <= ?
 ORDER BY next_due_at
 LIMIT ?
@@ -278,6 +284,7 @@ func (q *Queries) ListDueMonitors(ctx context.Context, arg ListDueMonitorsParams
 			&i.Tags,
 			&i.State,
 			&i.StateSince,
+			&i.BaseAt,
 			&i.LastObsAt,
 			&i.LastOkAt,
 			&i.NextDueAt,
@@ -304,7 +311,7 @@ func (q *Queries) ListDueMonitors(ctx context.Context, arg ListDueMonitorsParams
 }
 
 const listMonitors = `-- name: ListMonitors :many
-SELECT id, project_id, org_id, slug, name, kind, spec, tags, state, state_since, last_obs_at, last_ok_at, next_due_at, paused, fail_streak, ok_streak, run_started_at, run_id, agent_id, created_at, updated_at FROM monitors WHERE project_id = ? ORDER BY name, id
+SELECT id, project_id, org_id, slug, name, kind, spec, tags, state, state_since, base_at, last_obs_at, last_ok_at, next_due_at, paused, fail_streak, ok_streak, run_started_at, run_id, agent_id, created_at, updated_at FROM monitors WHERE project_id = ? ORDER BY name, id
 `
 
 func (q *Queries) ListMonitors(ctx context.Context, projectID string) ([]Monitor, error) {
@@ -327,6 +334,7 @@ func (q *Queries) ListMonitors(ctx context.Context, projectID string) ([]Monitor
 			&i.Tags,
 			&i.State,
 			&i.StateSince,
+			&i.BaseAt,
 			&i.LastObsAt,
 			&i.LastOkAt,
 			&i.NextDueAt,
@@ -353,7 +361,7 @@ func (q *Queries) ListMonitors(ctx context.Context, projectID string) ([]Monitor
 }
 
 const listRunningMonitors = `-- name: ListRunningMonitors :many
-SELECT id, project_id, org_id, slug, name, kind, spec, tags, state, state_since, last_obs_at, last_ok_at, next_due_at, paused, fail_streak, ok_streak, run_started_at, run_id, agent_id, created_at, updated_at FROM monitors WHERE paused = 0 AND run_started_at IS NOT NULL AND run_started_at <= ?
+SELECT id, project_id, org_id, slug, name, kind, spec, tags, state, state_since, base_at, last_obs_at, last_ok_at, next_due_at, paused, fail_streak, ok_streak, run_started_at, run_id, agent_id, created_at, updated_at FROM monitors WHERE paused = 0 AND run_started_at IS NOT NULL AND run_started_at <= ?
 `
 
 // tenancy: root (scheduler, max_runtime)
@@ -377,6 +385,7 @@ func (q *Queries) ListRunningMonitors(ctx context.Context, runStartedAt *int64) 
 			&i.Tags,
 			&i.State,
 			&i.StateSince,
+			&i.BaseAt,
 			&i.LastObsAt,
 			&i.LastOkAt,
 			&i.NextDueAt,
@@ -417,7 +426,7 @@ func (q *Queries) NextDueAt(ctx context.Context) (int64, error) {
 
 const setMonitorPaused = `-- name: SetMonitorPaused :exec
 UPDATE monitors
-SET paused = ?, state = ?, state_since = ?, next_due_at = ?,
+SET paused = ?, state = ?, state_since = ?, base_at = ?, next_due_at = ?,
     fail_streak = 0, ok_streak = 0, run_started_at = NULL, run_id = NULL, updated_at = ?
 WHERE project_id = ? AND id = ?
 `
@@ -426,6 +435,7 @@ type SetMonitorPausedParams struct {
 	Paused     bool
 	State      string
 	StateSince int64
+	BaseAt     int64
 	NextDueAt  *int64
 	UpdatedAt  int64
 	ProjectID  string
@@ -437,6 +447,7 @@ func (q *Queries) SetMonitorPaused(ctx context.Context, arg SetMonitorPausedPara
 		arg.Paused,
 		arg.State,
 		arg.StateSince,
+		arg.BaseAt,
 		arg.NextDueAt,
 		arg.UpdatedAt,
 		arg.ProjectID,
@@ -449,7 +460,7 @@ const updateMonitor = `-- name: UpdateMonitor :one
 UPDATE monitors
 SET name = ?, spec = ?, tags = ?, next_due_at = ?, updated_at = ?
 WHERE project_id = ? AND id = ?
-RETURNING id, project_id, org_id, slug, name, kind, spec, tags, state, state_since, last_obs_at, last_ok_at, next_due_at, paused, fail_streak, ok_streak, run_started_at, run_id, agent_id, created_at, updated_at
+RETURNING id, project_id, org_id, slug, name, kind, spec, tags, state, state_since, base_at, last_obs_at, last_ok_at, next_due_at, paused, fail_streak, ok_streak, run_started_at, run_id, agent_id, created_at, updated_at
 `
 
 type UpdateMonitorParams struct {
@@ -484,6 +495,7 @@ func (q *Queries) UpdateMonitor(ctx context.Context, arg UpdateMonitorParams) (M
 		&i.Tags,
 		&i.State,
 		&i.StateSince,
+		&i.BaseAt,
 		&i.LastObsAt,
 		&i.LastOkAt,
 		&i.NextDueAt,
@@ -501,7 +513,7 @@ func (q *Queries) UpdateMonitor(ctx context.Context, arg UpdateMonitorParams) (M
 
 const updateMonitorState = `-- name: UpdateMonitorState :exec
 UPDATE monitors
-SET state = ?, state_since = ?, last_obs_at = ?, last_ok_at = ?, next_due_at = ?,
+SET state = ?, state_since = ?, base_at = ?, last_obs_at = ?, last_ok_at = ?, next_due_at = ?,
     fail_streak = ?, ok_streak = ?, run_started_at = ?, run_id = ?, updated_at = ?
 WHERE project_id = ? AND id = ?
 `
@@ -509,6 +521,7 @@ WHERE project_id = ? AND id = ?
 type UpdateMonitorStateParams struct {
 	State        string
 	StateSince   int64
+	BaseAt       int64
 	LastObsAt    *int64
 	LastOkAt     *int64
 	NextDueAt    *int64
@@ -525,6 +538,7 @@ func (q *Queries) UpdateMonitorState(ctx context.Context, arg UpdateMonitorState
 	_, err := q.db.ExecContext(ctx, updateMonitorState,
 		arg.State,
 		arg.StateSince,
+		arg.BaseAt,
 		arg.LastObsAt,
 		arg.LastOkAt,
 		arg.NextDueAt,

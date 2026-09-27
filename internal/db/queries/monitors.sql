@@ -1,6 +1,6 @@
 -- name: CreateMonitor :one
-INSERT INTO monitors (id, project_id, org_id, slug, name, kind, spec, tags, state, state_since, next_due_at, created_at, updated_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO monitors (id, project_id, org_id, slug, name, kind, spec, tags, state, state_since, base_at, next_due_at, created_at, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING *;
 
 -- name: GetMonitor :one
@@ -27,13 +27,13 @@ RETURNING *;
 
 -- name: UpdateMonitorState :exec
 UPDATE monitors
-SET state = ?, state_since = ?, last_obs_at = ?, last_ok_at = ?, next_due_at = ?,
+SET state = ?, state_since = ?, base_at = ?, last_obs_at = ?, last_ok_at = ?, next_due_at = ?,
     fail_streak = ?, ok_streak = ?, run_started_at = ?, run_id = ?, updated_at = ?
 WHERE project_id = ? AND id = ?;
 
 -- name: SetMonitorPaused :exec
 UPDATE monitors
-SET paused = ?, state = ?, state_since = ?, next_due_at = ?,
+SET paused = ?, state = ?, state_since = ?, base_at = ?, next_due_at = ?,
     fail_streak = 0, ok_streak = 0, run_started_at = NULL, run_id = NULL, updated_at = ?
 WHERE project_id = ? AND id = ?;
 
