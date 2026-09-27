@@ -1,0 +1,15 @@
+<!-- @dsCard group="Actions" height=72 subtitle="click Delete to see the two-step confirm" -->
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>vink</title></head>
+<body>
+<div id="root" class="vk-stack"></div>
+<script>
+  var V = window.Vink;
+  document.getElementById('root').innerHTML = '<div class="vk-inline" style="padding:0">' +
+    V.Button({ label: 'Create monitor', variant: 'primary' }) + V.Button({ label: 'Check now' }) + V.Button({ label: 'Pause' }) +
+    V.Button({ label: 'Delete monitor', variant: 'danger', confirm: 'Really delete?' }) + V.Button({ label: 'Save', disabled: true }) + '</div>';
+  V.wire(document);
+</script>
+</body>
+</html>

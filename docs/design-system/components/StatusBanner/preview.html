@@ -1,0 +1,17 @@
+<!-- @dsCard group="Status page" height=248 -->
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>vink</title></head>
+<body>
+<div id="root" class="vk-stack"></div>
+<script>
+  var V = window.Vink;
+  document.getElementById('root').innerHTML =
+    V.StatusBanner({ state: 'up', text: 'All systems operational', detail: 'checked 12 s ago' }) +
+    V.StatusBanner({ state: 'late', text: 'Degraded: 1 service slow', detail: 'since 14:02' }) +
+    V.StatusBanner({ state: 'down', text: '1 service down', detail: 'since 14:07' }) +
+    V.StatusBanner({ state: 'maintenance', text: 'Planned maintenance until 04:00', detail: 'Sun 02:00\u201304:00' });
+  V.wire(document);
+</script>
+</body>
+</html>

@@ -1,0 +1,108 @@
+/* vink tokens, generated from tokens.json. Serve fonts/ next to this file (the web UI embeds both with embed.FS).
+   Theme: follows the OS by default; set data-theme="light" or "dark" on <html> to force one. */
+@font-face { font-family: "JetBrains Mono"; src: url("fonts/JetBrainsMono-400.woff2") format("woff2"); font-weight: 400; font-display: swap; }
+@font-face { font-family: "JetBrains Mono"; src: url("fonts/JetBrainsMono-700.woff2") format("woff2"); font-weight: 700; font-display: swap; }
+@font-face { font-family: "JetBrains Mono"; src: url("fonts/JetBrainsMono-800.woff2") format("woff2"); font-weight: 800; font-display: swap; }
+
+:root {
+  color-scheme: light;
+  --ground: #F6F8F8;
+  --surface: #FFFFFF;
+  --surface-sunk: #EEF2F2;
+  --line: #DCE3E4;
+  --line-strong: #7E8D90;
+  --ink: #14181A;
+  --ink-muted: #5A686B;
+  --ink-faint: #98A5A7;
+  --accent: #0B7A7E;
+  --on-accent: #FFFFFF;
+  --accent-soft: #E8F6F6;
+  --focus: var(--accent);
+  --mark: #12999D;
+  --brand: #12999D;
+  --up: #1F7A3A;
+  --up-soft: #E3F3E8;
+  --late: #9A5A0E;
+  --late-soft: #FBEEDC;
+  --down: #C0342B;
+  --down-soft: #FBE4E2;
+  --on-down: #FFFFFF;
+  --paused: var(--ink-muted);
+  --new: var(--ink-muted);
+  --shadow-drawer: 0 16px 40px rgba(20, 24, 26, 0.14);
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+  --radius-xs: 3px;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-tile: 22%;
+  --control-h: 32px;
+  --chip-h: 28px;
+  --row-h: 44px;
+  --drawer-w: 560px;
+  --content-max: 1120px;
+  --mark-min: 16px;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --ground: #14181A;
+    --surface: #1A2023;
+    --surface-sunk: #0F1214;
+    --line: #263034;
+    --line-strong: #6B7A7D;
+    --ink: #F2F5F5;
+    --ink-muted: #8A999C;
+    --ink-faint: #5E6D70;
+    --accent: #3FD0D4;
+    --on-accent: #0B1214;
+    --accent-soft: #173437;
+    --focus: var(--accent);
+    --mark: #3FD0D4;
+    --brand: #12999D;
+    --up: #5FC47A;
+    --up-soft: #16301F;
+    --late: #E8963C;
+    --late-soft: #33240F;
+    --down: #F0645A;
+    --down-soft: #3A1A18;
+    --on-down: #1C0B09;
+    --paused: var(--ink-muted);
+    --new: var(--ink-muted);
+    --shadow-drawer: 0 16px 40px rgba(0, 0, 0, 0.5);
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --ground: #14181A;
+  --surface: #1A2023;
+  --surface-sunk: #0F1214;
+  --line: #263034;
+  --line-strong: #6B7A7D;
+  --ink: #F2F5F5;
+  --ink-muted: #8A999C;
+  --ink-faint: #5E6D70;
+  --accent: #3FD0D4;
+  --on-accent: #0B1214;
+  --accent-soft: #173437;
+  --focus: var(--accent);
+  --mark: #3FD0D4;
+  --brand: #12999D;
+  --up: #5FC47A;
+  --up-soft: #16301F;
+  --late: #E8963C;
+  --late-soft: #33240F;
+  --down: #F0645A;
+  --down-soft: #3A1A18;
+  --on-down: #1C0B09;
+  --paused: var(--ink-muted);
+  --new: var(--ink-muted);
+  --shadow-drawer: 0 16px 40px rgba(0, 0, 0, 0.5);
+}

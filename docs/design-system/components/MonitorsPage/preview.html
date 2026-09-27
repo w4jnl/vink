@@ -1,0 +1,47 @@
+<!-- @dsCard group="Screens" height=640 width=1280 page -->
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>vink</title></head>
+<body>
+<div id="root" class=""></div>
+<script>
+  var V = window.Vink;
+  var rows = [
+    { state: 'down', name: 'Public API', slug: 'api-health', kind: 'http', last: '2 min ago \u00b7 503', points: [80,82,79,85,90,400,900,1200], tags: ['api','prod'], current: true },
+    { state: 'late', name: 'Traefik certificate', slug: 'traefik-cert', kind: 'tls', last: 'expires in 9 d', next: 'crit at 3 d', tags: ['prod'] },
+    { state: 'up', name: 'Nightly backup', slug: 'nightly-backup', kind: 'heartbeat', last: '3 h ago \u00b7 4m12s', next: 'due in 21 h', tags: ['backup','prod'] },
+    { state: 'up', name: 'Postgres', slug: 'postgres', kind: 'tcp', last: '14 s ago \u00b7 3 ms', points: [3,4,3,3,5,3,4,3,3,4,3,3], tags: ['db'] },
+    { state: 'up', name: 'w4j.nl resolves', slug: 'dns-w4j', kind: 'dns', last: '41 s ago \u00b7 12 ms', points: [12,11,14,12,12,13,11,12], tags: ['dns'] },
+    { state: 'paused', name: 'NAS reachable', slug: 'nas-ping', kind: 'icmp', last: 'paused 2 d ago', next: '', tags: ['homelab'] },
+    { state: 'new', name: 'Weekly restic check', slug: 'restic-check', kind: 'heartbeat', last: 'no pings yet', next: 'due Sun 04:00', tags: ['backup'] }
+  ];
+
+  var days = []; for (var i = 0; i < 90; i++) days.push(i === 23 ? 'late' : i === 61 ? 'down' : i < 4 ? 'none' : 'up');
+  var hours = []; for (var j = 0; j < 24; j++) hours.push(j === 21 ? 'down' : j === 22 ? 'late' : 'up');
+
+  var obs = [
+    ['down', '14:07:31', '503 Service Unavailable', '1204 ms'], ['down', '14:07:26', '503 Service Unavailable', '1198 ms'],
+    ['late', '14:07:01', '503 \u00b7 confirming (1 of 3)', '980 ms'], ['up', '14:06:31', '200 OK \u00b7 $.status = ok', '84 ms'], ['up', '14:06:01', '200 OK \u00b7 $.status = ok', '81 ms']];
+  document.getElementById('root').innerHTML =
+    '<header class="vk-top"><span class="vk-top__mark">' + V.Mark({ size: 22 }) + '<span>vink</span></span>' +
+    '<span class="vk-top__crumb">w4j / <b>homelab</b></span>' +
+    '<input class="vk-input vk-top__search" placeholder="Search monitors  /" aria-label="Search monitors">' +
+    '<span class="vk-top__user">J</span></header>' +
+    '<div class="vk-page"><main class="vk-main">' +
+      '<div class="vk-main__head"><h1>Monitors</h1><span class="vk-muted vk-mono">7</span><span style="margin-left:auto">' + V.Button({ label: 'Create monitor', variant: 'primary' }) + '</span></div>' +
+      '<div class="vk-chips">' + V.Chip({ label: 'up', state: 'up', count: 3 }) + V.Chip({ label: 'late', state: 'late', count: 1 }) + V.Chip({ label: 'down', state: 'down', count: 1 }) +
+        V.Chip({ label: 'paused', state: 'paused', count: 1 }) + V.Chip({ label: 'prod', count: 3 }) + V.Chip({ label: 'backup', count: 2 }) + '</div>' +
+      '<div class="vk-list">' + rows.map(V.MonitorRow).join('') + '</div>' +
+    '</main><aside class="vk-drawer" id="drawer">' +
+      '<div class="vk-drawer__head"><h1 class="vk-drawer__title">Public API <span class="vk-row__slug">api-health</span></h1>' +
+        '<div class="vk-inline" style="padding:0">' + V.StateBadge({ state: 'down', pill: true, since: 'for 4 min' }) + V.Tag({ label: 'api' }) + V.Tag({ label: 'prod' }) + '</div>' +
+        '<div class="vk-drawer__actions">' + V.Button({ label: 'Check now' }) + V.Button({ label: 'Pause' }) + V.Button({ label: 'Edit' }) + '</div></div>' +
+      '<section><h2>Target</h2><code class="vk-ping__url" style="display:flex">GET https://api.example.com/healthz</code>' +
+        '<p class="vk-muted" style="margin:8px 0 0;font-size:12px">every 30 s \u00b7 timeout 5 s \u00b7 down after 3 failures \u00b7 confirm 2\u00d7</p></section>' +
+      '<section><h2>Last 24 hours</h2>' + V.UptimeBar({ days: hours, compact: true, label: 'last 24 hours', legend: ['24 h ago', '98.6% up', 'now'] }) + '</section>' +
+      '<section><h2>Recent observations</h2>' + obs.map(function (o) { return '<div class="vk-obs"><i class="vk-glyph vk-glyph--' + o[0] + '"></i><span>' + o[1] + '</span><span>' + o[2] + '</span><span>' + o[3] + '</span></div>'; }).join('') + '</section>' +
+    '</aside></div>';
+  V.wire(document);
+</script>
+</body>
+</html>

@@ -1,0 +1,61 @@
+<!-- @dsCard height=288 -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>vink</title>
+<style>
+  html, body { margin: 0; height: 100%; }
+  body { background: var(--ground); color: var(--ink); font-family: var(--font-mono); overflow: hidden; }
+  .cover { position: relative; height: 288px; overflow: hidden; }
+  .art { position: absolute; top: 0; left: 480px; width: 480px; height: 288px; overflow: hidden; }
+  .art svg { display: block; width: 480px; height: 288px; }
+  .accent { fill: var(--accent); }
+  .brand { fill: var(--brand); }
+  .ink { fill: var(--ink); }
+  .up { fill: var(--up); }
+  .down { fill: var(--down); }
+  .dot { fill: var(--line-strong); }
+  .t { rx: var(--radius-md); }
+  .words { position: absolute; left: var(--space-6); bottom: var(--space-6); max-width: 440px; }
+  .name { margin: 0; font-size: 120px; line-height: .92; font-weight: 700; letter-spacing: -0.02em; color: var(--ink); }
+  .tag { margin: var(--space-2) 0 0 6px; font-size: 14px; line-height: 20px; color: var(--ink-muted); }
+</style>
+</head>
+<body>
+<div class="cover">
+<div class="art" aria-hidden="true">
+<svg viewBox="0 0 480 288" width="480" height="288">
+<!--
+  blocks      accent 200x200 bled off the top (the identity colour, largest) · brand (W4J teal) 128x128 · ink 88x88 · up 48x48 · down 24x24, small because it only means a state; about a quarter of 960x288
+  arrangement W4J's cascade of rounded squares: one large tile, a medium tile beside it on the same bottom line, smaller tiles stepping down underneath, as in the W4J logo
+  pattern     dot grid, from "anything a person copies is mono" and the 4px scale: 5 x 11 dots at space-4 pitch in line-strong, right of the tiles
+  scales      sides in space-2 multiples; gutters space-4; corners radius-md; dot pitch space-4, dot radius 1.5
+-->
+<rect class="accent t" x="16" y="-32" width="200" height="200" rx="10"/>
+<rect class="brand t" x="232" y="40" width="128" height="128" rx="10"/>
+<rect class="up t" x="168" y="184" width="48" height="48" rx="10"/>
+<rect class="ink t" x="232" y="184" width="88" height="88" rx="10"/>
+<rect class="down t" x="336" y="184" width="24" height="24" rx="6"/>
+<g class="dot">
+<circle cx="392" cy="40" r="1.5"/><circle cx="408" cy="40" r="1.5"/><circle cx="424" cy="40" r="1.5"/><circle cx="440" cy="40" r="1.5"/><circle cx="456" cy="40" r="1.5"/>
+<circle cx="392" cy="56" r="1.5"/><circle cx="408" cy="56" r="1.5"/><circle cx="424" cy="56" r="1.5"/><circle cx="440" cy="56" r="1.5"/><circle cx="456" cy="56" r="1.5"/>
+<circle cx="392" cy="72" r="1.5"/><circle cx="408" cy="72" r="1.5"/><circle cx="424" cy="72" r="1.5"/><circle cx="440" cy="72" r="1.5"/><circle cx="456" cy="72" r="1.5"/>
+<circle cx="392" cy="88" r="1.5"/><circle cx="408" cy="88" r="1.5"/><circle cx="424" cy="88" r="1.5"/><circle cx="440" cy="88" r="1.5"/><circle cx="456" cy="88" r="1.5"/>
+<circle cx="392" cy="104" r="1.5"/><circle cx="408" cy="104" r="1.5"/><circle cx="424" cy="104" r="1.5"/><circle cx="440" cy="104" r="1.5"/><circle cx="456" cy="104" r="1.5"/>
+<circle cx="392" cy="120" r="1.5"/><circle cx="408" cy="120" r="1.5"/><circle cx="424" cy="120" r="1.5"/><circle cx="440" cy="120" r="1.5"/><circle cx="456" cy="120" r="1.5"/>
+<circle cx="392" cy="136" r="1.5"/><circle cx="408" cy="136" r="1.5"/><circle cx="424" cy="136" r="1.5"/><circle cx="440" cy="136" r="1.5"/><circle cx="456" cy="136" r="1.5"/>
+<circle cx="392" cy="152" r="1.5"/><circle cx="408" cy="152" r="1.5"/><circle cx="424" cy="152" r="1.5"/><circle cx="440" cy="152" r="1.5"/><circle cx="456" cy="152" r="1.5"/>
+<circle cx="392" cy="168" r="1.5"/><circle cx="408" cy="168" r="1.5"/><circle cx="424" cy="168" r="1.5"/><circle cx="440" cy="168" r="1.5"/><circle cx="456" cy="168" r="1.5"/>
+<circle cx="392" cy="184" r="1.5"/><circle cx="408" cy="184" r="1.5"/><circle cx="424" cy="184" r="1.5"/><circle cx="440" cy="184" r="1.5"/><circle cx="456" cy="184" r="1.5"/>
+<circle cx="392" cy="200" r="1.5"/><circle cx="408" cy="200" r="1.5"/><circle cx="424" cy="200" r="1.5"/><circle cx="440" cy="200" r="1.5"/><circle cx="456" cy="200" r="1.5"/>
+</g>
+</svg>
+</div>
+<div class="words">
+<p class="name">vink</p>
+<p class="tag">heartbeat and uptime monitor · w4jnl</p>
+</div>
+</div>
+</body>
+</html>

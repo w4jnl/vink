@@ -1,0 +1,24 @@
+<!-- @dsCard group="Screens" height=760 width=960 page -->
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>vink</title></head>
+<body>
+<div id="root" class=""></div>
+<script>
+  var V = window.Vink;
+  var days = []; for (var i = 0; i < 90; i++) days.push(i === 23 ? 'late' : i === 61 ? 'down' : i < 4 ? 'none' : 'up');
+  var hours = []; for (var j = 0; j < 24; j++) hours.push(j === 21 ? 'down' : j === 22 ? 'late' : 'up');
+
+  var d2 = days.map(function (d, i) { return i === 61 ? 'up' : i === 88 ? 'down' : d; });
+  var d3 = days.map(function (d, i) { return i < 4 ? 'none' : i === 89 ? 'late' : 'up'; });
+  function item(name, state, arr, pct) { return '<div class="vk-status__item"><div class="vk-status__line"><span style="font-weight:500">' + name + '</span>' + V.StateBadge({ state: state }) + '</div>' + V.UptimeBar({ days: arr, label: pct + ' up over 90 days', legend: ['90 days ago', pct + ' up', 'today'] }) + '</div>'; }
+  document.getElementById('root').innerHTML = '<div class="vk-status">' +
+    '<div class="vk-status__head"><span style="color:var(--mark);display:inline-flex">' + V.Mark({ size: 28 }) + '</span><h1>Homelab status</h1></div>' +
+    V.StatusBanner({ state: 'down', text: '1 service down', detail: 'since 14:07' }) +
+    '<div class="vk-status__group"><h2>prod</h2>' + item('Public API', 'down', d2, '99.71%') + item('Traefik certificate', 'late', d3, '100.0%') + '</div>' +
+    '<div class="vk-status__group"><h2>backup</h2>' + item('Nightly backup', 'up', days, '99.94%') + '</div>' +
+    '<div class="vk-status__foot"><span>updated 14:07:42 CEST</span><span>powered by <a href="https://github.com/w4jnl/vink">vink</a></span></div></div>';
+  V.wire(document);
+</script>
+</body>
+</html>

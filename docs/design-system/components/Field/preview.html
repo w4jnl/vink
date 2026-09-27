@@ -1,0 +1,15 @@
+<!-- @dsCard group="Forms" height=196 -->
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>vink</title></head>
+<body>
+<div id="root" class="vk-stack"></div>
+<script>
+  var V = window.Vink;
+  document.getElementById('root').innerHTML =
+    V.Field({ id: 'sched', label: 'Schedule', value: '0 3 * * *', mono: true, hint: 'Cron, in Europe/Amsterdam. Next run: tonight 03:00.' }) +
+    V.Field({ id: 'grace', label: 'Grace', value: '30s', mono: true, error: 'Must be at least 60s.' });
+  V.wire(document);
+</script>
+</body>
+</html>

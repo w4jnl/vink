@@ -1,0 +1,15 @@
+<!-- @dsCard group="Status" height=120 subtitle="plain and pill" -->
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>vink</title></head>
+<body>
+<div id="root" class="vk-stack"></div>
+<script>
+  var V = window.Vink;
+  document.getElementById('root').innerHTML =
+    '<div class="vk-inline" style="padding:0">' + ['up','late','down','paused','new'].map(function (s) { return V.StateBadge({ state: s }); }).join('') + '</div>' +
+    '<div class="vk-inline" style="padding:0">' + V.StateBadge({ state: 'up', pill: true, since: '12 d' }) + V.StateBadge({ state: 'late', pill: true, since: '3 min' }) + V.StateBadge({ state: 'down', pill: true, since: '4 min' }) + V.StateBadge({ state: 'paused', pill: true }) + '</div>';
+  V.wire(document);
+</script>
+</body>
+</html>

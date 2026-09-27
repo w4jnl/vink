@@ -1,0 +1,23 @@
+<!-- @dsCard group="Monitors" height=330 -->
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>vink</title></head>
+<body>
+<div id="root" class=""></div>
+<script>
+  var V = window.Vink;
+  var rows = [
+    { state: 'down', name: 'Public API', slug: 'api-health', kind: 'http', last: '2 min ago \u00b7 503', points: [80,82,79,85,90,400,900,1200], tags: ['api','prod'], current: true },
+    { state: 'late', name: 'Traefik certificate', slug: 'traefik-cert', kind: 'tls', last: 'expires in 9 d', next: 'crit at 3 d', tags: ['prod'] },
+    { state: 'up', name: 'Nightly backup', slug: 'nightly-backup', kind: 'heartbeat', last: '3 h ago \u00b7 4m12s', next: 'due in 21 h', tags: ['backup','prod'] },
+    { state: 'up', name: 'Postgres', slug: 'postgres', kind: 'tcp', last: '14 s ago \u00b7 3 ms', points: [3,4,3,3,5,3,4,3,3,4,3,3], tags: ['db'] },
+    { state: 'up', name: 'w4j.nl resolves', slug: 'dns-w4j', kind: 'dns', last: '41 s ago \u00b7 12 ms', points: [12,11,14,12,12,13,11,12], tags: ['dns'] },
+    { state: 'paused', name: 'NAS reachable', slug: 'nas-ping', kind: 'icmp', last: 'paused 2 d ago', next: '', tags: ['homelab'] },
+    { state: 'new', name: 'Weekly restic check', slug: 'restic-check', kind: 'heartbeat', last: 'no pings yet', next: 'due Sun 04:00', tags: ['backup'] }
+  ];
+
+  document.getElementById('root').innerHTML = '<div class="vk-list">' + rows.map(V.MonitorRow).join('') + '</div>';
+  V.wire(document);
+</script>
+</body>
+</html>

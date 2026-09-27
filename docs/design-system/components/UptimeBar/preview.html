@@ -1,0 +1,18 @@
+<!-- @dsCard group="Status" height=128 -->
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>vink</title></head>
+<body>
+<div id="root" class="vk-stack"></div>
+<script>
+  var V = window.Vink;
+  var days = []; for (var i = 0; i < 90; i++) days.push(i === 23 ? 'late' : i === 61 ? 'down' : i < 4 ? 'none' : 'up');
+  var hours = []; for (var j = 0; j < 24; j++) hours.push(j === 21 ? 'down' : j === 22 ? 'late' : 'up');
+
+  document.getElementById('root').innerHTML =
+    V.UptimeBar({ days: days, label: '99.94% up over 90 days', legend: ['90 days ago', '99.94% up', 'today'] }) +
+    V.UptimeBar({ days: hours, compact: true, label: 'last 24 hours' });
+  V.wire(document);
+</script>
+</body>
+</html>
