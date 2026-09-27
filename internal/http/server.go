@@ -14,6 +14,7 @@ import (
 
 	"github.com/w4jnl/vink/internal/auth"
 	"github.com/w4jnl/vink/internal/config"
+	"github.com/w4jnl/vink/internal/domain"
 	"github.com/w4jnl/vink/internal/engine"
 	"github.com/w4jnl/vink/internal/http/api"
 	"github.com/w4jnl/vink/internal/http/middleware"
@@ -82,10 +83,41 @@ func Handler(d Deps, withPing bool) http.Handler {
 	if d.Auth != nil {
 		api.New(d.Svc, d.Auth, logging.Sub(d.Log, "api")).Mount(mux)
 	}
+	mux.HandleFunc("GET /a/{token}", d.ackLink)
 	for _, m := range d.Mount {
 		m(mux)
 	}
 	return chain(d, mux)
+}
+
+// ackLink acknowledges an incident from a signed one-click token and
+// sends the person to the project's incidents page.
+func (d Deps) ackLink(w http.ResponseWriter, r *http.Request) {
+	inc, err := d.Svc.AckIncidentByToken(r.Context(), r.PathValue("token"))
+	if err != nil {
+		if errors.Is(err, domain.ErrUnauthorized) || errors.Is(err, domain.ErrNotFound) {
+			http.Error(w, "this acknowledgement link is invalid or has expired", http.StatusNotFound)
+			return
+		}
+		if errors.Is(err, domain.ErrConflict) {
+			http.Error(w, "this incident is already resolved", http.StatusConflict)
+			return
+		}
+		d.Log.Error("ack link", "err", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+	project, err := d.Svc.ProjectByID(r.Context(), inc.ProjectID)
+	if err != nil {
+		http.Error(w, "acknowledged", http.StatusOK)
+		return
+	}
+	org, err := d.Svc.OrgByID(r.Context(), project.OrgID)
+	if err != nil {
+		http.Error(w, "acknowledged", http.StatusOK)
+		return
+	}
+	http.Redirect(w, r, "/o/"+org.Slug+"/p/"+project.Slug+"/incidents", http.StatusSeeOther) //nolint:gosec // G710: slugs are validated [a-z0-9-] values from our own database, and the path is relative
 }
 
 // Ready reports whether the writer can take a lock within two seconds

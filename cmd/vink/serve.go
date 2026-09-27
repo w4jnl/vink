@@ -5,7 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -15,6 +17,7 @@ import (
 	"github.com/w4jnl/vink/internal/engine"
 	vhttp "github.com/w4jnl/vink/internal/http"
 	"github.com/w4jnl/vink/internal/logging"
+	"github.com/w4jnl/vink/internal/notify"
 	"github.com/w4jnl/vink/internal/secrets"
 	"github.com/w4jnl/vink/internal/service"
 	"github.com/w4jnl/vink/internal/version"
@@ -75,8 +78,18 @@ func runServe(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 	svcCfg.PingBaseURL = cfg.PingBaseURL()
 	svcCfg.BodyLimit = int64(cfg.Ping.BodyLimit)
 	svcCfg.Keyring = keyring
+	svcCfg.BaseURL = strings.TrimRight(cfg.Server.BaseURL, "/")
 	svc := service.New(d, bus, log, svcCfg)
+	registry, err := notify.NewRegistry(notify.Options{
+		Proxy: cfg.Outbound.Proxy, CAPem: cfg.Outbound.CAPem, AllowPrivateTargets: cfg.Outbound.AllowPrivateTargets, Timeout: 10 * time.Second,
+		SMTP: notify.SMTPConfig{Host: cfg.SMTP.Host, Port: cfg.SMTP.Port, Username: cfg.SMTP.Username, Password: cfg.SMTP.Password, From: cfg.SMTP.From, TLS: cfg.SMTP.TLS},
+	})
+	if err != nil {
+		return fmt.Errorf("notifiers: %w", err)
+	}
+	svc.SetNotifier(registry)
 	sched := engine.NewScheduler(svc, bus, logging.Sub(log, "scheduler"), nil)
+	dispatcher := engine.NewDispatcher(svc, logging.Sub(log, "dispatcher"), nil)
 	authn, err := auth.New(svc, cfg.Auth, cfg.Server.BaseURL, logging.Sub(log, "auth"))
 	if err != nil {
 		return fmt.Errorf("auth: %w", err)
@@ -100,6 +113,7 @@ func runServe(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 		}()
 	}
 	run("scheduler", sched.Run)
+	run("dispatcher", dispatcher.Run)
 	run("http", func(ctx context.Context) error {
 		return vhttp.Run(ctx, log, "http", cfg.Server.Listen, vhttp.Handler(deps, withPing))
 	})

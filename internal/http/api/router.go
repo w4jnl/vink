@@ -60,6 +60,7 @@ func (a *API) Mount(mux *http.ServeMux) {
 	a.register(mux, "GET", "/channels/{id}", a.getChannel, false)
 	a.register(mux, "PUT", "/channels/{id}", a.putChannel, false)
 	a.register(mux, "DELETE", "/channels/{id}", a.deleteChannel, false)
+	a.register(mux, "POST", "/channels/{id}/test", a.testChannel, false)
 	a.register(mux, "GET", "/routes", a.listRoutes, false)
 	a.register(mux, "POST", "/routes", a.createRoute, false)
 	a.register(mux, "GET", "/routes/{id}", a.getRoute, false)

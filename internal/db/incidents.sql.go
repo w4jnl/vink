@@ -218,6 +218,63 @@ func (q *Queries) ListOpenIncidents(ctx context.Context, projectID string) ([]Li
 	return items, nil
 }
 
+const listOpenUnackedIncidents = `-- name: ListOpenUnackedIncidents :many
+SELECT i.id, i.monitor_id, i.project_id, i.opened_at, i.resolved_at, i.acked_by, i.acked_at, i.open_event_id, i.close_event_id, m.slug AS monitor_slug, m.name AS monitor_name
+FROM incidents i JOIN monitors m ON m.id = i.monitor_id
+WHERE i.resolved_at IS NULL AND i.acked_at IS NULL AND m.paused = 0
+ORDER BY i.opened_at
+`
+
+type ListOpenUnackedIncidentsRow struct {
+	ID           string
+	MonitorID    string
+	ProjectID    string
+	OpenedAt     int64
+	ResolvedAt   *int64
+	AckedBy      *string
+	AckedAt      *int64
+	OpenEventID  string
+	CloseEventID *string
+	MonitorSlug  string
+	MonitorName  string
+}
+
+// tenancy: root (dispatcher schedules repeat notifications)
+func (q *Queries) ListOpenUnackedIncidents(ctx context.Context) ([]ListOpenUnackedIncidentsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listOpenUnackedIncidents)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListOpenUnackedIncidentsRow
+	for rows.Next() {
+		var i ListOpenUnackedIncidentsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.MonitorID,
+			&i.ProjectID,
+			&i.OpenedAt,
+			&i.ResolvedAt,
+			&i.AckedBy,
+			&i.AckedAt,
+			&i.OpenEventID,
+			&i.CloseEventID,
+			&i.MonitorSlug,
+			&i.MonitorName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const openIncident = `-- name: OpenIncident :one
 INSERT INTO incidents (id, monitor_id, project_id, opened_at, open_event_id)
 VALUES (?, ?, ?, ?, ?)

@@ -16,11 +16,14 @@ import (
 	"github.com/w4jnl/vink/internal/db"
 	"github.com/w4jnl/vink/internal/domain"
 	"github.com/w4jnl/vink/internal/engine"
+	"github.com/w4jnl/vink/internal/notify"
 	"github.com/w4jnl/vink/internal/secrets"
 )
 
 // Config carries the instance settings the service needs.
 type Config struct {
+	// BaseURL is the UI base for links in notifications.
+	BaseURL string
 	// PingBaseURL is the base for ping URLs, without a trailing slash.
 	PingBaseURL string
 	// BodyLimit caps captured ping bodies.
@@ -38,6 +41,7 @@ type Config struct {
 // DefaultConfig returns the design document's defaults.
 func DefaultConfig() Config {
 	return Config{
+		BaseURL:          "http://localhost:8080",
 		PingBaseURL:      "http://localhost:8080",
 		BodyLimit:        64 * 1024,
 		AutoCreatePeriod: domain.MustDuration("1d"),
@@ -58,6 +62,7 @@ type Service struct {
 	// validateChannel is set by the notifier registry; nil accepts any
 	// JSON object.
 	validateChannel func(kind domain.ChannelKind, cfg []byte) error
+	notifier        *notify.Registry
 }
 
 // New wires a service. The clock is time.Now unless SetClock is called.

@@ -93,6 +93,8 @@ type Querier interface {
 	ListObservations(ctx context.Context, arg ListObservationsParams) ([]Observation, error)
 	ListObservationsSince(ctx context.Context, arg ListObservationsSinceParams) ([]Observation, error)
 	ListOpenIncidents(ctx context.Context, projectID string) ([]ListOpenIncidentsRow, error)
+	// tenancy: root (dispatcher schedules repeat notifications)
+	ListOpenUnackedIncidents(ctx context.Context) ([]ListOpenUnackedIncidentsRow, error)
 	ListOrgs(ctx context.Context) ([]Org, error)
 	ListProjectEvents(ctx context.Context, arg ListProjectEventsParams) ([]ListProjectEventsRow, error)
 	ListProjects(ctx context.Context, orgID string) ([]Project, error)

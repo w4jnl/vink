@@ -247,6 +247,9 @@ paths:
       requestBody: {required: true, content: {application/json: {schema: {$ref: "#/components/schemas/ChannelIn"}}}}
       responses: {"200": {description: Updated.}}
     delete: {summary: Delete a channel and its routes, responses: {"204": {description: Deleted.}}}
+  /channels/{id}/test:
+    parameters: [{$ref: "#/components/parameters/id"}]
+    post: {summary: Send a synthetic notification and return the error verbatim, responses: {"200": {description: Sent.}, "502": {description: The notifier failed; the body carries the error.}}}
   /routes:
     get: {summary: List routes by priority, responses: {"200": {description: Routes.}}}
     post:

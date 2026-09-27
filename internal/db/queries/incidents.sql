@@ -35,3 +35,10 @@ ORDER BY i.opened_at DESC;
 
 -- name: CountOpenIncidents :one
 SELECT COUNT(*) FROM incidents WHERE project_id = ? AND resolved_at IS NULL;
+
+-- name: ListOpenUnackedIncidents :many
+-- tenancy: root (dispatcher schedules repeat notifications)
+SELECT i.*, m.slug AS monitor_slug, m.name AS monitor_name
+FROM incidents i JOIN monitors m ON m.id = i.monitor_id
+WHERE i.resolved_at IS NULL AND i.acked_at IS NULL AND m.paused = 0
+ORDER BY i.opened_at;
