@@ -1,0 +1,15 @@
+version: "2"
+sql:
+  - engine: sqlite
+    schema: db/schema.sql
+    queries: internal/db/queries
+    gen:
+      go:
+        package: db
+        out: internal/db
+        sql_package: database/sql
+        emit_pointers_for_null_types: true
+        emit_interface: true
+        output_db_file_name: dbtx.go
+        output_models_file_name: models.go
+        output_querier_file_name: querier.go

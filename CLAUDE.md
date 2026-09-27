@@ -9,10 +9,10 @@ Self-hosted heartbeat and uptime monitor: jobs ping it (push), and it probes ser
 
 ## House conventions
 - Go 1.23+, stdlib first, `internal/` packages, no global state, `context.Context` on every I/O path.
-- Logging: `log/slog`. JSON by default; `-d`/`--debug` on every command switches to debug level with colour via `github.com/MatusOllah/slogcolor` (off when not a TTY or `NO_COLOR` is set).
+- Logging: `log/slog`. JSON by default; `-d`/`--debug` on every command switches to debug level with colour via `github.com/SladkyCitron/slogcolor` (the module formerly at MatusOllah/slogcolor) (off when not a TTY or `NO_COLOR` is set).
 - HTTP: `net/http` ServeMux with method patterns; middleware as `func(http.Handler) http.Handler`.
-- Database: SQLite via `modernc.org/sqlite` (no cgo), WAL, one writer connection. All SQL goes through `sqlc`, with queries in `internal/db/queries/`. Migrations use `dbmate` (library, embedded, `-- migrate:up/down`); `dbmate dump` writes `db/schema.sql`, which is sqlc's schema input.
-- Web UI: `html/template` + htmx 2 (vendored), no JS framework, no build step, no CDN or external URLs anywhere. Embed `static/` (tokens.css, bundle.css, htmx, fonts, icon sprite) with `embed.FS`.
+- Database: SQLite via `modernc.org/sqlite` (no cgo), WAL, one writer connection. All SQL goes through `sqlc`, with queries in `internal/db/queries/`. Migrations are dbmate-format files (`-- migrate:up/down`), embedded and applied by our own runner in `internal/db/migrations.go`; the dbmate library is never imported (its sqlite driver needs cgo). `vink migrate dump` writes `db/schema.sql`, which is sqlc's schema input.
+- Web UI: `html/template` + htmx 4 (vendored), no JS framework, no build step, no CDN or external URLs anywhere. Embed `static/` (tokens.css, bundle.css, htmx, fonts, icon sprite) with `embed.FS`.
 - CLI: `spf13/cobra`; `--json` on every read command.
 - Errors: wrap with `%w`; HTTP errors are RFC 7807 problem+json.
 - Tests: table-driven, `httptest`, a temp SQLite per test, no DB mocks. Run `-race` in CI.

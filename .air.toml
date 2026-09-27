@@ -1,0 +1,18 @@
+root = "."
+tmp_dir = "tmp"
+
+[build]
+bin = "./tmp/vink"
+cmd = "go build -o ./tmp/vink ./cmd/vink"
+args_bin = ["serve", "-d"]
+delay = 1000
+exclude_dir = ["assets", "bin", "data", "dist", "docs", "tmp"]
+exclude_regex = ["_test.go"]
+include_ext = ["go", "html", "css", "js", "sql", "toml"]
+kill_delay = "0s"
+log = "build-errors.log"
+send_interrupt = true
+
+[log]
+main_only = false
+time = false
