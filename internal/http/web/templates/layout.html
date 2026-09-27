@@ -1,0 +1,27 @@
+{{define "layout"}}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{if .Title}}{{.Title}} · {{end}}vink</title>
+<link rel="stylesheet" href="{{static "tokens.css"}}">
+<link rel="stylesheet" href="{{static "bundle.css"}}">
+<link rel="stylesheet" href="{{static "app.css"}}">
+<link rel="icon" type="image/svg+xml" href="{{if .Down}}{{static "favicon-down.svg"}}{{else}}{{static "favicon.svg"}}{{end}}" data-icon-up="{{static "favicon.svg"}}" data-icon-down="{{static "favicon-down.svg"}}">
+{{if .CSRF}}<meta name="csrf-token" content="{{.CSRF}}">{{end}}
+<script src="{{static "htmx.min.js"}}" defer></script>
+<script src="{{static "vink.js"}}" defer></script>
+</head>
+<body{{if .ProjectPath}} hx-boost:inherited="true"{{end}}>
+{{if .ProjectPath}}<header class="vk-top">
+<a class="vk-top__mark vk-crumb-link" href="{{.ProjectPath}}">{{mark 22}}<span>vink</span></a>
+<a class="vk-top__crumb vk-crumb-link" href="/projects">{{.OrgSlug}} / <b>{{.ProjectSlug}}</b></a>
+<form class="vk-topbar-form" method="get" action="{{.ProjectPath}}" hx-get="{{.ProjectPath}}?partial=main" hx-target="#monitors" hx-trigger="input changed delay:300ms from:.vk-top__search, submit" hx-push-url="true">
+<input class="vk-input vk-top__search" name="q" value="{{.Query}}" placeholder="Search monitors  /" aria-label="Search monitors" autocomplete="off">
+{{if .FilterState}}<input type="hidden" name="state" value="{{.FilterState}}">{{end}}{{if .FilterTag}}<input type="hidden" name="tag" value="{{.FilterTag}}">{{end}}
+</form>
+<form method="post" action="/logout" class="vk-topbar-form">{{if .CSRF}}<input type="hidden" name="_csrf" value="{{.CSRF}}">{{end}}<button type="submit" class="vk-top__user" title="{{.UserName}} · sign out" aria-label="Sign out {{.UserName}}">{{.UserInitial}}</button></form>
+</header>{{end}}
+{{template "content" .}}
+</body>
+</html>{{end}}

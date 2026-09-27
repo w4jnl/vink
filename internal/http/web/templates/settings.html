@@ -1,0 +1,40 @@
+{{define "content"}}<div class="vk-page"><main class="vk-main" id="settings">{{template "settings-main" .}}</main></div>{{end}}
+
+{{define "settings-main"}}<div class="vk-main__head"><h1>Settings</h1></div>
+<nav class="vk-chips vk-tabs" aria-label="Settings tabs">{{range .Tabs}}<a class="vk-chip" aria-pressed="{{.Active}}" href="{{.Path}}">{{.Label}}</a>{{end}}</nav>
+{{if .Flash}}<p class="vk-note" role="status">{{.Flash}}</p>{{end}}
+{{if eq .Tab "channels"}}{{template "settings-channels" .}}{{else if eq .Tab "routes"}}{{template "settings-routes" .}}{{else}}{{template "settings-keys" .}}{{end}}{{end}}
+
+{{define "settings-channels"}}<div class="vk-list vk-list--settings">{{if .Channels}}{{range .Channels}}<div class="vk-row vk-row--static"><span class="vk-row__name"><span>{{.Name}}</span><span class="vk-row__slug">{{.Kind}}{{if not .Enabled}} · disabled{{end}}</span></span><span class="vk-row__data vk-row__data--wide">{{.Summary}}</span>
+<form method="post" action="{{.TestPath}}"><input type="hidden" name="_csrf" value="{{$.CSRF}}">{{button (dict "Label" "Test" "Type" "submit")}}</form>
+<form method="post" action="{{.DeletePath}}"><input type="hidden" name="_csrf" value="{{$.CSRF}}">{{button (dict "Label" "Delete" "Variant" "danger" "Confirm" "Really delete?" "Type" "submit")}}</form></div>{{end}}{{else}}<div class="vk-empty"><h3>No alert channels yet</h3><p>Add a channel below. The first channel also gets a route that sends every down and up.</p><pre class="vk-code"><i># a webhook needs only a URL; ntfy needs url and topic; smtp needs recipients</i>
+{"url": "https://hooks.example.com/vink"}</pre><p>Mail needs <span class="vk-mono">[smtp] host</span> in vink.toml first.</p></div>{{end}}</div>
+<form class="vk-form" method="post" action="{{.ChannelsPath}}"><input type="hidden" name="_csrf" value="{{.CSRF}}"><h2>Add channel</h2>
+{{if .Form.Error}}<p class="vk-field__error">{{glyph "down" ""}}{{.Form.Error}}</p>{{end}}
+{{field (dict "ID" "name" "Label" "Name" "Value" .Form.Values.name "Placeholder" "ops mail" "Error" .Form.Errors.name "Attrs" (attrs "required" ""))}}
+<div class="vk-field"><label class="vk-field__label" for="kind">Kind</label><select class="vk-input vk-select" id="kind" name="kind">{{range .Kinds}}<option value="{{.}}"{{if eq . $.Form.Values.kind}} selected{{end}}>{{.}}</option>{{end}}</select></div>
+{{field (dict "ID" "config" "Label" "Config (JSON)" "Value" .Form.Values.config "Textarea" true "Placeholder" "{\"url\": \"https://…\"}" "Hint" "webhook: url, method, headers, body_template · ntfy: url, topic, token, priority · smtp: to[], from" "Error" .Form.Errors.config)}}
+<div class="vk-form__actions">{{button (dict "Label" "Add channel" "Variant" "primary" "Type" "submit")}}</div></form>{{end}}
+
+{{define "settings-routes"}}<div class="vk-list vk-list--settings">{{if .Routes}}{{range .Routes}}<div class="vk-row vk-row--static"><span class="vk-row__name"><span>{{.Channel}}</span><span class="vk-row__slug">{{.Kind}}</span></span><span class="vk-row__data vk-row__data--wide">{{.Summary}}</span><span class="vk-row__tags">{{range .Tags}}{{tag .}}{{end}}</span>
+<form method="post" action="{{.DeletePath}}"><input type="hidden" name="_csrf" value="{{$.CSRF}}">{{button (dict "Label" "Delete" "Variant" "danger" "Confirm" "Really delete?" "Type" "submit")}}</form></div>{{end}}{{else}}<div class="vk-empty"><h3>No routes yet</h3><p>A route sends events for monitors matching all of its tags to one channel. Empty tags match every monitor.</p></div>{{end}}</div>
+<form class="vk-form" method="post" action="{{.RoutesPath}}"><input type="hidden" name="_csrf" value="{{.CSRF}}"><h2>Add route</h2>
+{{if .Form.Error}}<p class="vk-field__error">{{glyph "down" ""}}{{.Form.Error}}</p>{{end}}
+<div class="vk-field"><label class="vk-field__label" for="channel_id">Channel</label><select class="vk-input vk-select" id="channel_id" name="channel_id">{{range .Channels}}<option value="{{.ID}}"{{if eq .ID $.Form.Values.channel_id}} selected{{end}}>{{.Name}} ({{.Kind}})</option>{{end}}</select>{{if .Form.Errors.channel_id}}<span class="vk-field__error">{{glyph "down" ""}}{{.Form.Errors.channel_id}}</span>{{end}}</div>
+{{field (dict "ID" "match_tags" "Label" "Match tags" "Value" .Form.Values.match_tags "Mono" true "Placeholder" "prod" "Hint" "Comma separated, all must match. Empty matches every monitor." "Error" .Form.Errors.match_tags)}}
+<div class="vk-field"><span class="vk-field__label">Send on</span><div class="vk-checks"><label><input type="checkbox" name="on" value="down"{{if .Form.OnDown}} checked{{end}}> down</label><label><input type="checkbox" name="on" value="up"{{if .Form.OnUp}} checked{{end}}> up</label><label><input type="checkbox" name="on" value="late"{{if .Form.OnLate}} checked{{end}}> late</label></div>{{if .Form.Errors.on}}<span class="vk-field__error">{{glyph "down" ""}}{{.Form.Errors.on}}</span>{{end}}</div>
+{{field (dict "ID" "repeat_every" "Label" "Repeat while down" "Value" .Form.Values.repeat_every "Mono" true "Placeholder" "4h" "Hint" "Empty never repeats; otherwise at least 5m, until acknowledged." "Error" .Form.Errors.repeat_every)}}
+<div class="vk-form__actions">{{button (dict "Label" "Add route" "Variant" "primary" "Type" "submit")}}</div></form>{{end}}
+
+{{define "settings-keys"}}<h2>Ping key</h2>
+{{if .CanSeePingKey}}{{pingurl .PingBase .PingKey "<slug>"}}<p class="vk-note">Every ping URL of this project starts with this key. Rotating it keeps the old key working for one day.</p>
+{{if .CanAdmin}}<form method="post" action="{{.RotatePath}}"><input type="hidden" name="_csrf" value="{{.CSRF}}">{{button (dict "Label" "Rotate ping key" "Variant" "danger" "Confirm" "Really rotate?" "Type" "submit")}}</form>{{end}}{{else}}<p class="vk-note">Members and admins can see the ping key.</p>{{end}}
+{{if .NewKey}}<div class="vk-key"><h2>New API key</h2><div class="vk-ping"><code class="vk-ping__url">{{.NewKey}}</code><button type="button" class="vk-btn vk-copy" data-copy="{{.NewKey}}">Copy</button></div><p class="vk-note">Shown once. Store it now.</p></div>{{end}}
+<h2>API keys</h2>
+<div class="vk-list vk-list--settings">{{if .Keys}}{{range .Keys}}<div class="vk-row vk-row--static"><span class="vk-row__name"><span>{{.Name}}</span><span class="vk-row__slug">{{.Prefix}} · {{.Access}}</span></span><span class="vk-row__data vk-row__data--wide">{{.Used}}</span>
+{{if .CanRevoke}}<form method="post" action="{{.RevokePath}}"><input type="hidden" name="_csrf" value="{{$.CSRF}}">{{button (dict "Label" "Revoke" "Variant" "danger" "Confirm" "Really revoke?" "Type" "submit")}}</form>{{end}}</div>{{end}}{{else}}<div class="vk-empty"><h3>No API keys</h3><p>The CLI and automation act as a project through an API key.</p></div>{{end}}</div>
+<form class="vk-form" method="post" action="{{.KeysPath}}"><input type="hidden" name="_csrf" value="{{.CSRF}}"><h2>Create API key</h2>
+{{if .Form.Error}}<p class="vk-field__error">{{glyph "down" ""}}{{.Form.Error}}</p>{{end}}
+{{field (dict "ID" "name" "Label" "Name" "Value" .Form.Values.name "Placeholder" "laptop cli" "Error" .Form.Errors.name "Attrs" (attrs "required" ""))}}
+<div class="vk-field"><label class="vk-field__label" for="access">Access</label><select class="vk-input vk-select" id="access" name="access"><option value="ro">read only</option>{{if .CanAdmin}}<option value="rw">read and write</option>{{end}}</select></div>
+<div class="vk-form__actions">{{button (dict "Label" "Create key" "Variant" "primary" "Type" "submit")}}</div></form>{{end}}

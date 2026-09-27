@@ -1,0 +1,23 @@
+{{define "content"}}<div class="vk-page"><main class="vk-main" id="monitors">{{template "monitors-main" .List}}</main><aside class="vk-drawer" id="drawer">{{template "monitor-form" .Form}}</aside></div>{{end}}
+
+{{define "monitor-form"}}<div id="drawer-body"><div class="vk-drawer__head"><h1 class="vk-drawer__title">{{if .Edit}}Edit {{.Values.name}}{{else}}Create monitor{{end}}</h1>
+<a class="vk-btn vk-drawer__close" href="{{.CancelPath}}" hx-get="{{.CancelHX}}" hx-target="#drawer" hx-push-url="{{.CancelPath}}" data-drawer-close aria-label="Close">Close</a></div>
+<form class="vk-form" id="monitor-form" method="post" action="{{.Action}}" hx-post="{{.Action}}" hx-target="#drawer" hx-status:422="target:#drawer">
+<input type="hidden" name="_csrf" value="{{.CSRF}}">
+{{if .Error}}<p class="vk-field__error">{{glyph "down" ""}}{{.Error}}</p>{{end}}
+{{field (dict "ID" "name" "Label" "Name" "Value" .Values.name "Placeholder" "Nightly backup" "Error" .Errors.name "Attrs" (attrs "autofocus" "" "required" ""))}}
+{{if .Edit}}{{field (dict "ID" "slug" "Label" "Slug" "Value" .Values.slug "Mono" true "Hint" "The slug is part of the ping URL and cannot change." "Attrs" (attrs "readonly" ""))}}{{else}}{{field (dict "ID" "slug" "Label" "Slug" "Value" .Values.slug "Mono" true "Placeholder" "nightly-backup" "Hint" "Lowercase letters, digits and dashes; part of the ping URL. Empty derives it from the name." "Error" .Errors.slug)}}{{end}}
+{{field (dict "ID" "period" "Label" "Expect a ping every" "Value" .Values.period "Mono" true "Placeholder" "1d" "Hint" "A period such as 1h, 6h or 1d; at least 60s. Leave empty when using cron." "Error" .Errors.period)}}
+{{field (dict "ID" "cron" "Label" "Or on a cron schedule" "Value" .Values.cron "Mono" true "Placeholder" "0 3 * * *" "Hint" "Five fields, evaluated in the timezone below." "Error" .Errors.cron)}}
+{{field (dict "ID" "timezone" "Label" "Timezone" "Value" .Values.timezone "Mono" true "Placeholder" .ProjectTimezone "Hint" "IANA name; empty means the project timezone." "Error" .Errors.timezone)}}
+{{field (dict "ID" "grace" "Label" "Grace" "Value" .Values.grace "Mono" true "Placeholder" "5m" "Hint" "How long after the expected time late becomes down. At least 60s." "Error" .Errors.grace)}}
+{{field (dict "ID" "tags" "Label" "Tags" "Value" .Values.tags "Mono" true "Placeholder" "backup, prod" "Hint" "Comma separated; tags drive filters and routes." "Error" .Errors.tags)}}
+<details{{if .AdvancedOpen}} open{{end}}><summary>Advanced</summary><div class="vk-form">
+{{field (dict "ID" "failure_threshold" "Label" "Failures before down" "Value" .Values.failure_threshold "Mono" true "Placeholder" "1" "Hint" "Consecutive fail signals before the monitor is down." "Error" .Errors.failure_threshold)}}
+{{field (dict "ID" "recovery_threshold" "Label" "Successes before up" "Value" .Values.recovery_threshold "Mono" true "Placeholder" "1" "Error" .Errors.recovery_threshold)}}
+{{field (dict "ID" "max_runtime" "Label" "Max runtime" "Value" .Values.max_runtime "Mono" true "Placeholder" "2h" "Hint" "A start without a finish within this time counts as a fail. Empty disables it." "Error" .Errors.max_runtime)}}
+{{field (dict "ID" "methods" "Label" "Allowed methods" "Value" .Values.methods "Mono" true "Placeholder" "GET, POST, HEAD, PUT" "Hint" "Restrict to POST to defeat link prefetchers." "Error" .Errors.methods)}}
+{{field (dict "ID" "body_limit" "Label" "Body limit (bytes)" "Value" .Values.body_limit "Mono" true "Placeholder" "65536" "Error" .Errors.body_limit)}}
+</div></details>
+<div class="vk-form__actions">{{button (dict "Label" .SubmitLabel "Variant" "primary" "Type" "submit")}}<a class="vk-btn" href="{{.CancelPath}}" hx-get="{{.CancelHX}}" hx-target="#drawer" hx-push-url="{{.CancelPath}}">Cancel</a></div>
+</form></div>{{end}}

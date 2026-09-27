@@ -1,0 +1,2 @@
+<div class="vk-empty"><h3>No monitors yet</h3><p>Point a cron job at your project’s ping URL. The first ping creates the monitor.</p><pre class="vk-code"><i># every night at 03:00, then tell vink it ran</i>
+0 3 * * * restic backup &amp;&amp; curl -fsS <b>https://vink.w4j.nl/ping/k7f3q9x2mzabcdefghijkl/nightly-backup?create=1</b></pre><p>Or run <span class="vk-mono">vink apply -f vink.yaml</span> to declare them all at once.</p></div>

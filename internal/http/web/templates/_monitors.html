@@ -1,0 +1,20 @@
+{{define "monitors-main"}}<div class="vk-main__head"><h1>Monitors</h1><span class="vk-muted vk-mono" data-down-count="{{.DownCount}}">{{.Total}}</span><span class="vk-push">{{button (dict "Label" "Create monitor" "Variant" "primary" "Attrs" (attrs "data-create" "1" "hx-get" .NewPath "hx-target" "#drawer" "hx-push-url" "true" "formaction" .NewPath))}}</span></div>
+<form class="vk-chips" method="get" action="{{.ProjectPath}}" hx-get="{{.ProjectPath}}?partial=main" hx-target="#monitors" hx-push-url="true">{{if .Query}}<input type="hidden" name="q" value="{{.Query}}">{{end}}{{range .Chips}}{{chip .}}{{end}}</form>
+{{template "monitors-list" .}}{{end}}
+
+{{define "monitors-list"}}<div class="vk-list" id="list" hx-get="{{.ListPath}}" hx-trigger="every 15s [document.visibilityState=='visible']" hx-swap="outerHTML">{{if .Rows}}{{range .Rows}}{{monitorrow .}}{{end}}{{else if .Filtered}}<div class="vk-drawer__msg">No monitors match this filter.</div>{{else}}{{emptystate .PingBase .PingKey}}{{end}}</div>{{end}}
+
+{{define "drawer"}}{{if .}}<div id="drawer-body" hx-get="{{.Path}}" hx-trigger="every 10s [document.visibilityState=='visible']" hx-swap="outerHTML">
+<div class="vk-drawer__head"><h1 class="vk-drawer__title">{{.Name}} <span class="vk-row__slug">{{.Slug}}</span></h1>
+<a class="vk-btn vk-drawer__close" href="{{.ProjectPath}}" hx-get="{{.ProjectPath}}?partial=drawer-empty" hx-target="#drawer" hx-push-url="{{.ProjectPath}}" data-drawer-close aria-label="Close">Close</a>
+<div class="vk-inline vk-inline--tight">{{statebadge .Badge}}{{range .Tags}}{{tag .}}{{end}}</div>
+<div class="vk-drawer__actions">
+{{if .Paused}}<form method="post" action="{{.Path}}/resume" hx-post="{{.Path}}/resume" hx-target="#drawer"><input type="hidden" name="_csrf" value="{{.CSRF}}">{{button (dict "Label" "Resume" "Type" "submit")}}</form>{{else}}<form method="post" action="{{.Path}}/pause" hx-post="{{.Path}}/pause" hx-target="#drawer"><input type="hidden" name="_csrf" value="{{.CSRF}}">{{button (dict "Label" "Pause" "Type" "submit")}}</form>{{end}}
+<a class="vk-btn" href="{{.Path}}/edit" hx-get="{{.Path}}/edit" hx-target="#drawer" hx-push-url="true">Edit</a>
+<form method="post" action="{{.Path}}/delete" hx-post="{{.Path}}/delete" hx-target="#monitors" hx-push-url="{{.ProjectPath}}"><input type="hidden" name="_csrf" value="{{.CSRF}}">{{button (dict "Label" "Delete monitor" "Variant" "danger" "Confirm" "Really delete?" "Type" "submit")}}</form>
+</div></div>
+<section><h2>Ping URL</h2>{{pingurl .PingBase .PingKey .Slug}}<p class="vk-note">{{.Summary}}</p></section>
+<section><h2>Last 24 hours</h2>{{uptimebar .Cells true "last 24 hours" .Legend}}</section>
+<section><h2>Recent observations</h2>{{if .Observations}}{{range .Observations}}<div class="vk-obs">{{glyph .State ""}}<span title="{{.Abs}}">{{.Clock}}</span><span>{{.Text}}</span><span>{{.Right}}</span></div>{{end}}{{else}}<p class="vk-note">No pings yet. The first request to the ping URL above starts the clock.</p>{{end}}</section>
+<section><h2>Events</h2>{{if .Events}}{{range .Events}}<div class="vk-obs">{{glyph .State ""}}<span title="{{.Abs}}">{{.Ago}}</span><span>{{.Text}}</span><span></span></div>{{end}}{{else}}<p class="vk-note">No state changes yet.</p>{{end}}</section>
+</div>{{else}}<div id="drawer-body" class="vk-drawer__msg">Select a monitor to see its ping URL, history and events. Press <span class="vk-mono">n</span> to create one.</div>{{end}}{{end}}

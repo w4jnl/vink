@@ -1,0 +1,8 @@
+{{define "content"}}<div class="vk-page"><main class="vk-main" id="incidents">{{template "incidents-main" .}}</main></div>{{end}}
+
+{{define "incidents-main"}}<div class="vk-main__head"><h1>Incidents</h1><span class="vk-muted vk-mono" data-down-count="{{.DownCount}}">{{.OpenCount}} open</span></div>
+{{template "incidents-list" .}}{{end}}
+
+{{define "incidents-list"}}<div class="vk-list" id="incident-list" hx-get="{{.ListPath}}" hx-trigger="every 15s [document.visibilityState=='visible']" hx-swap="outerHTML">
+{{if .Rows}}{{range .Rows}}<div class="vk-row vk-row--static">{{glyph .State "vk-row__glyph"}}<span class="vk-row__name"><a class="vk-crumb-link" href="{{.MonitorPath}}">{{.MonitorName}}</a><span class="vk-row__slug">{{.MonitorSlug}}</span></span><span class="vk-row__data vk-row__data--wide{{if .Open}} vk-row__data--down{{end}}" title="{{.OpenedAbs}}">{{.Text}}</span>{{if .CanAck}}<form method="post" action="{{.AckPath}}" hx-post="{{.AckPath}}" hx-target="#incidents"><input type="hidden" name="_csrf" value="{{$.CSRF}}">{{button (dict "Label" "Acknowledge" "Type" "submit")}}</form>{{else if .AckedBy}}<span class="vk-row__data" title="{{.AckedAbs}}">acked by {{.AckedBy}}</span>{{end}}</div>{{end}}{{else}}<div class="vk-drawer__msg">No incidents. An incident opens when a monitor goes down and closes when it comes back up.</div>{{end}}
+</div>{{end}}

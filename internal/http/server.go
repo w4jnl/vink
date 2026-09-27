@@ -19,6 +19,7 @@ import (
 	"github.com/w4jnl/vink/internal/http/api"
 	"github.com/w4jnl/vink/internal/http/middleware"
 	"github.com/w4jnl/vink/internal/http/ping"
+	"github.com/w4jnl/vink/internal/http/web"
 	"github.com/w4jnl/vink/internal/logging"
 	"github.com/w4jnl/vink/internal/service"
 	"github.com/w4jnl/vink/internal/version"
@@ -82,6 +83,11 @@ func Handler(d Deps, withPing bool) http.Handler {
 	}
 	if d.Auth != nil {
 		api.New(d.Svc, d.Auth, logging.Sub(d.Log, "api")).Mount(mux)
+		ui, err := web.New(d.Svc, d.Auth, logging.Sub(d.Log, "web"))
+		if err != nil {
+			panic(fmt.Errorf("web templates: %w", err))
+		}
+		ui.Mount(mux)
 	}
 	mux.HandleFunc("GET /a/{token}", d.ackLink)
 	for _, m := range d.Mount {
