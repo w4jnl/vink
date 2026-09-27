@@ -1,0 +1,87 @@
+# goreleaser v2. `make tools` installs the pinned binary; `goreleaser check`
+# validates this file and `goreleaser release --snapshot --clean` builds
+# locally without publishing.
+version: 2
+project_name: vink
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: vink
+    main: ./cmd/vink
+    binary: vink
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -buildid=
+      - -X github.com/w4jnl/vink/internal/version.Version={{.Version}}
+      - -X github.com/w4jnl/vink/internal/version.Commit={{.ShortCommit}}
+      - -X github.com/w4jnl/vink/internal/version.Date={{.Date}}
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+    ignore:
+      - goos: windows
+        goarch: arm64
+    mod_timestamp: "{{ .CommitTimestamp }}"
+
+archives:
+  - id: default
+    formats: [tar.gz]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    files:
+      - README.md
+      - docs/deploy/vink.service
+      - docs/deploy/vink.toml.example
+
+checksum:
+  name_template: checksums.txt
+
+sboms:
+  - artifacts: archive
+
+dockers:
+  - id: linux-amd64
+    goos: linux
+    goarch: amd64
+    dockerfile: Dockerfile
+    image_templates:
+      - "ghcr.io/w4jnl/vink:{{ .Version }}-amd64"
+    use: buildx
+    build_flag_templates:
+      - --platform=linux/amd64
+  - id: linux-arm64
+    goos: linux
+    goarch: arm64
+    dockerfile: Dockerfile
+    image_templates:
+      - "ghcr.io/w4jnl/vink:{{ .Version }}-arm64"
+    use: buildx
+    build_flag_templates:
+      - --platform=linux/arm64
+
+docker_manifests:
+  - name_template: "ghcr.io/w4jnl/vink:{{ .Version }}"
+    image_templates:
+      - "ghcr.io/w4jnl/vink:{{ .Version }}-amd64"
+      - "ghcr.io/w4jnl/vink:{{ .Version }}-arm64"
+  - name_template: "ghcr.io/w4jnl/vink:latest"
+    image_templates:
+      - "ghcr.io/w4jnl/vink:{{ .Version }}-amd64"
+      - "ghcr.io/w4jnl/vink:{{ .Version }}-arm64"
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"

@@ -1,0 +1,34 @@
+# systemd unit for vink. Install the binary at /usr/local/bin/vink and the
+# config at /etc/vink/vink.toml; the database and secret key live in
+# /var/lib/vink (StateDirectory).
+[Unit]
+Description=vink heartbeat and uptime monitor
+Documentation=https://github.com/w4jnl/vink
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStart=/usr/local/bin/vink serve --config /etc/vink/vink.toml
+Restart=on-failure
+RestartSec=3
+DynamicUser=yes
+StateDirectory=vink
+ConfigurationDirectory=vink
+Environment=VINK_DB_PATH=/var/lib/vink/vink.db
+Environment=VINK_SECRETS_KEY_FILE=/var/lib/vink/secret.key
+# Hardening
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+CapabilityBoundingSet=
+
+[Install]
+WantedBy=multi-user.target

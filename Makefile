@@ -11,7 +11,7 @@ DB         ?= data/vink.db
 SQLC_VERSION        := v1.31.1
 GOLANGCI_VERSION    := v2.14.0
 AIR_VERSION         := v1.67.4
-GORELEASER_VERSION  := v2.14.0
+GORELEASER_VERSION  := v2.18.2
 
 # Prefer the pinned tool in ./bin, fall back to PATH.
 tool = $(shell test -x $(BIN)/$(1) && echo $(BIN)/$(1) || echo $(1))
@@ -20,7 +20,7 @@ GOLANGCI   := $(call tool,golangci-lint)
 AIR        := $(call tool,air)
 GORELEASER := $(call tool,goreleaser)
 
-.PHONY: build dev generate generate-check migrate lint fmt test e2e tools check-tenancy clean
+.PHONY: build dev generate generate-check migrate lint fmt test e2e tools check-tenancy golden release-check clean
 
 build:
 	CGO_ENABLED=0 go build -trimpath -ldflags "$(LDFLAGS)" -o $(BIN)/vink ./cmd/vink
@@ -56,6 +56,12 @@ e2e:
 
 check-tenancy:
 	@scripts/check-tenancy.sh
+
+golden:
+	node internal/http/web/gen_golden.mjs
+
+release-check:
+	$(GORELEASER) check
 
 tools:
 	GOBIN=$(BIN) go install github.com/sqlc-dev/sqlc/cmd/sqlc@$(SQLC_VERSION)

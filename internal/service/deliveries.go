@@ -193,9 +193,6 @@ func (s *Service) TestChannel(ctx context.Context, sc domain.Scope, id string) e
 	if err := requireEdit(sc); err != nil {
 		return err
 	}
-	if s.notifier == nil {
-		return errors.New("no notifier registry configured")
-	}
 	ch, err := s.Channel(ctx, sc, id)
 	if err != nil {
 		return err
@@ -203,6 +200,9 @@ func (s *Service) TestChannel(ctx context.Context, sc domain.Scope, id string) e
 	project, err := s.Project(ctx, sc)
 	if err != nil {
 		return err
+	}
+	if s.notifier == nil {
+		return errors.New("no notifier registry configured")
 	}
 	if org, err := s.OrgByID(ctx, project.OrgID); err == nil {
 		project.OrgSlug = org.Slug

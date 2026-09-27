@@ -1,0 +1,63 @@
+# vink.toml — every key can also be set as VINK_<SECTION>_<KEY>, for example
+# VINK_SERVER_LISTEN. `vink serve --print-config` shows the effective config
+# with secrets redacted. Values shown are the defaults unless noted.
+
+[server]
+listen = ":8080"
+base_url = "http://localhost:8080"     # used in ping URLs, links and cookies; set to your public URL
+trusted_proxies = []                   # CIDRs whose X-Forwarded-For is honoured, e.g. ["10.0.0.0/8"]
+
+[ping]
+listen = ""                            # optional second listener for pings only, e.g. ":8081"
+base_url = ""                          # optional separate hostname for ping URLs
+body_limit = "64KB"
+rate_per_monitor = 10                  # pings per minute
+rate_per_ip = 300
+
+[db]
+path = "vink.db"                       # the systemd unit sets /var/lib/vink/vink.db
+
+[secrets]
+key_file = ""                          # default: secret.key next to the database; created on first run
+
+[retention]
+observations_days = 90
+bodies_days = 14
+
+[log]
+level = "info"                         # debug, info, warn, error
+format = "json"                        # json or text; -d forces debug with colour
+
+[smtp]                                 # needed for smtp channels
+host = ""
+port = 587
+username = ""
+password = ""                          # or "env:VINK_SMTP_PASSWORD"
+from = "vink@example.com"
+tls = "starttls"                       # starttls, tls or none
+
+[outbound]
+proxy = ""                             # http://proxy.corp:3128 for notifiers and http checks
+ca_pem = ""                            # extra CA bundle
+allow_private_targets = true           # false refuses webhooks to loopback, link-local and RFC 1918 targets
+
+[auth.local]
+enabled = true                         # password sign-in; keep on for break-glass even behind a proxy
+
+[auth.proxy]
+enabled = false                        # trusted reverse-proxy identity headers (Authelia, oauth2-proxy, Apache + Kerberos)
+trusted_cidrs = ["127.0.0.1/32", "::1/128"]
+secret_header = "X-Auth-Proxy-Secret"
+secret = "env:VINK_PROXY_SECRET"
+user_header = "Remote-User"
+email_header = "Remote-Email"
+name_header = "Remote-Name"
+groups_header = "Remote-Groups"
+groups_separator = ","
+strip_realm = true
+lowercase = true
+group_pattern = "^vink:(?P<org>[a-z0-9-]+):(?P<role>owner|admin|member|viewer)$"
+instance_admin_group = "vink:admin"
+default_org = ""                       # give every authenticated person viewer in this org
+logout_url = ""
+# group_map = { "CN=Monitoring Admins" = "corp:admin" }
