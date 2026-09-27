@@ -13,6 +13,7 @@ import (
 
 	"github.com/w4jnl/vink/internal/domain"
 	"github.com/w4jnl/vink/internal/logging"
+	"github.com/w4jnl/vink/internal/secrets"
 	"github.com/w4jnl/vink/internal/service"
 )
 
@@ -42,9 +43,14 @@ func (f *serverFlags) withService(cmd *cobra.Command, fn func(*service.Service) 
 	if _, err := dbMigrate(cmd, d, log); err != nil {
 		return err
 	}
+	keyring, err := secrets.Load(cfg.SecretKeyFile())
+	if err != nil {
+		return fmt.Errorf("secrets: %w", err)
+	}
 	svcCfg := service.DefaultConfig()
 	svcCfg.PingBaseURL = cfg.PingBaseURL()
 	svcCfg.BodyLimit = int64(cfg.Ping.BodyLimit)
+	svcCfg.Keyring = keyring
 	return fn(service.New(d, nil, log, svcCfg))
 }
 

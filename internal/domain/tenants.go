@@ -86,6 +86,42 @@ func (k ChannelKind) Valid() bool {
 	return false
 }
 
+// ChannelSecretFields names the config keys that are write-only in API
+// responses: they come back as "***", and "***" on update keeps the
+// stored value.
+var ChannelSecretFields = map[ChannelKind][]string{
+	ChannelSMTP:         {},
+	ChannelWebhook:      {"headers"},
+	ChannelNtfy:         {"token"},
+	ChannelGotify:       {"token"},
+	ChannelMatrix:       {"access_token"},
+	ChannelSlackhook:    {"url"},
+	ChannelAlertmanager: {},
+}
+
+// Validate checks the channel's identity fields; config is checked by the
+// notifier registry.
+func (c *Channel) Validate() error {
+	ve := &ValidationError{}
+	if c.Name == "" {
+		ve.Add("name", "must not be empty")
+	} else if len([]rune(c.Name)) > 64 {
+		ve.Add("name", "at most 64 characters")
+	}
+	if !c.Kind.Valid() {
+		ve.Addf("kind", "unknown channel kind %q", string(c.Kind))
+	}
+	if len(c.Config) == 0 || !json.Valid(c.Config) {
+		ve.Add("config", "must be a JSON object")
+	} else {
+		var probe map[string]any
+		if err := json.Unmarshal(c.Config, &probe); err != nil {
+			ve.Add("config", "must be a JSON object")
+		}
+	}
+	return ve.OrNil()
+}
+
 // Channel is a configured notifier. Config is the decrypted JSON.
 type Channel struct {
 	ID        string

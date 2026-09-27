@@ -9,11 +9,13 @@ import (
 	"testing"
 
 	"github.com/w4jnl/vink/internal/db"
+	"github.com/w4jnl/vink/internal/secrets"
 )
 
 // Open returns a migrated database in a temp directory, closed on cleanup.
 func Open(t testing.TB) *db.DB {
 	t.Helper()
+	secrets.FastParamsForTests()
 	path := filepath.Join(t.TempDir(), "vink.db")
 	d, err := db.Open(context.Background(), path)
 	if err != nil {

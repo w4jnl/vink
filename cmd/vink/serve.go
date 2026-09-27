@@ -9,11 +9,13 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/w4jnl/vink/internal/auth"
 	"github.com/w4jnl/vink/internal/config"
 	"github.com/w4jnl/vink/internal/db"
 	"github.com/w4jnl/vink/internal/engine"
 	vhttp "github.com/w4jnl/vink/internal/http"
 	"github.com/w4jnl/vink/internal/logging"
+	"github.com/w4jnl/vink/internal/secrets"
 	"github.com/w4jnl/vink/internal/service"
 	"github.com/w4jnl/vink/internal/version"
 )
@@ -64,14 +66,23 @@ func runServe(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 		return fmt.Errorf("migrate: %w", err)
 	}
 
+	keyring, err := secrets.Load(cfg.SecretKeyFile())
+	if err != nil {
+		return fmt.Errorf("secrets: %w", err)
+	}
 	bus := engine.NewBus()
 	svcCfg := service.DefaultConfig()
 	svcCfg.PingBaseURL = cfg.PingBaseURL()
 	svcCfg.BodyLimit = int64(cfg.Ping.BodyLimit)
+	svcCfg.Keyring = keyring
 	svc := service.New(d, bus, log, svcCfg)
 	sched := engine.NewScheduler(svc, bus, logging.Sub(log, "scheduler"), nil)
+	authn, err := auth.New(svc, cfg.Auth, cfg.Server.BaseURL, logging.Sub(log, "auth"))
+	if err != nil {
+		return fmt.Errorf("auth: %w", err)
+	}
 
-	deps := vhttp.Deps{Cfg: cfg, Svc: svc, Log: log, Sched: sched}
+	deps := vhttp.Deps{Cfg: cfg, Svc: svc, Auth: authn, Log: log, Sched: sched}
 	withPing := cfg.Ping.Listen == ""
 
 	ctx, cancel := context.WithCancel(ctx)

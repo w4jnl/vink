@@ -1,0 +1,276 @@
+openapi: 3.1.0
+info:
+  title: vink API
+  version: "1"
+  description: |
+    Heartbeat and uptime monitor. Authenticate with `Authorization: Bearer <api key>`;
+    a key is scoped to one project. A browser session may use the same resources under
+    `/api/v1/orgs/{org}/projects/{project}/…` with the `X-CSRF-Token` header on writes.
+    Errors are RFC 7807 `application/problem+json`. Read-only keys get 403 on any non-GET.
+    Every response carries `X-Request-Id`. Rate limit: 600 requests per minute per caller.
+servers:
+  - url: /api/v1
+security:
+  - bearer: []
+components:
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+  schemas:
+    Problem:
+      type: object
+      properties:
+        type: {type: string}
+        title: {type: string}
+        status: {type: integer}
+        detail: {type: string}
+        errors:
+          type: array
+          items: {type: object, properties: {field: {type: string}, msg: {type: string}}}
+    Schedule:
+      type: object
+      description: Exactly one of period or cron.
+      properties:
+        period: {type: string, example: 1h}
+        cron: {type: string, example: "0 3 * * *"}
+    MonitorIn:
+      type: object
+      required: [slug, schedule]
+      properties:
+        slug: {type: string}
+        name: {type: string}
+        kind: {type: string, enum: [heartbeat]}
+        tags: {type: array, items: {type: string}}
+        schedule: {$ref: "#/components/schemas/Schedule"}
+        timezone: {type: string}
+        grace: {type: string, default: 5m}
+        max_runtime: {type: string}
+        failure_threshold: {type: integer, default: 1}
+        recovery_threshold: {type: integer, default: 1}
+        methods: {type: array, items: {type: string, enum: [GET, POST, HEAD, PUT]}}
+        body_limit: {type: integer}
+    Monitor:
+      allOf:
+        - $ref: "#/components/schemas/MonitorIn"
+        - type: object
+          properties:
+            id: {type: string}
+            state: {type: string, enum: [new, up, late, down, paused]}
+            state_since: {type: string, format: date-time}
+            last_obs_at: {type: [string, "null"], format: date-time}
+            last_ok_at: {type: [string, "null"], format: date-time}
+            next_due_at: {type: [string, "null"], format: date-time}
+            expected_at: {type: [string, "null"], format: date-time}
+            paused: {type: boolean}
+            ping_url: {type: string}
+            created_at: {type: string, format: date-time}
+            updated_at: {type: string, format: date-time}
+    Observation:
+      type: object
+      properties:
+        id: {type: string}
+        at: {type: string, format: date-time}
+        source: {type: string}
+        signal: {type: string, enum: [start, ok, fail, log, exit]}
+        ok: {type: boolean}
+        latency_ms: {type: [integer, "null"]}
+        exit_code: {type: [integer, "null"]}
+        duration_ms: {type: [integer, "null"]}
+        run_id: {type: string}
+        remote_addr: {type: string}
+        user_agent: {type: string}
+        has_body: {type: boolean}
+        detail: {type: object}
+    Event:
+      type: object
+      properties:
+        id: {type: string}
+        at: {type: string, format: date-time}
+        from: {type: string}
+        to: {type: string}
+        reason: {type: string}
+        observation_id: {type: string}
+    Incident:
+      type: object
+      properties:
+        id: {type: string}
+        monitor: {type: string}
+        monitor_name: {type: string}
+        opened_at: {type: string, format: date-time}
+        resolved_at: {type: [string, "null"], format: date-time}
+        acked_by: {type: string}
+        acked_at: {type: [string, "null"], format: date-time}
+        open: {type: boolean}
+    ChannelIn:
+      type: object
+      required: [name, kind, config]
+      properties:
+        name: {type: string}
+        kind: {type: string, enum: [smtp, webhook, ntfy, gotify, matrix, slackhook, alertmanager]}
+        config: {type: object, description: Kind-specific; secret fields are returned as "***" and "***" on update keeps the stored value.}
+        enabled: {type: boolean, default: true}
+    Channel:
+      allOf:
+        - $ref: "#/components/schemas/ChannelIn"
+        - type: object
+          properties:
+            id: {type: string}
+            created_at: {type: string, format: date-time}
+            updated_at: {type: string, format: date-time}
+    RouteIn:
+      type: object
+      required: [channel_id]
+      properties:
+        match_tags: {type: array, items: {type: string}, description: All-of; empty matches every monitor.}
+        channel_id: {type: string}
+        on: {type: array, items: {type: string, enum: [down, up, late]}, default: [down, up]}
+        repeat_every: {type: string, description: "0 or empty means never; otherwise at least 5m."}
+        priority: {type: integer}
+    Route:
+      allOf:
+        - $ref: "#/components/schemas/RouteIn"
+        - type: object
+          properties:
+            id: {type: string}
+            channel: {type: string}
+    Key:
+      type: object
+      properties:
+        id: {type: string}
+        name: {type: string}
+        prefix: {type: string}
+        access: {type: string, enum: [ro, rw]}
+        created_at: {type: string, format: date-time}
+        last_used_at: {type: [string, "null"], format: date-time}
+        key: {type: string, description: Plaintext, only in the create response.}
+    Status:
+      type: object
+      properties:
+        counts: {type: object, additionalProperties: {type: integer}}
+        total: {type: integer}
+        open_incidents: {type: array, items: {$ref: "#/components/schemas/Incident"}}
+        oldest_late_since: {type: [string, "null"], format: date-time}
+        monitors: {type: array, items: {type: object}}
+        generated_at: {type: string, format: date-time}
+  parameters:
+    slug: {name: slug, in: path, required: true, schema: {type: string}}
+    id: {name: id, in: path, required: true, schema: {type: string}}
+    limit: {name: limit, in: query, schema: {type: integer, maximum: 200, default: 50}}
+    cursor: {name: cursor, in: query, schema: {type: string}, description: Opaque; take next_cursor from the previous page.}
+paths:
+  /me:
+    get:
+      summary: Caller identity
+      responses: {"200": {description: Key prefix or user, org, project, role.}}
+  /monitors:
+    get:
+      summary: List monitors sorted by name
+      parameters:
+        - {name: tag, in: query, schema: {type: string}}
+        - {name: state, in: query, schema: {type: string}}
+        - {name: kind, in: query, schema: {type: string}}
+        - {name: q, in: query, schema: {type: string}}
+        - $ref: "#/components/parameters/cursor"
+        - $ref: "#/components/parameters/limit"
+      responses: {"200": {description: Page of monitors.}}
+    post:
+      summary: Create a monitor
+      requestBody: {required: true, content: {application/json: {schema: {$ref: "#/components/schemas/MonitorIn"}}}}
+      responses: {"201": {description: Created, with Location.}, "409": {description: Slug exists.}, "422": {description: Validation failed.}}
+  /monitors/{slug}:
+    parameters: [{$ref: "#/components/parameters/slug"}]
+    get:
+      summary: Get a monitor with state, next due time and ping URL
+      responses: {"200": {description: The monitor.}, "404": {description: Unknown, or in another project.}}
+    put:
+      summary: Replace a monitor (slug and kind are immutable)
+      requestBody: {required: true, content: {application/json: {schema: {$ref: "#/components/schemas/MonitorIn"}}}}
+      responses: {"200": {description: Updated.}}
+    patch:
+      summary: Merge top-level fields into a monitor
+      requestBody: {required: true, content: {application/json: {schema: {$ref: "#/components/schemas/MonitorIn"}}}}
+      responses: {"200": {description: Updated.}}
+    delete:
+      summary: Delete a monitor and its history
+      responses: {"204": {description: Deleted.}}
+  /monitors/{slug}/pause:
+    parameters: [{$ref: "#/components/parameters/slug"}]
+    post: {summary: Pause, responses: {"200": {description: The monitor.}}}
+  /monitors/{slug}/resume:
+    parameters: [{$ref: "#/components/parameters/slug"}]
+    post: {summary: Resume with a fresh deadline, responses: {"200": {description: The monitor.}}}
+  /monitors/{slug}/observations:
+    parameters: [{$ref: "#/components/parameters/slug"}]
+    get:
+      summary: Observations, newest first
+      parameters:
+        - {name: since, in: query, schema: {type: string}, description: RFC 3339 or Unix seconds.}
+        - {name: until, in: query, schema: {type: string}}
+        - $ref: "#/components/parameters/cursor"
+        - $ref: "#/components/parameters/limit"
+      responses: {"200": {description: Page of observations.}}
+  /monitors/{slug}/observations/{id}:
+    parameters: [{$ref: "#/components/parameters/slug"}, {$ref: "#/components/parameters/id"}]
+    get:
+      summary: One observation; ?body=1 returns the stored body as text
+      parameters: [{name: body, in: query, schema: {type: string, enum: ["1"]}}]
+      responses: {"200": {description: The observation, or its body.}}
+  /monitors/{slug}/events:
+    parameters: [{$ref: "#/components/parameters/slug"}]
+    get:
+      summary: State flips, newest first
+      parameters: [{$ref: "#/components/parameters/limit"}]
+      responses: {"200": {description: Events.}}
+  /incidents:
+    get:
+      summary: Incidents, open first
+      parameters: [{name: open, in: query, schema: {type: string, enum: ["1"]}}, {$ref: "#/components/parameters/limit"}]
+      responses: {"200": {description: Incidents.}}
+  /incidents/{id}:
+    parameters: [{$ref: "#/components/parameters/id"}]
+    get: {summary: One incident, responses: {"200": {description: The incident.}}}
+  /incidents/{id}/ack:
+    parameters: [{$ref: "#/components/parameters/id"}]
+    post: {summary: Acknowledge an open incident (silences repeats), responses: {"200": {description: The incident.}, "409": {description: Already resolved.}}}
+  /channels:
+    get: {summary: List channels, responses: {"200": {description: Channels with secrets redacted.}}}
+    post:
+      summary: Create a channel (the first one also gets a default catch-all route)
+      requestBody: {required: true, content: {application/json: {schema: {$ref: "#/components/schemas/ChannelIn"}}}}
+      responses: {"201": {description: Created.}}
+  /channels/{id}:
+    parameters: [{$ref: "#/components/parameters/id"}]
+    get: {summary: One channel, responses: {"200": {description: The channel.}}}
+    put:
+      summary: Replace a channel
+      requestBody: {required: true, content: {application/json: {schema: {$ref: "#/components/schemas/ChannelIn"}}}}
+      responses: {"200": {description: Updated.}}
+    delete: {summary: Delete a channel and its routes, responses: {"204": {description: Deleted.}}}
+  /routes:
+    get: {summary: List routes by priority, responses: {"200": {description: Routes.}}}
+    post:
+      summary: Create a route
+      requestBody: {required: true, content: {application/json: {schema: {$ref: "#/components/schemas/RouteIn"}}}}
+      responses: {"201": {description: Created.}}
+  /routes/{id}:
+    parameters: [{$ref: "#/components/parameters/id"}]
+    get: {summary: One route, responses: {"200": {description: The route.}}}
+    put:
+      summary: Replace a route
+      requestBody: {required: true, content: {application/json: {schema: {$ref: "#/components/schemas/RouteIn"}}}}
+      responses: {"200": {description: Updated.}}
+    delete: {summary: Delete a route, responses: {"204": {description: Deleted.}}}
+  /keys:
+    get: {summary: List API keys (rw keys only), responses: {"200": {description: Keys.}}}
+    post:
+      summary: Create an API key; the plaintext is returned once
+      requestBody: {required: true, content: {application/json: {schema: {type: object, properties: {name: {type: string}, access: {type: string, enum: [ro, rw]}}}}}}
+      responses: {"201": {description: Created.}}
+  /keys/{id}:
+    parameters: [{$ref: "#/components/parameters/id"}]
+    delete: {summary: Revoke a key, responses: {"204": {description: Revoked.}}}
+  /ping-key/rotate:
+    post: {summary: Rotate the project ping key; the old key stays valid for the configured grace, responses: {"200": {description: The new key.}}}
+  /status:
+    get: {summary: Project summary: counts per state, open incidents, oldest late, responses: {"200": {description: Summary.}}}

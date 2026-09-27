@@ -1,0 +1,506 @@
+package api
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"io"
+	"log/slog"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/w4jnl/vink/internal/auth"
+	"github.com/w4jnl/vink/internal/config"
+	"github.com/w4jnl/vink/internal/db/dbtest"
+	"github.com/w4jnl/vink/internal/domain"
+	"github.com/w4jnl/vink/internal/http/middleware"
+	"github.com/w4jnl/vink/internal/service"
+)
+
+type env struct {
+	t       *testing.T
+	svc     *service.Service
+	authn   *auth.Authenticator
+	srv     http.Handler
+	org     *domain.Org
+	project *domain.Project
+	other   *domain.Project // same org, second project
+	foreign *domain.Project // another org
+	rw, ro  string
+	cookie  *http.Cookie
+	csrf    string
+	now     time.Time
+}
+
+func newEnv(t *testing.T) *env {
+	t.Helper()
+	d := dbtest.Open(t)
+	quiet := slog.New(slog.NewTextHandler(io.Discard, nil))
+	svc := service.New(d, nil, quiet, service.DefaultConfig())
+	e := &env{t: t, svc: svc, now: time.Date(2026, 9, 27, 12, 0, 0, 0, time.UTC)}
+	svc.SetClock(func() time.Time { return e.now })
+	ctx := context.Background()
+	admin := domain.Scope{InstanceAdmin: true, Role: domain.RoleOwner}
+	var err error
+	e.org, err = svc.CreateOrg(ctx, admin, "homelab", "Homelab")
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.project, _ = svc.CreateProject(ctx, admin, e.org.ID, "prod", "Production", "Europe/Amsterdam")
+	e.other, _ = svc.CreateProject(ctx, admin, e.org.ID, "lab", "Lab", "UTC")
+	forg, _ := svc.CreateOrg(ctx, admin, "acme", "Acme")
+	e.foreign, _ = svc.CreateProject(ctx, admin, forg.ID, "prod", "Acme prod", "UTC")
+	psc := domain.Scope{OrgID: e.org.ID, ProjectID: e.project.ID, Role: domain.RoleAdmin, Actor: "test"}
+	_, e.rw, _ = svc.CreateAPIKey(ctx, psc, "rw", domain.AccessRW)
+	_, e.ro, _ = svc.CreateAPIKey(ctx, psc, "ro", domain.AccessRO)
+	user, _ := svc.CreateLocalUser(ctx, admin, "j", "j@example.com", "J", "correct horse", false)
+	_ = svc.SetMembership(ctx, admin, user.ID, e.org.ID, domain.RoleMember)
+
+	e.authn, err = auth.New(svc, config.Default().Auth, "http://localhost:8080", quiet)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mux := http.NewServeMux()
+	New(svc, e.authn, quiet).Mount(mux)
+	e.srv = middleware.Chain(mux, middleware.RequestID)
+
+	rec := httptest.NewRecorder()
+	p, err := e.authn.Login(rec, httptest.NewRequest("POST", "/login", nil), "j", "correct horse")
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.cookie = rec.Result().Cookies()[0]
+	e.csrf = p.CSRF()
+	return e
+}
+
+type resp struct {
+	code int
+	body []byte
+	hdr  http.Header
+}
+
+func (r resp) json(t *testing.T, v any) {
+	t.Helper()
+	if err := json.Unmarshal(r.body, v); err != nil {
+		t.Fatalf("not JSON (%d): %s", r.code, r.body)
+	}
+}
+
+func (e *env) key(token, method, path string, body any) resp {
+	return e.do(method, Prefix+path, body, func(r *http.Request) { r.Header.Set("Authorization", "Bearer "+token) })
+}
+
+func (e *env) session(method, path string, body any, withCSRF bool) resp {
+	return e.do(method, Prefix+"/orgs/homelab/projects/prod"+path, body, func(r *http.Request) {
+		r.AddCookie(e.cookie)
+		if withCSRF {
+			r.Header.Set(auth.CSRFHeader, e.csrf)
+		}
+	})
+}
+
+func (e *env) do(method, path string, body any, mutate func(*http.Request)) resp {
+	e.t.Helper()
+	var rdr io.Reader
+	if body != nil {
+		switch b := body.(type) {
+		case string:
+			rdr = strings.NewReader(b)
+		default:
+			raw, _ := json.Marshal(b)
+			rdr = bytes.NewReader(raw)
+		}
+	}
+	req := httptest.NewRequest(method, path, rdr)
+	req.RemoteAddr = "203.0.113.9:1"
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	if mutate != nil {
+		mutate(req)
+	}
+	rec := httptest.NewRecorder()
+	e.srv.ServeHTTP(rec, req)
+	return resp{code: rec.Code, body: rec.Body.Bytes(), hdr: rec.Header()}
+}
+
+func (e *env) createMonitor(slug string) MonitorOut {
+	e.t.Helper()
+	r := e.key(e.rw, "POST", "/monitors", map[string]any{"slug": slug, "name": "Job " + slug, "schedule": map[string]string{"period": "1h"}, "grace": "5m", "tags": []string{"prod"}})
+	if r.code != 201 {
+		e.t.Fatalf("create monitor: %d %s", r.code, r.body)
+	}
+	var out MonitorOut
+	r.json(e.t, &out)
+	return out
+}
+
+func TestAuthAndProblems(t *testing.T) {
+	e := newEnv(t)
+	// no credentials
+	r := e.do("GET", Prefix+"/monitors", nil, nil)
+	if r.code != 401 || r.hdr.Get("Content-Type") != "application/problem+json" || r.hdr.Get("WWW-Authenticate") == "" {
+		t.Fatalf("anonymous: %d %s %v", r.code, r.body, r.hdr)
+	}
+	var p Problem
+	r.json(t, &p)
+	if p.Status != 401 || !strings.HasSuffix(p.Type, "#unauthorized") || p.Title == "" {
+		t.Errorf("problem: %+v", p)
+	}
+	// bad key
+	if r := e.key("vk_nope", "GET", "/monitors", nil); r.code != 401 {
+		t.Errorf("bad key: %d", r.code)
+	}
+	// ro key cannot write
+	r = e.key(e.ro, "POST", "/monitors", map[string]any{"slug": "x"})
+	if r.code != 403 {
+		t.Errorf("ro write: %d %s", r.code, r.body)
+	}
+	// session on the bare path is refused
+	if r := e.do("GET", Prefix+"/monitors", nil, func(r *http.Request) { r.AddCookie(e.cookie) }); r.code != 401 {
+		t.Errorf("session on bare path: %d", r.code)
+	}
+	// session write without CSRF
+	if r := e.session("POST", "/monitors", map[string]any{"slug": "x"}, false); r.code != 403 {
+		t.Errorf("session without csrf: %d %s", r.code, r.body)
+	}
+	// unknown route is a JSON 404
+	r = e.key(e.rw, "GET", "/nope", nil)
+	if r.code != 404 || r.hdr.Get("Content-Type") != "application/problem+json" {
+		t.Errorf("unknown route: %d %s", r.code, r.hdr.Get("Content-Type"))
+	}
+	// malformed JSON and unknown fields
+	if r := e.key(e.rw, "POST", "/monitors", "{not json"); r.code != 400 {
+		t.Errorf("malformed: %d", r.code)
+	}
+	if r := e.key(e.rw, "POST", "/monitors", map[string]any{"slug": "x", "schedule": map[string]string{"period": "1h"}, "colour": "red"}); r.code != 400 {
+		t.Errorf("unknown field: %d %s", r.code, r.body)
+	}
+	// validation
+	r = e.key(e.rw, "POST", "/monitors", map[string]any{"slug": "Bad Slug", "schedule": map[string]string{"period": "10s"}, "grace": "1s"})
+	if r.code != 422 {
+		t.Fatalf("validation: %d %s", r.code, r.body)
+	}
+	r.json(t, &p)
+	fields := map[string]bool{}
+	for _, fe := range p.Errors {
+		fields[fe.Field] = true
+	}
+	if !fields["slug"] || !fields["schedule"] || !fields["grace"] {
+		t.Errorf("validation fields: %+v", p.Errors)
+	}
+	// openapi is served
+	if r := e.do("GET", Prefix+"/openapi.yaml", nil, nil); r.code != 200 || !bytes.Contains(r.body, []byte("openapi: 3.1.0")) {
+		t.Errorf("openapi: %d", r.code)
+	}
+	if r := e.key(e.rw, "GET", "/monitors", nil); r.hdr.Get("X-Content-Type-Options") != "nosniff" || r.hdr.Get("Cache-Control") != "no-store" {
+		t.Errorf("security headers: %v", r.hdr)
+	}
+}
+
+func TestMe(t *testing.T) {
+	e := newEnv(t)
+	var me meOut
+	r := e.key(e.rw, "GET", "/me", nil)
+	r.json(t, &me)
+	if me.Kind != "key" || me.Key.Access != domain.AccessRW || me.Project.Slug != "prod" || me.Org.Slug != "homelab" || me.Role != domain.RoleAdmin || me.Project.PingKey == "" {
+		t.Errorf("key me: %+v", me)
+	}
+	r = e.key(e.ro, "GET", "/me", nil)
+	me = meOut{}
+	r.json(t, &me)
+	if me.Project.PingKey != "" || me.Role != domain.RoleViewer {
+		t.Errorf("ro me must not see the ping key: %+v", me)
+	}
+	// session me on the bare path: identity without project
+	r = e.do("GET", Prefix+"/me", nil, func(r *http.Request) { r.AddCookie(e.cookie) })
+	if r.code != 200 {
+		t.Fatalf("session me: %d %s", r.code, r.body)
+	}
+	me = meOut{}
+	r.json(t, &me)
+	if me.Kind != "user" || me.User.Subject != "j" || len(me.Memberships) != 1 || me.Project != nil {
+		t.Errorf("session me: %+v", me)
+	}
+	// session me on the project path
+	r = e.session("GET", "/me", nil, false)
+	me = meOut{}
+	r.json(t, &me)
+	if me.Project == nil || me.Project.Slug != "prod" || me.Role != domain.RoleMember {
+		t.Errorf("session project me: %+v", me)
+	}
+}
+
+func TestMonitorsCRUD(t *testing.T) {
+	e := newEnv(t)
+	m := e.createMonitor("nightly")
+	if m.State != domain.StateNew || m.Grace.String() != "5m" || m.PingURL == "" || m.ExpectedAt == nil || m.Schedule.Period.String() != "1h" {
+		t.Fatalf("created: %+v", m)
+	}
+	// duplicate
+	if r := e.key(e.rw, "POST", "/monitors", map[string]any{"slug": "nightly", "schedule": map[string]string{"period": "1h"}}); r.code != 409 {
+		t.Errorf("duplicate: %d", r.code)
+	}
+	// name-only create derives the slug
+	r := e.key(e.rw, "POST", "/monitors", map[string]any{"name": "Weekly Restic Check", "schedule": map[string]string{"cron": "0 4 * * sun"}, "timezone": "Europe/Amsterdam"})
+	if r.code != 201 || r.hdr.Get("Location") != Prefix+"/monitors/weekly-restic-check" {
+		t.Fatalf("name-only create: %d %s %s", r.code, r.body, r.hdr.Get("Location"))
+	}
+	// get, ro key sees no ping url
+	r = e.key(e.ro, "GET", "/monitors/nightly", nil)
+	var got MonitorOut
+	r.json(t, &got)
+	if got.PingURL != "" || got.Slug != "nightly" {
+		t.Errorf("ro get: %+v", got)
+	}
+	// session get sees it (member)
+	r = e.session("GET", "/monitors/nightly", nil, false)
+	r.json(t, &got)
+	if r.code != 200 || got.PingURL == "" {
+		t.Errorf("session get: %d %+v", r.code, got)
+	}
+	// list with filters and pagination
+	r = e.key(e.rw, "GET", "/monitors?limit=1", nil)
+	var pg page[MonitorOut]
+	r.json(t, &pg)
+	if len(pg.Items) != 1 || pg.NextCursor == nil || pg.Items[0].Slug != "nightly" {
+		t.Fatalf("page 1: %+v", pg)
+	}
+	r = e.key(e.rw, "GET", "/monitors?limit=1&cursor="+*pg.NextCursor, nil)
+	r.json(t, &pg)
+	if len(pg.Items) != 1 || pg.Items[0].Slug != "weekly-restic-check" || pg.NextCursor != nil {
+		t.Fatalf("page 2: %+v", pg)
+	}
+	r = e.key(e.rw, "GET", "/monitors?tag=prod", nil)
+	r.json(t, &pg)
+	if len(pg.Items) != 1 {
+		t.Errorf("tag filter: %d", len(pg.Items))
+	}
+	if r := e.key(e.rw, "GET", "/monitors?state=bogus", nil); r.code != 400 {
+		t.Errorf("bad state filter: %d", r.code)
+	}
+	if r := e.key(e.rw, "GET", "/monitors?cursor=!!!", nil); r.code != 400 {
+		t.Errorf("bad cursor: %d", r.code)
+	}
+	// put replaces, patch merges
+	r = e.key(e.rw, "PUT", "/monitors/nightly", map[string]any{"slug": "nightly", "name": "Nightly backup", "schedule": map[string]string{"cron": "0 3 * * *"}, "grace": "30m", "tags": []string{"backup"}})
+	r.json(t, &got)
+	if r.code != 200 || got.Name != "Nightly backup" || got.Schedule.Cron != "0 3 * * *" || got.Grace.String() != "30m" {
+		t.Fatalf("put: %d %+v", r.code, got)
+	}
+	r = e.key(e.rw, "PATCH", "/monitors/nightly", map[string]any{"grace": "45m"})
+	r.json(t, &got)
+	if r.code != 200 || got.Grace.String() != "45m" || got.Schedule.Cron != "0 3 * * *" || got.Name != "Nightly backup" {
+		t.Fatalf("patch: %d %+v", r.code, got)
+	}
+	if r := e.key(e.rw, "PUT", "/monitors/nightly", map[string]any{"slug": "renamed", "schedule": map[string]string{"period": "1h"}}); r.code != 422 {
+		t.Errorf("slug change: %d", r.code)
+	}
+	// pause / resume via session with CSRF
+	r = e.session("POST", "/monitors/nightly/pause", nil, true)
+	r.json(t, &got)
+	if r.code != 200 || got.State != domain.StatePaused || !got.Paused {
+		t.Fatalf("pause: %d %+v", r.code, got)
+	}
+	r = e.session("POST", "/monitors/nightly/resume", nil, true)
+	r.json(t, &got)
+	if got.State != domain.StateNew || got.Paused {
+		t.Fatalf("resume: %+v", got)
+	}
+	// delete
+	if r := e.key(e.rw, "DELETE", "/monitors/nightly", nil); r.code != 204 {
+		t.Errorf("delete: %d", r.code)
+	}
+	if r := e.key(e.rw, "GET", "/monitors/nightly", nil); r.code != 404 {
+		t.Errorf("after delete: %d", r.code)
+	}
+}
+
+func TestCrossTenantIs404(t *testing.T) {
+	e := newEnv(t)
+	e.createMonitor("nightly")
+	// a key of another project of the same org
+	ctx := context.Background()
+	osc := domain.Scope{OrgID: e.org.ID, ProjectID: e.other.ID, Role: domain.RoleAdmin}
+	_, otherKey, _ := e.svc.CreateAPIKey(ctx, osc, "other", domain.AccessRW)
+	if r := e.key(otherKey, "GET", "/monitors/nightly", nil); r.code != 404 {
+		t.Errorf("other project key: %d", r.code)
+	}
+	if r := e.key(otherKey, "DELETE", "/monitors/nightly", nil); r.code != 404 {
+		t.Errorf("other project delete: %d", r.code)
+	}
+	// a session user with no role in the foreign org
+	r := e.do("GET", Prefix+"/orgs/acme/projects/prod/monitors", nil, func(r *http.Request) { r.AddCookie(e.cookie) })
+	if r.code != 404 {
+		t.Errorf("foreign org via session: %d %s", r.code, r.body)
+	}
+	r = e.do("GET", Prefix+"/orgs/nope/projects/prod/monitors", nil, func(r *http.Request) { r.AddCookie(e.cookie) })
+	if r.code != 404 {
+		t.Errorf("unknown org: %d", r.code)
+	}
+}
+
+func TestObservationsEventsIncidentsStatus(t *testing.T) {
+	e := newEnv(t)
+	m := e.createMonitor("job")
+	ctx := context.Background()
+	tgt, _ := e.svc.ResolvePing(ctx, e.project.PingKey, "job", "", false)
+	if _, _, err := e.svc.RecordPing(ctx, tgt, service.PingObservation{Signal: domain.SignalOK, Body: []byte("done\n"), ContentType: "text/plain", Msg: "hi"}); err != nil {
+		t.Fatal(err)
+	}
+	e.now = e.now.Add(66 * time.Minute)
+	if err := e.svc.Tick(ctx, m.ID, e.now); err != nil {
+		t.Fatal(err)
+	}
+	r := e.key(e.rw, "GET", "/monitors/job/observations", nil)
+	var obs page[ObservationOut]
+	r.json(t, &obs)
+	if len(obs.Items) != 1 || !obs.Items[0].HasBody || obs.Items[0].Detail["msg"] != "hi" {
+		t.Fatalf("observations: %+v", obs)
+	}
+	r = e.key(e.rw, "GET", "/monitors/job/observations/"+obs.Items[0].ID+"?body=1", nil)
+	if r.code != 200 || string(r.body) != "done\n" || !strings.HasPrefix(r.hdr.Get("Content-Type"), "text/plain") || r.hdr.Get("X-Content-Type-Options") != "nosniff" {
+		t.Fatalf("body: %d %q %v", r.code, r.body, r.hdr)
+	}
+	if r := e.key(e.rw, "GET", "/monitors/job/observations?since=not-a-time", nil); r.code != 400 {
+		t.Errorf("bad since: %d", r.code)
+	}
+	r = e.key(e.rw, "GET", "/monitors/job/events", nil)
+	var ev page[EventOut]
+	r.json(t, &ev)
+	if len(ev.Items) != 2 || ev.Items[0].To != domain.StateDown || ev.Items[1].To != domain.StateUp {
+		t.Fatalf("events: %+v", ev.Items)
+	}
+	r = e.key(e.rw, "GET", "/incidents?open=1", nil)
+	var inc page[IncidentOut]
+	r.json(t, &inc)
+	if len(inc.Items) != 1 || !inc.Items[0].Open || inc.Items[0].Monitor != "job" {
+		t.Fatalf("incidents: %+v", inc.Items)
+	}
+	if r := e.key(e.ro, "POST", "/incidents/"+inc.Items[0].ID+"/ack", nil); r.code != 403 {
+		t.Errorf("ro ack: %d", r.code)
+	}
+	r = e.session("POST", "/incidents/"+inc.Items[0].ID+"/ack", nil, true)
+	var one IncidentOut
+	r.json(t, &one)
+	if r.code != 200 || one.AckedAt == nil || one.AckedBy != "user:j" {
+		t.Fatalf("ack: %d %+v", r.code, one)
+	}
+	r = e.key(e.rw, "GET", "/status", nil)
+	var st StatusOut
+	r.json(t, &st)
+	if st.Counts[domain.StateDown] != 1 || st.Total != 1 || len(st.OpenIncidents) != 1 || len(st.Monitors) != 1 {
+		t.Fatalf("status: %+v", st)
+	}
+}
+
+func TestChannelsRoutesKeysPingKey(t *testing.T) {
+	e := newEnv(t)
+	r := e.key(e.rw, "POST", "/channels", map[string]any{"name": "ntfy", "kind": "ntfy", "config": map[string]any{"url": "https://ntfy.example.com", "topic": "vink", "token": "tk_secret"}})
+	if r.code != 201 {
+		t.Fatalf("create channel: %d %s", r.code, r.body)
+	}
+	var ch ChannelOut
+	r.json(t, &ch)
+	var cfg map[string]any
+	_ = json.Unmarshal(ch.Config, &cfg)
+	if cfg["token"] != "***" || cfg["topic"] != "vink" || !ch.Enabled {
+		t.Fatalf("redaction: %+v", cfg)
+	}
+	// first channel got a default route
+	r = e.key(e.rw, "GET", "/routes", nil)
+	var routes page[RouteOut]
+	r.json(t, &routes)
+	if len(routes.Items) != 1 || routes.Items[0].ChannelID != ch.ID || len(routes.Items[0].On) != 2 || len(routes.Items[0].MatchTags) != 0 {
+		t.Fatalf("default route: %+v", routes.Items)
+	}
+	// update with *** keeps the token
+	r = e.key(e.rw, "PUT", "/channels/"+ch.ID, map[string]any{"name": "ntfy", "kind": "ntfy", "config": map[string]any{"url": "https://ntfy.example.com", "topic": "alerts", "token": "***"}, "enabled": false})
+	if r.code != 200 {
+		t.Fatalf("update channel: %d %s", r.code, r.body)
+	}
+	stored, err := e.svc.Channel(context.Background(), domain.Scope{OrgID: e.org.ID, ProjectID: e.project.ID, Role: domain.RoleAdmin}, ch.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = json.Unmarshal(stored.Config, &cfg)
+	if cfg["token"] != "tk_secret" || cfg["topic"] != "alerts" || stored.Enabled {
+		t.Fatalf("stored after update: %+v enabled=%v", cfg, stored.Enabled)
+	}
+	if r := e.key(e.rw, "POST", "/channels", map[string]any{"name": "bad", "kind": "carrier-pigeon", "config": map[string]any{}}); r.code != 422 {
+		t.Errorf("bad kind: %d", r.code)
+	}
+	// routes
+	r = e.key(e.rw, "POST", "/routes", map[string]any{"match_tags": []string{"prod"}, "channel_id": ch.ID, "on": []string{"down", "late"}, "repeat_every": "4h", "priority": 5})
+	if r.code != 201 {
+		t.Fatalf("create route: %d %s", r.code, r.body)
+	}
+	var rt RouteOut
+	r.json(t, &rt)
+	if rt.Channel != "ntfy" || rt.RepeatEvery.String() != "4h" || rt.Priority != 5 {
+		t.Fatalf("route: %+v", rt)
+	}
+	if r := e.key(e.rw, "POST", "/routes", map[string]any{"channel_id": "nope"}); r.code != 422 {
+		t.Errorf("route with unknown channel: %d", r.code)
+	}
+	if r := e.key(e.rw, "POST", "/routes", map[string]any{"channel_id": ch.ID, "repeat_every": "1m"}); r.code != 422 {
+		t.Errorf("route repeat too short: %d", r.code)
+	}
+	r = e.key(e.rw, "PUT", "/routes/"+rt.ID, map[string]any{"channel_id": ch.ID, "on": []string{"up"}})
+	r.json(t, &rt)
+	if r.code != 200 || len(rt.On) != 1 || rt.On[0] != domain.StateUp {
+		t.Fatalf("update route: %d %+v", r.code, rt)
+	}
+	if r := e.key(e.rw, "DELETE", "/routes/"+rt.ID, nil); r.code != 204 {
+		t.Errorf("delete route: %d", r.code)
+	}
+	if r := e.key(e.rw, "DELETE", "/channels/"+ch.ID, nil); r.code != 204 {
+		t.Errorf("delete channel: %d", r.code)
+	}
+	r = e.key(e.rw, "GET", "/routes", nil)
+	r.json(t, &routes)
+	if len(routes.Items) != 0 {
+		t.Errorf("routes must cascade with the channel: %+v", routes.Items)
+	}
+
+	// keys: ro cannot list; rw creates; plaintext once
+	if r := e.key(e.ro, "GET", "/keys", nil); r.code != 403 {
+		t.Errorf("ro listing keys: %d", r.code)
+	}
+	r = e.key(e.rw, "POST", "/keys", map[string]any{"name": "ci", "access": "ro"})
+	var k KeyOut
+	r.json(t, &k)
+	if r.code != 201 || !strings.HasPrefix(k.Key, "vk_") || k.Access != domain.AccessRO {
+		t.Fatalf("create key: %d %+v", r.code, k)
+	}
+	r = e.key(e.rw, "GET", "/keys", nil)
+	var keys page[KeyOut]
+	r.json(t, &keys)
+	if len(keys.Items) != 3 || keys.Items[0].Key != "" {
+		t.Errorf("list keys: %+v", keys.Items)
+	}
+	if r := e.key(e.rw, "DELETE", "/keys/"+k.ID, nil); r.code != 204 {
+		t.Errorf("revoke: %d", r.code)
+	}
+	if r := e.key(k.Key, "GET", "/monitors", nil); r.code != 401 {
+		t.Errorf("revoked key: %d", r.code)
+	}
+	// session member cannot create rw keys
+	if r := e.session("POST", "/keys", map[string]any{"name": "x", "access": "rw"}, true); r.code != 403 {
+		t.Errorf("member creating rw key: %d", r.code)
+	}
+	// ping key rotate: member forbidden, rw key allowed
+	if r := e.session("POST", "/ping-key/rotate", nil, true); r.code != 403 {
+		t.Errorf("member rotate: %d", r.code)
+	}
+	r = e.key(e.rw, "POST", "/ping-key/rotate", nil)
+	var rot map[string]any
+	r.json(t, &rot)
+	if r.code != 200 || rot["ping_key"] == e.project.PingKey || rot["previous_key_valid_until"] == nil {
+		t.Fatalf("rotate: %d %v", r.code, rot)
+	}
+}

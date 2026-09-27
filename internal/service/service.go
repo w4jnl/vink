@@ -16,6 +16,7 @@ import (
 	"github.com/w4jnl/vink/internal/db"
 	"github.com/w4jnl/vink/internal/domain"
 	"github.com/w4jnl/vink/internal/engine"
+	"github.com/w4jnl/vink/internal/secrets"
 )
 
 // Config carries the instance settings the service needs.
@@ -29,6 +30,9 @@ type Config struct {
 	AutoCreateGrace  domain.Duration
 	// PingKeyGrace is how long a rotated ping key keeps working.
 	PingKeyGrace time.Duration
+	// Keyring encrypts channel configs. nil means an ephemeral key, which
+	// is only acceptable in tests.
+	Keyring *secrets.Keyring
 }
 
 // DefaultConfig returns the design document's defaults.
@@ -50,6 +54,10 @@ type Service struct {
 	cfg      Config
 	now      func() time.Time
 	keyCache keyCache
+	keyring  *secrets.Keyring
+	// validateChannel is set by the notifier registry; nil accepts any
+	// JSON object.
+	validateChannel func(kind domain.ChannelKind, cfg []byte) error
 }
 
 // New wires a service. The clock is time.Now unless SetClock is called.
@@ -60,8 +68,24 @@ func New(d *db.DB, bus *engine.Bus, log *slog.Logger, cfg Config) *Service {
 	if bus == nil {
 		bus = engine.NewBus()
 	}
-	return &Service{db: d, bus: bus, log: log, cfg: cfg, now: func() time.Time { return time.Now().UTC() }}
+	s := &Service{db: d, bus: bus, log: log, cfg: cfg, now: func() time.Time { return time.Now().UTC() }, keyring: cfg.Keyring}
+	if s.keyring == nil {
+		var key [32]byte
+		if _, err := rand.Read(key[:]); err != nil {
+			panic(fmt.Errorf("crypto/rand: %w", err))
+		}
+		s.keyring, _ = secrets.FromBytes(key[:])
+	}
+	return s
 }
+
+// SetChannelValidator installs the notifier registry's config check.
+func (s *Service) SetChannelValidator(fn func(kind domain.ChannelKind, cfg []byte) error) {
+	s.validateChannel = fn
+}
+
+// Keyring returns the instance key, for signed links.
+func (s *Service) Keyring() *secrets.Keyring { return s.keyring }
 
 // SetClock replaces the clock, for tests.
 func (s *Service) SetClock(now func() time.Time) { s.now = now }

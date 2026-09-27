@@ -133,13 +133,24 @@ func (k *Keyring) Verify(purpose, token string, now time.Time) (string, error) {
 }
 
 // argon2id parameters from the design document: t=2, m=64MB, p=1.
-const (
-	argonTime    = 2
-	argonMemory  = 64 * 1024
-	argonThreads = 1
-	argonKeyLen  = 32
-	saltLen      = 16
+// They are variables only so tests can shrink them; see FastParamsForTests.
+var (
+	argonTime    uint32 = 2
+	argonMemory  uint32 = 64 * 1024
+	argonThreads uint8  = 1
 )
+
+const (
+	argonKeyLen = 32
+	saltLen     = 16
+)
+
+// FastParamsForTests lowers the argon2 cost so test suites that create
+// many users and keys stay quick. Hashes made with it are still valid
+// PHC strings; VerifyPassword reads the parameters from the hash.
+func FastParamsForTests() {
+	argonTime, argonMemory, argonThreads = 1, 8*1024, 1
+}
 
 // HashPassword returns a PHC-format argon2id hash.
 func HashPassword(password string) (string, error) {

@@ -12,10 +12,13 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/w4jnl/vink/internal/auth"
 	"github.com/w4jnl/vink/internal/config"
 	"github.com/w4jnl/vink/internal/engine"
+	"github.com/w4jnl/vink/internal/http/api"
 	"github.com/w4jnl/vink/internal/http/middleware"
 	"github.com/w4jnl/vink/internal/http/ping"
+	"github.com/w4jnl/vink/internal/logging"
 	"github.com/w4jnl/vink/internal/service"
 	"github.com/w4jnl/vink/internal/version"
 )
@@ -24,6 +27,7 @@ import (
 type Deps struct {
 	Cfg   *config.Config
 	Svc   *service.Service
+	Auth  *auth.Authenticator
 	Log   *slog.Logger
 	Sched *engine.Scheduler
 	// Mount lets later packages (api, web) register on the main mux.
@@ -74,6 +78,9 @@ func Handler(d Deps, withPing bool) http.Handler {
 	})
 	if withPing {
 		mux.Handle("/ping/", pingMux(d))
+	}
+	if d.Auth != nil {
+		api.New(d.Svc, d.Auth, logging.Sub(d.Log, "api")).Mount(mux)
 	}
 	for _, m := range d.Mount {
 		m(mux)
