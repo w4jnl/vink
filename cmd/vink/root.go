@@ -29,7 +29,9 @@ func newRootCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			logger := logging.New(logging.Options{Debug: g.debug, Color: mode, Out: cmd.ErrOrStderr()})
+			// Client and admin commands print results, not logs: warn unless -d.
+			// serve replaces this with the configured level.
+			logger := logging.New(logging.Options{Debug: g.debug, Level: "warn", Color: mode, Out: cmd.ErrOrStderr()})
 			// The default logger is the one process-wide setting we allow, so
 			// library code that logs through slog lands in the same handler.
 			slog.SetDefault(logger)
@@ -42,6 +44,8 @@ func newRootCmd() *cobra.Command {
 	pf.BoolVarP(&g.debug, "debug", "d", false, "debug logging with colour")
 	pf.StringVar(&g.color, "color", "auto", "colour output: auto, always or never")
 
-	root.AddCommand(newVersionCmd(g), newMigrateCmd(), newServeCmd(g), newAdminCmd())
+	root.AddCommand(newVersionCmd(g), newMigrateCmd(), newServeCmd(g), newAdminCmd(), newCtxCmd(g),
+		newLsCmd(g), newGetCmd(g), newLogsCmd(g), newStatusCmd(g), newAckCmd(g), newPingCmd(g), newRunCmd(g),
+		newActionCmd(g, "pause", "Pause a monitor", "pause"), newActionCmd(g, "resume", "Resume a paused monitor", "resume"))
 	return root
 }

@@ -50,6 +50,7 @@ type meProject struct {
 	Name     string `json:"name"`
 	Timezone string `json:"timezone"`
 	PingKey  string `json:"ping_key,omitempty"`
+	PingBase string `json:"ping_base,omitempty"`
 }
 
 func (a *API) me(w http.ResponseWriter, r *http.Request) error {
@@ -77,6 +78,7 @@ func (a *API) me(w http.ResponseWriter, r *http.Request) error {
 		out.Project = &meProject{ID: project.ID, Slug: project.Slug, Name: project.Name, Timezone: project.Timezone}
 		if sc.CanSeePingKey() {
 			out.Project.PingKey = project.PingKey
+			out.Project.PingBase = a.svc.Config().PingBaseURL + "/ping/"
 		}
 	}
 	writeJSON(w, http.StatusOK, out)

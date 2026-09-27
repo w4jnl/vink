@@ -1,72 +1,30 @@
 // Package view builds the values templates render: relative and absolute
-// times in the monitor's timezone, row models and uptime cells.
+// times in the monitor's timezone and uptime cells.
 package view
 
 import (
-	"strconv"
 	"time"
+
+	"github.com/w4jnl/vink/internal/timefmt"
 )
 
-// Span renders a duration as the UI writes it: "41 s", "3 min", "21 h", "2 d".
-func Span(d time.Duration) string {
-	if d < 0 {
-		d = -d
-	}
-	switch {
-	case d < time.Minute:
-		return strconv.Itoa(int(d.Seconds())) + " s"
-	case d < time.Hour:
-		return strconv.Itoa(int(d.Minutes())) + " min"
-	case d < 48*time.Hour:
-		return strconv.Itoa(int(d.Hours())) + " h"
-	default:
-		return strconv.Itoa(int(d.Hours()/24)) + " d"
-	}
-}
+// Ago renders "3 min ago".
+func Ago(t, now time.Time) string { return timefmt.Ago(t, now) }
 
-// Ago renders "3 min ago" or "just now".
-func Ago(t, now time.Time) string {
-	d := now.Sub(t)
-	if d < 5*time.Second {
-		return "just now"
-	}
-	return Span(d) + " ago"
-}
+// In renders "in 21 h" or "3 min late".
+func In(t, now time.Time) string { return timefmt.In(t, now) }
 
-// In renders "in 21 h", or "3 min late" when t has passed.
-func In(t, now time.Time) string {
-	if t.Before(now) {
-		return Span(now.Sub(t)) + " late"
-	}
-	return "in " + Span(t.Sub(now))
-}
+// For renders "for 4 min".
+func For(since, now time.Time) string { return timefmt.For(since, now) }
 
-// For renders "for 4 min", for state pills.
-func For(since, now time.Time) string {
-	return "for " + Span(now.Sub(since))
-}
+// Span renders a duration: "41 s", "3 min", "21 h", "2 d".
+func Span(d time.Duration) string { return timefmt.Span(d) }
 
-// Abs renders the absolute time in loc, for hover titles.
-func Abs(t time.Time, loc *time.Location) string {
-	if loc == nil {
-		loc = time.UTC
-	}
-	return t.In(loc).Format("2006-01-02 15:04 MST")
-}
+// Abs renders the absolute time in loc.
+func Abs(t time.Time, loc *time.Location) string { return timefmt.Abs(t, loc) }
 
 // Clock renders the time of day in loc.
-func Clock(t time.Time, loc *time.Location) string {
-	if loc == nil {
-		loc = time.UTC
-	}
-	return t.In(loc).Format("15:04:05")
-}
+func Clock(t time.Time, loc *time.Location) string { return timefmt.Clock(t, loc) }
 
-// RunDuration renders a job duration: "4m12s", "850 ms".
-func RunDuration(ms int64) string {
-	if ms < 1000 {
-		return strconv.FormatInt(ms, 10) + " ms"
-	}
-	d := time.Duration(ms) * time.Millisecond
-	return d.Truncate(time.Second).String()
-}
+// RunDuration renders a job duration.
+func RunDuration(ms int64) string { return timefmt.RunDuration(ms) }
