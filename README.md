@@ -2,7 +2,7 @@
 
 Self-hosted heartbeat and uptime monitor. Jobs ping it, and it probes services. One Go binary with an embedded SQLite database, multi-tenant (orgs, projects, roles), deployable air-gapped. The name is Dutch: *vink* is a finch, and *vinkje* is the checkmark you tick off a list.
 
-Phase 0 is done: heartbeat monitors with period or cron schedules, grace, start/fail/exit signals and run ids; a state machine with incidents; notifications by webhook, ntfy and mail with retries and repeats; a server-rendered web UI; a REST API; a CLI. Pull checks (HTTP, TCP, DNS, TLS, ICMP), status pages and `apply` come in phase 1. `docs/design.md` is the specification.
+Phase 1 is done: heartbeat monitors (period or cron, grace, start/fail/exit signals, run ids) and pull checks (HTTP with status, body and JSON path matching, TCP with banners, DNS, TLS expiry, ICMP); one state machine with incidents, confirm retries and maintenance windows; notifications by mail, webhook, ntfy, Gotify, Matrix, Slack-compatible hooks and Alertmanager with retries and repeats; public status pages with badges; a declarative `apply` file with `export`; Prometheus metrics; a server-rendered web UI; a REST API; a CLI. Probe agents for closed networks come in phase 2. `docs/design.md` is the specification.
 
 ## Quick start
 
@@ -78,6 +78,57 @@ In a crontab, the whole thing is one line:
 
 `?create=1` creates an unknown monitor with a one-day period and one-hour grace. For jobs on hosts with the CLI, `vink run backup -- restic backup` sends a start ping, runs the command, and sends its exit code and the output tail as the finish ping.
 
+## Pull checks
+
+A pull monitor is created like a heartbeat, with its kind's block instead of a schedule. The server runs it every `interval` with `timeout` per attempt, retries a failed attempt `confirm.retries` times before it counts, turns the monitor `late` on the first counted failure and `down` after `failure_threshold`.
+
+```sh
+curl -sS -H "Authorization: Bearer vk_…" -H 'Content-Type: application/json' \
+  -d '{"slug":"api","kind":"http","interval":"30s","tags":["prod"],"http":{"url":"https://api.example.com/healthz","expect_body":{"jsonpath":{"path":"$.status","equals":"ok"}}}}' \
+  http://localhost:8080/api/v1/monitors
+```
+
+| kind | block | what counts as up |
+| --- | --- | --- |
+| `http` | `url`, `method`, `headers`, `body`, `expect_status` (`[200-299]`), `expect_body` (`contains`, `not_contains` or `jsonpath: {path, equals}`), `follow_redirects`, `verify_tls`, `ca_pem` | the status is expected and the body matches |
+| `tcp` | `host`, `port`, `send`, `expect` | the port accepts and the banner contains `expect` |
+| `dns` | `name`, `type`, `resolver`, `expect` | the name resolves and every expected answer is present |
+| `tls` | `host`, `port`, `servername`, `warn_days`, `crit_days` | the handshake verifies; `late` inside `warn_days`, `down` inside `crit_days` |
+| `icmp` | `host`, `count`, `loss_threshold` | fewer packets are lost than the threshold (needs `CAP_NET_RAW` or `net.ipv4.ping_group_range` on Linux) |
+
+`vink check <slug>` runs a check now; the drawer has the same button and shows every attempt with its latency and reason. List rows carry a 24-hour latency sparkline.
+
+## Maintenance windows
+
+Settings › Maintenance takes one-off windows (from, to) and weekly ones (days, from, to) in a timezone, each with tags. While a window is active, the monitors carrying its tags keep recording but never go `down` and never alert; a heartbeat held back is looked at again when the window ends. End now cuts the running occurrence short.
+
+## Status pages
+
+Settings › Status pages publishes the monitors with any of a page's tags at `/s/<slug>`: a banner, one group per tag with a state and a 90-day uptime bar, open incidents. The page ships no script, is cacheable for 30 seconds, can ask for a password, and can be served on a custom domain routed to vink. Badges live at `/s/<slug>/badge/<monitor>.svg` and `.json` (Shields schema).
+
+## Declarative configuration
+
+`vink apply -f vink.yaml` brings a project to a file: channels, routes, maintenance windows, monitors and status pages, applied in one transaction, with the diff printed. `--dry-run` shows the diff without applying, `--prune` deletes what the file does not name. `${VAR}` is expanded from the environment before sending, so tokens stay out of the file; a secret written as `***` keeps the stored value. `vink export -o vink.yaml` writes the project back in the same form, secrets redacted (`--secrets` includes them). `docs/apply-schema.json` is the JSON Schema the CLI validates against; the same file goes to `PUT /api/v1/apply`.
+
+```yaml
+version: 1
+channels:
+  - {name: ntfy, kind: ntfy, url: https://ntfy.example.com, topic: vink, token: ${NTFY_TOKEN}}
+routes:
+  - {match_tags: [prod], channels: [ntfy], on: [down, up], repeat_every: 4h}
+maintenance:
+  - {name: weekly patching, match_tags: [prod], rrule: "FREQ=WEEKLY;BYDAY=SU", from: "02:00", to: "04:00"}
+monitors:
+  - {slug: nightly-backup, kind: heartbeat, schedule: {cron: "0 3 * * *"}, grace: 30m, tags: [backup, prod]}
+  - {slug: api, kind: http, interval: 30s, tags: [prod], http: {url: https://api.example.com/healthz}}
+status_pages:
+  - {slug: homelab, title: Homelab status, match_tags: [prod], public: true}
+```
+
+## Notifications
+
+Channels: `smtp`, `webhook`, `ntfy`, `gotify`, `matrix`, `slackhook` (Slack, Mattermost, Rocket.Chat) and `alertmanager` (fires `MonitorDown`, resolves on up). Routes send the events of the monitors that carry all of a route's tags to its channels, with an optional repeat while an incident stays unacknowledged. A webhook with a body template covers PagerDuty, Opsgenie, Discord, Telegram and ilert; the templates are in `docs/webhook-templates/`.
+
 ## Signals
 
 | URL | meaning |
@@ -94,7 +145,10 @@ In a crontab, the whole thing is one line:
 - `vink serve --print-config` shows the effective configuration. `docs/deploy/vink.toml.example` lists every key; each is also an environment variable, `VINK_SERVER_LISTEN` for `[server] listen`.
 - `docs/deploy/vink.service` is a hardened systemd unit with `DynamicUser` and `StateDirectory=vink`.
 - Behind a reverse proxy that authenticates people, turn on `[auth.proxy]` and map groups named `vink:<org>:<role>` to roles; see the auth section of `docs/design.md` for Traefik + Authelia and Apache + Kerberos.
-- The database file is the only state. Back it up with `sqlite3 vink.db ".backup vink.bak"`.
+- The database file and the secret key file are the state. `vink admin backup --out vink-backup.db` writes a consistent snapshot while the server runs; copy the key file (`secret_key_file` in the config) alongside.
+- `GET /metrics` serves Prometheus metrics: monitors by state, pings, checks with latency, deliveries, open incidents, scheduler lag. Set `[metrics] token` to require a bearer token.
+- Observations are pruned after `retention.observations_days` (90) and stored ping bodies after `retention.bodies_days` (14); events and incidents are kept.
+- Outbound connections (checks, notifications) honour `[outbound]`: a proxy, an extra CA bundle, and whether private addresses may be targeted (on by default, for a homelab).
 - `/api/v1/openapi.yaml` documents the API. Errors are RFC 7807 problems, listed in `docs/errors.md`.
 - `-d` on any command switches to debug logging with colour.
 
@@ -107,7 +161,7 @@ make generate    # sqlc
 make migrate     # apply migrations and dump db/schema.sql
 make lint        # gofmt, vet, golangci-lint and the tenancy gate
 make test        # go test -race ./...
-make e2e         # builds the binary and runs the three-minute heartbeat smoke test
+make e2e         # builds the binary and runs the heartbeat and homelab smoke tests (about four minutes)
 make golden      # regenerate the UI golden files from the design system with node
 ```
 

@@ -610,14 +610,14 @@ Phase 0 — foundation (gate: replaces Healthchecks for own cron jobs)
 
 Phase 1 — pull checks (gate: replaces Uptime Kuma in the homelab)
 
-- [ ] Checker interface + registry; http (status, keyword, jsonpath, redirects, CA), tcp, dns, tls, icmp
-- [ ] Checker pool, per-monitor mutex, confirm retries, thresholds in the state machine, `check now`
-- [ ] Maintenance windows (one-off and weekly rrule) in scheduler and dispatcher
-- [ ] Status pages with badges and 90-day bars; `match_tags` filtering
-- [ ] `apply` / `export` with diff, dry-run, prune; JSON Schema; CLI `apply`/`export`
-- [ ] Notifiers: gotify, matrix, slackhook, alertmanager; webhook templates for PagerDuty, Opsgenie, Discord, Telegram
-- [ ] UI: kind-specific forms, latency sparklines, YAML view, maintenance and pages tabs
-- [ ] Prometheus metrics; retention job; `vink admin backup`
+- [x] Checker interface + registry; http (status, keyword, jsonpath, redirects, CA), tcp, dns, tls, icmp
+- [x] Checker pool, per-monitor mutex, confirm retries, thresholds in the state machine, `check now`
+- [x] Maintenance windows (one-off and weekly rrule) in scheduler and dispatcher
+- [x] Status pages with badges and 90-day bars; `match_tags` filtering
+- [x] `apply` / `export` with diff, dry-run, prune; JSON Schema; CLI `apply`/`export`
+- [x] Notifiers: gotify, matrix, slackhook, alertmanager; webhook templates for PagerDuty, Opsgenie, Discord, Telegram
+- [x] UI: kind-specific forms, latency sparklines, YAML view, maintenance and pages tabs
+- [x] Prometheus metrics; retention job; `vink admin backup`
 
 Phase 2 — closed network (gate: installs air-gapped from one binary)
 

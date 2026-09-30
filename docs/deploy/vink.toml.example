@@ -61,3 +61,10 @@ instance_admin_group = "vink:admin"
 default_org = ""                       # give every authenticated person viewer in this org
 logout_url = ""
 # group_map = { "CN=Monitoring Admins" = "corp:admin" }
+
+[checks]
+workers = 32            # concurrent pull check attempts
+min_interval = "10s"    # floor for a pull monitor's interval on this instance
+
+[metrics]
+token = ""              # when set, GET /metrics needs "Authorization: Bearer <token>"
