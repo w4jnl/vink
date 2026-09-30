@@ -46,3 +46,7 @@ FROM deliveries d JOIN channels c ON c.id = d.channel_id
 WHERE d.project_id = ?
 ORDER BY d.created_at DESC, d.id DESC
 LIMIT ?;
+
+-- name: CountPendingDeliveries :one
+-- tenancy: root (metrics endpoint)
+SELECT COUNT(*) FROM deliveries WHERE delivered_at IS NULL AND failed_at IS NULL;

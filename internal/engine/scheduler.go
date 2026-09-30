@@ -29,7 +29,9 @@ type Scheduler struct {
 	// Batch is how many due monitors one pass loads.
 	Batch int
 	// LagWarn is the lateness above which a tick is logged as behind.
-	LagWarn  time.Duration
+	LagWarn time.Duration
+	// OnLag, when set, receives how far behind each pass ran (zero when on time).
+	OnLag    func(time.Duration)
 	lastTick atomic.Int64
 }
 
@@ -100,11 +102,16 @@ func (s *Scheduler) Run(ctx context.Context) error {
 			s.log.Error("scheduler next due", "err", err)
 		} else if ok {
 			until := next.Sub(s.now())
+			lag := time.Duration(0)
 			if until < 0 {
-				if -until > s.LagWarn {
-					s.log.Warn("scheduler behind", "lag_ms", (-until).Milliseconds())
+				lag = -until
+				if lag > s.LagWarn {
+					s.log.Warn("scheduler behind", "lag_ms", lag.Milliseconds())
 				}
 				until = 0
+			}
+			if s.OnLag != nil {
+				s.OnLag(lag)
 			}
 			if until < sleep {
 				sleep = until

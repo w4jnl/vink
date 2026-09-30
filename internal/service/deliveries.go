@@ -79,7 +79,13 @@ func (s *Service) Deliver(ctx context.Context, d domain.Delivery) error {
 		return err
 	}
 	if err := s.notifier.Send(ctx, ch.Kind, ch.Config, *n); err != nil {
+		if s.metrics != nil {
+			s.metrics.Deliveries.WithLabelValues(string(ch.Kind), "error").Inc()
+		}
 		return err
+	}
+	if s.metrics != nil {
+		s.metrics.Deliveries.WithLabelValues(string(ch.Kind), "ok").Inc()
 	}
 	s.log.Info("notification sent", "project_id", d.ProjectID, "channel", ch.Name, "kind", ch.Kind, "event", n.Kind(), "monitor", n.Monitor.Slug, "repeat", d.Repeat)
 	return nil

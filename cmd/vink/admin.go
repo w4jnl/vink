@@ -6,8 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 	"text/tabwriter"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -28,7 +30,40 @@ func newAdminCmd() *cobra.Command {
 		Short: "Instance administration on the server host (no network)",
 	}
 	f.add(cmd)
-	cmd.AddCommand(newAdminInitCmd(f), newAdminOrgCmd(f), newAdminUserCmd(f))
+	cmd.AddCommand(newAdminInitCmd(f), newAdminOrgCmd(f), newAdminUserCmd(f), newAdminBackupCmd(f))
+	return cmd
+}
+
+func newAdminBackupCmd(f *serverFlags) *cobra.Command {
+	var out string
+	cmd := &cobra.Command{
+		Use:   "backup [--out vink-backup.db]",
+		Short: "Write a consistent copy of the database with VACUUM INTO",
+		Long:  "Copies the live database to a new file while the server may keep running: SQLite's VACUUM INTO writes a compact, consistent snapshot. The secret key file is not included; back it up separately.",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			d, cfg, err := f.open(cmd.Context())
+			if err != nil {
+				return err
+			}
+			defer d.Close()
+			if out == "" {
+				out = strings.TrimSuffix(cfg.DB.Path, ".db") + "-backup-" + time.Now().UTC().Format("20060102-150405") + ".db"
+			}
+			if _, err := os.Stat(out); err == nil {
+				return fmt.Errorf("%s exists; pick another --out", out)
+			}
+			if _, err := d.Writer.ExecContext(cmd.Context(), "VACUUM INTO '"+strings.ReplaceAll(out, "'", "''")+"'"); err != nil { //nolint:gosec // VACUUM INTO takes no bind parameters; the path is quoted with '' escaping
+				return fmt.Errorf("backup: %w", err)
+			}
+			info, err := os.Stat(out)
+			if err != nil {
+				return err
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "wrote %s (%d bytes)\n", out, info.Size())
+			return nil
+		},
+	}
+	cmd.Flags().StringVarP(&out, "out", "o", "", "destination file (default: <db>-backup-<time>.db beside the database)")
 	return cmd
 }
 

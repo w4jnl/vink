@@ -53,6 +53,43 @@ func (q *Queries) CountMonitorsInOrg(ctx context.Context, orgID string) (int64, 
 	return count, err
 }
 
+const countOpenIncidentsByProject = `-- name: CountOpenIncidentsByProject :many
+SELECT o.slug AS org_slug, p.slug AS project_slug, COUNT(*) AS n
+FROM incidents i JOIN projects p ON p.id = i.project_id JOIN orgs o ON o.id = p.org_id
+WHERE i.resolved_at IS NULL
+GROUP BY o.slug, p.slug
+`
+
+type CountOpenIncidentsByProjectRow struct {
+	OrgSlug     string
+	ProjectSlug string
+	N           int64
+}
+
+// tenancy: root (metrics endpoint, instance-wide)
+func (q *Queries) CountOpenIncidentsByProject(ctx context.Context) ([]CountOpenIncidentsByProjectRow, error) {
+	rows, err := q.db.QueryContext(ctx, countOpenIncidentsByProject)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []CountOpenIncidentsByProjectRow
+	for rows.Next() {
+		var i CountOpenIncidentsByProjectRow
+		if err := rows.Scan(&i.OrgSlug, &i.ProjectSlug, &i.N); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const createMonitor = `-- name: CreateMonitor :one
 INSERT INTO monitors (id, project_id, org_id, slug, name, kind, spec, tags, state, state_since, base_at, next_due_at, created_at, updated_at)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -382,6 +419,53 @@ func (q *Queries) ListMonitors(ctx context.Context, projectID string) ([]Monitor
 			&i.AgentID,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listMonitorsForMetrics = `-- name: ListMonitorsForMetrics :many
+SELECT m.kind, m.state, m.paused, o.slug AS org_slug, p.slug AS project_slug, COUNT(*) AS n
+FROM monitors m JOIN projects p ON p.id = m.project_id JOIN orgs o ON o.id = p.org_id
+GROUP BY o.slug, p.slug, m.kind, m.state, m.paused
+ORDER BY o.slug, p.slug, m.kind, m.state
+`
+
+type ListMonitorsForMetricsRow struct {
+	Kind        string
+	State       string
+	Paused      bool
+	OrgSlug     string
+	ProjectSlug string
+	N           int64
+}
+
+// tenancy: root (metrics endpoint, instance-wide)
+func (q *Queries) ListMonitorsForMetrics(ctx context.Context) ([]ListMonitorsForMetricsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listMonitorsForMetrics)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListMonitorsForMetricsRow
+	for rows.Next() {
+		var i ListMonitorsForMetricsRow
+		if err := rows.Scan(
+			&i.Kind,
+			&i.State,
+			&i.Paused,
+			&i.OrgSlug,
+			&i.ProjectSlug,
+			&i.N,
 		); err != nil {
 			return nil, err
 		}

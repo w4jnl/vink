@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"strconv"
 	"time"
 
 	"github.com/w4jnl/vink/internal/checks"
@@ -111,6 +112,16 @@ func (s *Service) RunCheck(ctx context.Context, monitorID string, now time.Time)
 		return ctx.Err()
 	}
 	final := attempts[len(attempts)-1]
+	if s.metrics != nil {
+		project := m.ProjectID
+		if p, err := s.ProjectByID(ctx, m.ProjectID); err == nil {
+			project = p.Slug
+		}
+		for _, a := range attempts {
+			s.metrics.Checks.WithLabelValues(project, string(m.Kind), strconv.FormatBool(a.res.OK)).Inc()
+			s.metrics.CheckLatency.WithLabelValues(string(m.Kind)).Observe(float64(a.res.LatencyMs) / 1000)
+		}
+	}
 	var decision engine.Decision
 	err = s.db.Tx(ctx, func(q *db.Queries) error {
 		row, err := q.GetMonitorByID(ctx, monitorID)

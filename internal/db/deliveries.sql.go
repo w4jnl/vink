@@ -28,6 +28,18 @@ func (q *Queries) CountEarlierPendingDeliveries(ctx context.Context, arg CountEa
 	return count, err
 }
 
+const countPendingDeliveries = `-- name: CountPendingDeliveries :one
+SELECT COUNT(*) FROM deliveries WHERE delivered_at IS NULL AND failed_at IS NULL
+`
+
+// tenancy: root (metrics endpoint)
+func (q *Queries) CountPendingDeliveries(ctx context.Context) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countPendingDeliveries)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const insertDelivery = `-- name: InsertDelivery :exec
 INSERT INTO deliveries (id, event_id, channel_id, project_id, monitor_id, route_id, kind, repeat, attempt, next_attempt_at, created_at)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)

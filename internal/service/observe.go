@@ -104,6 +104,9 @@ func (s *Service) RecordPing(ctx context.Context, target *PingTarget, in PingObs
 	if in.At.IsZero() {
 		in.At = s.now()
 	}
+	if s.metrics != nil {
+		s.metrics.Pings.WithLabelValues(target.Project.Slug, string(in.Signal)).Inc()
+	}
 	obs := &domain.Observation{
 		ID: domain.NewID(), MonitorID: target.Monitor.ID, ProjectID: target.Project.ID, At: in.At, Source: "ping",
 		Signal: in.Signal, ExitCode: in.ExitCode, RunID: in.RunID, RemoteAddr: in.RemoteAddr, UserAgent: in.UserAgent,

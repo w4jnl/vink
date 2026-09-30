@@ -71,3 +71,17 @@ SELECT * FROM monitors WHERE paused = 0 AND run_started_at IS NOT NULL AND run_s
 -- name: GetMonitorByID :one
 -- tenancy: root (scheduler reload after a bus event)
 SELECT * FROM monitors WHERE id = ?;
+
+-- name: ListMonitorsForMetrics :many
+-- tenancy: root (metrics endpoint, instance-wide)
+SELECT m.kind, m.state, m.paused, o.slug AS org_slug, p.slug AS project_slug, COUNT(*) AS n
+FROM monitors m JOIN projects p ON p.id = m.project_id JOIN orgs o ON o.id = p.org_id
+GROUP BY o.slug, p.slug, m.kind, m.state, m.paused
+ORDER BY o.slug, p.slug, m.kind, m.state;
+
+-- name: CountOpenIncidentsByProject :many
+-- tenancy: root (metrics endpoint, instance-wide)
+SELECT o.slug AS org_slug, p.slug AS project_slug, COUNT(*) AS n
+FROM incidents i JOIN projects p ON p.id = i.project_id JOIN orgs o ON o.id = p.org_id
+WHERE i.resolved_at IS NULL
+GROUP BY o.slug, p.slug;

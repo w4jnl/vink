@@ -33,6 +33,8 @@ type Pool struct {
 	Batch int
 	// Backoff is how long a monitor whose run errored is left alone.
 	Backoff time.Duration
+	// OnLag, when set, receives how far behind each pass ran (zero when on time).
+	OnLag func(time.Duration)
 
 	mu       sync.Mutex
 	inflight map[string]bool
@@ -173,6 +175,13 @@ func (p *Pool) Run(ctx context.Context) error {
 			p.log.Error("check next due", "err", err)
 		} else if ok {
 			until := next.Sub(p.now())
+			if p.OnLag != nil {
+				lag := -until
+				if lag < 0 {
+					lag = 0
+				}
+				p.OnLag(lag)
+			}
 			if until < time.Second {
 				// Due but backing off or just finished: look again soon.
 				until = time.Second

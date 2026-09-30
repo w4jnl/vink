@@ -13,6 +13,7 @@ import (
 	"github.com/w4jnl/vink/internal/config"
 	"github.com/w4jnl/vink/internal/db/dbtest"
 	"github.com/w4jnl/vink/internal/engine"
+	"github.com/w4jnl/vink/internal/metrics"
 	"github.com/w4jnl/vink/internal/service"
 )
 
@@ -80,5 +81,30 @@ func TestServeStartsAndStops(t *testing.T) {
 	}
 	if err := Run(context.Background(), d.Log, "bad", "256.0.0.1:1", http.NotFoundHandler()); err == nil {
 		t.Fatal("expected listen error")
+	}
+}
+
+func TestMetricsEndpoint(t *testing.T) {
+	d := testDeps(t)
+	rec := httptest.NewRecorder()
+	Handler(d, true).ServeHTTP(rec, httptest.NewRequest("GET", "/metrics", nil))
+	if rec.Code != 404 {
+		t.Fatalf("metrics without instruments: %d", rec.Code)
+	}
+	d.Metrics = metrics.New("test")
+	d.Svc.SetMetrics(d.Metrics)
+	d.Cfg.Metrics.Token = "scrape-me"
+	h := Handler(d, true)
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("GET", "/metrics", nil))
+	if rec.Code != 401 {
+		t.Fatalf("metrics without token: %d", rec.Code)
+	}
+	req := httptest.NewRequest("GET", "/metrics", nil)
+	req.Header.Set("Authorization", "Bearer scrape-me")
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != 200 || !strings.Contains(rec.Body.String(), "vink_build_info") || !strings.Contains(rec.Body.String(), "vink_deliveries_pending 0") {
+		t.Fatalf("metrics: %d %s", rec.Code, rec.Body.String()[:200])
 	}
 }

@@ -18,6 +18,7 @@ import (
 	"github.com/w4jnl/vink/internal/engine"
 	vhttp "github.com/w4jnl/vink/internal/http"
 	"github.com/w4jnl/vink/internal/logging"
+	"github.com/w4jnl/vink/internal/metrics"
 	"github.com/w4jnl/vink/internal/notify"
 	"github.com/w4jnl/vink/internal/outbound"
 	"github.com/w4jnl/vink/internal/secrets"
@@ -99,16 +100,20 @@ func runServe(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 		return fmt.Errorf("checks: %w", err)
 	}
 	svc.SetChecker(checker)
+	m := metrics.New(version.Version)
+	svc.SetMetrics(m)
 	pool := engine.NewPool(svc, cfg.Checks.Workers, bus, logging.Sub(log, "checks"), nil)
+	pool.OnLag = m.LagObserver(m.PoolLag)
 	svc.SetCheckNow(pool.CheckNow)
 	sched := engine.NewScheduler(svc, bus, logging.Sub(log, "scheduler"), nil)
+	sched.OnLag = m.LagObserver(m.SchedulerLag)
 	dispatcher := engine.NewDispatcher(svc, logging.Sub(log, "dispatcher"), nil)
 	authn, err := auth.New(svc, cfg.Auth, cfg.Server.BaseURL, logging.Sub(log, "auth"))
 	if err != nil {
 		return fmt.Errorf("auth: %w", err)
 	}
 
-	deps := vhttp.Deps{Cfg: cfg, Svc: svc, Auth: authn, Log: log, Sched: sched, Pool: pool}
+	deps := vhttp.Deps{Cfg: cfg, Svc: svc, Auth: authn, Log: log, Sched: sched, Pool: pool, Metrics: m}
 	withPing := cfg.Ping.Listen == ""
 
 	ctx, cancel := context.WithCancel(ctx)
@@ -127,6 +132,9 @@ func runServe(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 	}
 	run("scheduler", sched.Run)
 	run("checks", pool.Run)
+	run("retention", func(ctx context.Context) error {
+		return svc.RunRetention(ctx, 6*time.Hour, cfg.Retention.ObservationsDays, cfg.Retention.BodiesDays)
+	})
 	run("dispatcher", dispatcher.Run)
 	run("http", func(ctx context.Context) error {
 		return vhttp.Run(ctx, log, "http", cfg.Server.Listen, vhttp.Handler(deps, withPing))

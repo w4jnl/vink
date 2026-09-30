@@ -18,6 +18,7 @@ import (
 	"github.com/w4jnl/vink/internal/db"
 	"github.com/w4jnl/vink/internal/domain"
 	"github.com/w4jnl/vink/internal/engine"
+	"github.com/w4jnl/vink/internal/metrics"
 	"github.com/w4jnl/vink/internal/notify"
 	"github.com/w4jnl/vink/internal/secrets"
 )
@@ -88,6 +89,7 @@ type Service struct {
 	notifier        *notify.Registry
 	checker         *checks.Registry
 	checkNow        func(ctx context.Context, monitorID string) error
+	metrics         *metrics.Metrics
 }
 
 // New wires a service. The clock is time.Now unless SetClock is called.
@@ -137,7 +139,7 @@ func (s *Service) DB() *db.DB { return s.sqlDB }
 func (s *Service) inTx(q *db.Queries) *Service {
 	return &Service{
 		db: txStore{q}, sqlDB: s.sqlDB, bus: s.bus, log: s.log, cfg: s.cfg, now: s.now, keyring: s.keyring,
-		validateChannel: s.validateChannel, notifier: s.notifier, checker: s.checker, checkNow: s.checkNow,
+		validateChannel: s.validateChannel, notifier: s.notifier, checker: s.checker, checkNow: s.checkNow, metrics: s.metrics,
 	}
 }
 

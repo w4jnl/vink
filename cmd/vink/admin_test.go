@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -67,5 +68,36 @@ func TestAdminInitAndFriends(t *testing.T) {
 	// missing --password-stdin
 	if _, errs, code := runCLI("", "admin", "init", "--db", filepath.Join(t.TempDir(), "v3.db"), "--org", "o", "--user", "u"); code == 0 || !strings.Contains(errs, "password-stdin") {
 		t.Fatalf("no password: %d %s", code, errs)
+	}
+}
+
+func TestAdminBackup(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "vink.db")
+	runCLI := func(stdin string, args ...string) (string, string, int) {
+		var out, errb bytes.Buffer
+		code := run(context.Background(), append([]string{"--color", "never"}, args...), strings.NewReader(stdin), &out, &errb)
+		return out.String(), errb.String(), code
+	}
+	if _, errs, code := runCLI("hunter2hunter2\n", "admin", "init", "--db", dbPath, "--org", "homelab", "--user", "j", "--password-stdin"); code != 0 {
+		t.Fatalf("init: %s", errs)
+	}
+	out := filepath.Join(dir, "copy.db")
+	stdout, errs, code := runCLI("", "admin", "backup", "--db", dbPath, "--out", out)
+	if code != 0 || !strings.Contains(stdout, "wrote "+out) {
+		t.Fatalf("backup: %d %s %s", code, stdout, errs)
+	}
+	head := make([]byte, 16)
+	fh, err := os.Open(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = fh.Read(head)
+	_ = fh.Close()
+	if !strings.HasPrefix(string(head), "SQLite format 3") {
+		t.Fatalf("not a database: %q", head)
+	}
+	if _, errs, code := runCLI("", "admin", "backup", "--db", dbPath, "--out", out); code == 0 || !strings.Contains(errs, "exists") {
+		t.Fatalf("overwrite must be refused: %d %s", code, errs)
 	}
 }

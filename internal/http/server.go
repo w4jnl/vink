@@ -21,6 +21,7 @@ import (
 	"github.com/w4jnl/vink/internal/http/ping"
 	"github.com/w4jnl/vink/internal/http/web"
 	"github.com/w4jnl/vink/internal/logging"
+	"github.com/w4jnl/vink/internal/metrics"
 	"github.com/w4jnl/vink/internal/service"
 	"github.com/w4jnl/vink/internal/version"
 )
@@ -33,6 +34,8 @@ type Deps struct {
 	Log   *slog.Logger
 	Sched *engine.Scheduler
 	Pool  *engine.Pool
+	// Metrics, when set, serves GET /metrics.
+	Metrics *metrics.Metrics
 	// Mount lets later packages (api, web) register on the main mux.
 	Mount []func(mux *http.ServeMux)
 }
@@ -81,6 +84,9 @@ func Handler(d Deps, withPing bool) http.Handler {
 	})
 	if withPing {
 		mux.Handle("/ping/", pingMux(d))
+	}
+	if d.Metrics != nil {
+		mux.Handle("GET /metrics", d.Metrics.Handler(d.Cfg.Metrics.Token))
 	}
 	var root http.Handler = mux
 	if d.Auth != nil {
