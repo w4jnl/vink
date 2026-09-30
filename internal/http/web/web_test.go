@@ -273,7 +273,8 @@ func TestMonitorsPageEmptyAndRows(t *testing.T) {
 		_ = e.svc.Tick(context.Background(), id, e.now)
 	}
 	p = e.get(projPath, false)
-	p.has(t, `class="vk-row"`, `vk-glyph--down`, "Nightly", "Hourly", `hx-get="/o/homelab/p/prod/m/nightly"`, `vk-chip`, `data-down-count="2"`, `favicon-down.svg`, `title="2 open"`)
+	p.has(t, `class="vk-row"`, `vk-glyph--down`, "Nightly", "Hourly", `hx-get="/o/homelab/p/prod/m/nightly"`, `vk-chip`, `data-down-count="2"`, `favicon-down.svg`, `title="2 open"`,
+		`<span class="vk-row__tags"><span class="vk-tag">backup</span><span class="vk-tag">prod</span></span>`, `class="vk-page vk-page--full" id="page"`, `id="drawer" hidden>`, `data-empty="1"`)
 	// down sorts first, and chips carry counts
 	if !strings.Contains(p.body, `>down<span class="vk-chip__n">2</span>`) || !strings.Contains(p.body, `>prod<span class="vk-chip__n">2</span>`) {
 		t.Errorf("chips: %s", p.body)
@@ -316,7 +317,7 @@ func TestDrawerAndActions(t *testing.T) {
 	if full.code != 200 {
 		t.Fatalf("drawer page: %d", full.code)
 	}
-	full.has(t, `<title>Nightly · vink</title>`, `aria-current="true"`, `vk-drawer__title">Nightly`, e.project.PingKey+"/<b>nightly</b>", "every 1h · grace 5m · due in", "Last 24 hours", `vk-obs`, "4m0s", "new → up · first ok",
+	full.has(t, `<title>Nightly · vink</title>`, `class="vk-page" id="page"`, `<aside class="vk-drawer" id="drawer">`, `aria-current="true"`, `vk-drawer__title">Nightly`, e.project.PingKey+"/<b>nightly</b>", "every 1h · grace 5m · due in", "Last 24 hours", `vk-obs`, "4m0s", "new → up · first ok",
 		`data-drawer-close`, `>Edit<`, `>Pause<`, "As YAML", "slug", `vk-codebox`)
 	partial := e.get(projPath+"/m/nightly", true)
 	if !strings.HasPrefix(partial.body, `<div id="drawer-body"`) || strings.Contains(partial.body, "<html") {

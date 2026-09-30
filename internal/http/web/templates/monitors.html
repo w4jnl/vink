@@ -1,1 +1,1 @@
-{{define "content"}}<div class="vk-page"><main class="vk-main" id="monitors">{{template "monitors-main" .}}</main><aside class="vk-drawer" id="drawer">{{template "drawer" .Drawer}}</aside></div>{{end}}
+{{define "content"}}<div class="vk-page{{if not .Drawer}} vk-page--full{{end}}" id="page"><main class="vk-main" id="monitors">{{template "monitors-main" .}}</main><aside class="vk-drawer" id="drawer"{{if not .Drawer}} hidden{{end}}>{{template "drawer" .Drawer}}</aside></div>{{end}}

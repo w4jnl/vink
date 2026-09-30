@@ -49,8 +49,19 @@
     return m ? m.getAttribute('content') : '';
   }
 
-  document.addEventListener('DOMContentLoaded', function () { wire(document); favicon(); });
-  document.addEventListener('htmx:after:settle', function () { wire(document); favicon(); });
+  // Beside an open drawer the list drops its tags column (the drawer
+  // shows them); with nothing selected the list takes the full width.
+  function syncDrawer() {
+    var drawer = document.getElementById('drawer');
+    var page = drawer && drawer.closest('.vk-page');
+    if (!page) return;
+    var empty = !!drawer.querySelector('[data-empty]');
+    drawer.hidden = empty;
+    page.classList.toggle('vk-page--full', empty);
+  }
+
+  document.addEventListener('DOMContentLoaded', function () { wire(document); favicon(); syncDrawer(); });
+  document.addEventListener('htmx:after:settle', function () { wire(document); favicon(); syncDrawer(); });
   // htmx 4 hands the request context as e.detail.ctx (htmx 2 put headers
   // on e.detail). Set the header where it exists, and for a state-changing
   // request without a form put the token in the body too, so a bare
