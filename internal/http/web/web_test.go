@@ -24,6 +24,7 @@ import (
 type env struct {
 	t       *testing.T
 	svc     *service.Service
+	authn   *auth.Authenticator
 	web     *Web
 	srv     http.Handler
 	project *domain.Project
@@ -63,6 +64,7 @@ func newEnv(t *testing.T) *env {
 	if err != nil {
 		t.Fatal(err)
 	}
+	e.authn = authn
 	e.web, err = New(svc, authn, quiet)
 	if err != nil {
 		t.Fatal(err)
@@ -153,15 +155,18 @@ func TestLoginRedirectsAndSignsIn(t *testing.T) {
 	if p.code != 200 {
 		t.Fatalf("login form: %d", p.code)
 	}
-	p.has(t, `name="user"`, `type="password"`, "Sign in", `<span>vink</span>`)
+	p.has(t, `name="username"`, `type="password"`, "Sign in", `<span>vink</span>`, `class="vk-auth__card"`, "w4j.nl")
+	if strings.Contains(p.body, "vk-top") {
+		t.Error("the auth layout has no top bar")
+	}
 	if p.hdr.Get("Content-Security-Policy") == "" || p.hdr.Get("X-Frame-Options") != "DENY" {
 		t.Errorf("security headers: %v", p.hdr)
 	}
-	bad := e.do("POST", "/login", url.Values{"user": {"j"}, "password": {"nope"}, "next": {projPath}}, false, false)
-	if bad.code != 401 || !strings.Contains(bad.body, "Wrong user or password") {
+	bad := e.do("POST", "/login", url.Values{"username": {"j"}, "password": {"nope"}, "next": {projPath}}, false, false)
+	if bad.code != 401 || !strings.Contains(bad.body, "Wrong username or password") {
 		t.Fatalf("bad login: %d", bad.code)
 	}
-	good := e.do("POST", "/login", url.Values{"user": {"j"}, "password": {"correct horse"}, "next": {"//evil.example"}}, false, false)
+	good := e.do("POST", "/login", url.Values{"username": {"j"}, "password": {"correct horse"}, "next": {"//evil.example"}}, false, false)
 	if good.code != 303 || good.hdr.Get("Location") != "/" {
 		t.Fatalf("good login must redirect to a safe path: %d %s", good.code, good.hdr.Get("Location"))
 	}
@@ -178,13 +183,83 @@ func TestLoginRedirectsAndSignsIn(t *testing.T) {
 	}
 }
 
+func TestNoOrgYetPage(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	admin := domain.Scope{InstanceAdmin: true, Role: domain.RoleOwner}
+	if _, err := e.svc.CreateLocalUser(ctx, admin, "nobody", "n@example.com", "", "correct horse", false); err != nil {
+		t.Fatal(err)
+	}
+	rec := httptest.NewRecorder()
+	if _, err := e.authn.Login(rec, httptest.NewRequest("POST", "/login", nil), "nobody", "correct horse"); err != nil {
+		t.Fatal(err)
+	}
+	e.cookie = rec.Result().Cookies()[0]
+	p := e.get("/", false)
+	if p.code != 403 {
+		t.Fatalf("no org: %d", p.code)
+	}
+	p.has(t, "not in an org yet", "<dt>user</dt><dd>nobody</dd>", "vink admin user create", ">Sign out<", `id="logout-form"`)
+	if p := e.get(projPath, false); p.code != 404 {
+		t.Fatalf("a project the user cannot see: %d", p.code)
+	}
+}
+
+func TestProxyDeniedPage(t *testing.T) {
+	e := newEnv(t)
+	quiet := slog.New(slog.NewTextHandler(io.Discard, nil))
+	cfg := config.Default().Auth
+	cfg.Local.Enabled = false
+	cfg.Proxy.Enabled = true
+	cfg.Proxy.TrustedCIDRs = []string{"203.0.113.0/24"}
+	cfg.Proxy.UserHeader = "X-User"
+	cfg.Proxy.GroupsHeader = "X-Groups"
+	cfg.Proxy.SecretHeader = "X-Proxy-Secret"
+	cfg.Proxy.Secret = "s3cret"
+	authn, err := auth.New(e.svc, cfg, "http://localhost:8080", quiet)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w, err := New(e.svc, authn, quiet)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mux := http.NewServeMux()
+	w.Mount(mux)
+	srv := middleware.Chain(mux, middleware.RequestID)
+	get := func(path string, headers map[string]string) page {
+		req := httptest.NewRequest("GET", path, nil)
+		req.RemoteAddr = "203.0.113.9:1"
+		for k, v := range headers {
+			req.Header.Set(k, v)
+		}
+		rec := httptest.NewRecorder()
+		srv.ServeHTTP(rec, req)
+		return page{code: rec.Code, body: rec.Body.String(), hdr: rec.Header()}
+	}
+	denied := get(projPath, nil)
+	if denied.code != 403 {
+		t.Fatalf("no identity: %d", denied.code)
+	}
+	denied.has(t, "No identity from the proxy", "<dt>status</dt><dd>403</dd>", "<dt>request</dt>", "Copy details", ">Try again<")
+	if strings.Contains(denied.body, "vk-top") || strings.Contains(denied.body, "Sign in") {
+		t.Error("proxy denied must be one card without top bar or login form")
+	}
+	noOrg := get("/", map[string]string{"X-Proxy-Secret": "s3cret", "X-User": "stranger", "X-Groups": "staff,ops"})
+	if noOrg.code != 403 {
+		t.Fatalf("no org via proxy: %d", noOrg.code)
+	}
+	noOrg.has(t, "not in an org yet", "<dt>user</dt><dd>stranger</dd>", "<dt>groups</dt><dd>staff, ops</dd>", "vink:&lt;org&gt;:&lt;role&gt;")
+}
+
 func TestMonitorsPageEmptyAndRows(t *testing.T) {
 	e := newEnv(t)
 	p := e.get(projPath, false)
 	if p.code != 200 {
 		t.Fatalf("monitors: %d %s", p.code, p.body)
 	}
-	p.has(t, `<h1>Monitors</h1>`, `class="vk-empty"`, e.project.PingKey, `homelab / <b>prod</b>`, `Create monitor`, `data-down-count="0"`, `/static/`)
+	p.has(t, `<h1>Monitors</h1>`, `class="vk-empty"`, e.project.PingKey, `homelab / <b>prod</b>`, `Create monitor`, `data-down-count="0"`, `/static/`,
+		`class="vk-top__link" href="/o/homelab/p/prod" aria-current="page">Monitors</a>`, `href="/o/homelab/p/prod/incidents">Incidents</a>`, `href="/o/homelab/p/prod/settings/channels">Settings</a>`, `vk-top__search"`, `title="Jaro"`)
 	if strings.Contains(p.body, "http://") && !strings.Contains(p.body, "http://localhost:8080/ping/") {
 		t.Error("unexpected external URL")
 	}
@@ -196,7 +271,7 @@ func TestMonitorsPageEmptyAndRows(t *testing.T) {
 		_ = e.svc.Tick(context.Background(), id, e.now)
 	}
 	p = e.get(projPath, false)
-	p.has(t, `class="vk-row"`, `vk-glyph--down`, "Nightly", "Hourly", `hx-get="/o/homelab/p/prod/m/nightly"`, `vk-chip`, `data-down-count="2"`, `favicon-down.svg`)
+	p.has(t, `class="vk-row"`, `vk-glyph--down`, "Nightly", "Hourly", `hx-get="/o/homelab/p/prod/m/nightly"`, `vk-chip`, `data-down-count="2"`, `favicon-down.svg`, `title="2 open"`)
 	// down sorts first, and chips carry counts
 	if !strings.Contains(p.body, `>down<span class="vk-chip__n">2</span>`) || !strings.Contains(p.body, `>prod<span class="vk-chip__n">2</span>`) {
 		t.Errorf("chips: %s", p.body)
@@ -207,7 +282,7 @@ func TestMonitorsPageEmptyAndRows(t *testing.T) {
 		t.Errorf("tag filter")
 	}
 	none := e.get(projPath+"?q=zzz", false)
-	none.has(t, "No monitors match this filter.")
+	none.has(t, "No monitors match", `value="zzz"`)
 	// partials and ETag
 	list := e.get(projPath+"?partial=list", false)
 	if list.code != 200 || !strings.HasPrefix(list.body, `<div class="vk-list"`) || list.hdr.Get("ETag") == "" {
@@ -239,7 +314,8 @@ func TestDrawerAndActions(t *testing.T) {
 	if full.code != 200 {
 		t.Fatalf("drawer page: %d", full.code)
 	}
-	full.has(t, `<title>Nightly · vink</title>`, `aria-current="true"`, `vk-drawer__title">Nightly`, e.project.PingKey+"/<b>nightly</b>", "every 1h · grace 5m · due in", "Last 24 hours", `vk-obs`, "4m0s", "new → up · first ok", `data-drawer-close`, `Delete monitor`, `data-confirm="Really delete?"`)
+	full.has(t, `<title>Nightly · vink</title>`, `aria-current="true"`, `vk-drawer__title">Nightly`, e.project.PingKey+"/<b>nightly</b>", "every 1h · grace 5m · due in", "Last 24 hours", `vk-obs`, "4m0s", "new → up · first ok",
+		`data-drawer-close`, `>Edit<`, `>Pause<`, "As YAML", "slug", `vk-codebox`)
 	partial := e.get(projPath+"/m/nightly", true)
 	if !strings.HasPrefix(partial.body, `<div id="drawer-body"`) || strings.Contains(partial.body, "<html") {
 		t.Errorf("htmx drawer must be the partial only")
@@ -280,21 +356,31 @@ func TestCreateAndEditForm(t *testing.T) {
 	if form.code != 200 {
 		t.Fatalf("new form: %d", form.code)
 	}
-	form.has(t, `id="monitor-form"`, `for="name"`, `for="period"`, `for="cron"`, `<summary>Advanced</summary>`, `Create monitor`)
+	form.has(t, `id="monitor-form"`, `for="name"`, `for="slug"`, `for="schedule"`, `name="schedule_type"`, `for="timezone"`, `Europe/Amsterdam (project)`, `for="grace"`, `for="tags"`,
+		`vk-details__title">Advanced</span>`, "max runtime none · down after 1 · methods any · body 64 KB", `for="body_limit"`, "Ping URL", "As YAML", "kind: heartbeat", `Create monitor`, `hx-post="/o/homelab/p/prod/m/preview"`)
+	// the kind switch keeps the name and says what is not there yet
+	sw := e.get(projPath+"/m/new?kind=http&name=Web", true)
+	sw.has(t, `value="Web"`, "arrive later in phase 1")
 	// validation: no schedule, bad grace
 	bad := e.post(projPath+"/m/new", url.Values{"name": {"Nightly backup"}, "grace": {"10s"}}, true)
 	if bad.code != 422 {
 		t.Fatalf("validation: %d", bad.code)
 	}
-	bad.has(t, `vk-field--error`, `id="grace-msg"`, "Must be at least 1m.", `id="period-msg"`, "Set period or cron.")
+	bad.has(t, `vk-field--error`, `id="grace-msg"`, "Must be at least 1m.", `id="schedule-msg"`, "Set period or cron.")
 	if strings.Contains(bad.body, "<html") {
 		t.Error("htmx validation response must be the partial")
 	}
-	unparsable := e.post(projPath+"/m/new", url.Values{"name": {"X"}, "period": {"soon"}, "failure_threshold": {"many"}}, false)
-	if unparsable.code != 422 || !strings.Contains(unparsable.body, "Use a duration such as 1h or 1d.") || !strings.Contains(unparsable.body, "<details open>") {
+	unparsable := e.post(projPath+"/m/new", url.Values{"name": {"X"}, "schedule_type": {"period"}, "schedule": {"soon"}, "failure_threshold": {"many"}}, false)
+	if unparsable.code != 422 || !strings.Contains(unparsable.body, "Use a duration such as 1h or 1d.") || !strings.Contains(unparsable.body, `<details class="vk-details" open>`) {
 		t.Fatalf("parse errors: %d", unparsable.code)
 	}
-	ok := e.post(projPath+"/m/new", url.Values{"name": {"Nightly backup"}, "cron": {"0 3 * * *"}, "grace": {"30m"}, "tags": {"Backup, prod"}, "max_runtime": {"2h"}}, true)
+	// the preview answers with partials for the hints and the YAML
+	pv := e.post(projPath+"/m/preview", url.Values{"name": {"Nightly backup"}, "schedule_type": {"cron"}, "schedule": {"0 3 * * *"}, "grace": {"5m"}}, true)
+	if pv.code != 200 {
+		t.Fatalf("preview: %d %s", pv.code, pv.body)
+	}
+	pv.has(t, `<hx-partial hx-target="#schedule-msg"`, "Next runs:", `hx-target="#grace-msg"`, "Late at 03:00, down at 03:05.", `hx-target="#monitor-form .vk-codebox"`, "nightly-backup", `cron: &quot;0 3 * * *&quot;`)
+	ok := e.post(projPath+"/m/new", url.Values{"name": {"Nightly backup"}, "schedule_type": {"cron"}, "schedule": {"0 3 * * *"}, "grace": {"30m"}, "tags": {"Backup, prod"}, "max_runtime": {"2h"}}, true)
 	if ok.code != 204 || ok.hdr.Get("HX-Redirect") != projPath+"/m/nightly-backup" {
 		t.Fatalf("create: %d %v %s", ok.code, ok.hdr, ok.body)
 	}
@@ -302,13 +388,13 @@ func TestCreateAndEditForm(t *testing.T) {
 	if err != nil || m.Heartbeat.Schedule.Cron != "0 3 * * *" || m.Heartbeat.Grace.String() != "30m" || len(m.Tags) != 2 || m.Heartbeat.MaxRuntime.String() != "2h" {
 		t.Fatalf("created monitor: %+v %v", m, err)
 	}
-	dup := e.post(projPath+"/m/new", url.Values{"name": {"Nightly backup"}, "period": {"1h"}}, false)
+	dup := e.post(projPath+"/m/new", url.Values{"name": {"Nightly backup"}, "schedule_type": {"period"}, "schedule": {"1h"}}, false)
 	if dup.code != 422 || !strings.Contains(dup.body, "A monitor with this slug exists.") {
 		t.Fatalf("duplicate: %d", dup.code)
 	}
 	edit := e.get(projPath+"/m/nightly-backup/edit", false)
-	edit.has(t, `value="0 3 * * *"`, `value="30m"`, `readonly`, `<details open>`, `>Save<`)
-	saved := e.post(projPath+"/m/nightly-backup/edit", url.Values{"name": {"Nightly"}, "cron": {"0 4 * * *"}, "grace": {"1h"}}, false)
+	edit.has(t, `value="0 3 * * *"`, `value="30m"`, `disabled`, `<details class="vk-details" open>`, `>Save<`, `Delete monitor`, `data-confirm="Really delete?"`, "it cannot change")
+	saved := e.post(projPath+"/m/nightly-backup/edit", url.Values{"name": {"Nightly"}, "schedule_type": {"cron"}, "schedule": {"0 4 * * *"}, "grace": {"1h"}}, false)
 	if saved.code != 303 {
 		t.Fatalf("edit: %d %s", saved.code, saved.body)
 	}
@@ -320,7 +406,7 @@ func TestCreateAndEditForm(t *testing.T) {
 
 func TestIncidentsPage(t *testing.T) {
 	e := newEnv(t)
-	e.monitor("job")
+	e.monitor("job", "prod")
 	ctx := context.Background()
 	tgt, _ := e.svc.ResolvePing(ctx, e.project.PingKey, "job", "", false)
 	_, _, _ = e.svc.RecordPing(ctx, tgt, service.PingObservation{Signal: domain.SignalFail})
@@ -328,58 +414,144 @@ func TestIncidentsPage(t *testing.T) {
 	if p.code != 200 {
 		t.Fatalf("incidents: %d", p.code)
 	}
-	p.has(t, `1 open`, `>Acknowledge<`, "Job", "down for")
-	incs, _ := e.svc.ListIncidents(ctx, e.scope, true, 0)
+	p.has(t, `1 open`, `>Ack<`, "Job", `vk-irow--open`, "open under a minute", `>prod<span class="vk-chip__n">1</span>`, `name="period" value="30d" checked`, `class="vk-top__count"`)
+	incs, _ := e.svc.ListIncidents(ctx, e.scope, true, 0, time.Time{})
 	acked := e.post(projPath+"/incidents/"+incs[0].ID+"/ack", nil, true)
-	if acked.code != 200 || !strings.Contains(acked.body, "acked by user:j") || strings.Contains(acked.body, ">Acknowledge<") {
+	if acked.code != 200 || !strings.Contains(acked.body, "acked by j · 14:00") || strings.Contains(acked.body, ">Ack<") || !strings.Contains(acked.body, "vk-irow--acked") {
 		t.Fatalf("ack: %d %s", acked.code, acked.body)
 	}
 	e.now = e.now.Add(time.Hour)
 	_, _, _ = e.svc.RecordPing(ctx, tgt, service.PingObservation{Signal: domain.SignalOK})
-	p = e.get(projPath+"/incidents?partial=list", false)
-	p.has(t, "resolved just now")
-	p = e.get(projPath+"/incidents", false)
-	p.has(t, "0 open")
+	p = e.get(projPath+"/incidents?partial=main", false)
+	p.has(t, "vk-irow--resolved", "lasted 1 h", "1 in the last 30 days", "0 open", "Nothing open")
+	if strings.Contains(p.body, "<html") {
+		t.Error("main partial must not be a page")
+	}
+	p = e.get(projPath+"/incidents?period=7d&tag=other", false)
+	p.has(t, "No resolved incidents", `name="period" value="7d" checked`)
 }
 
 func TestSettingsTabs(t *testing.T) {
 	e := newEnv(t)
+	ctx := context.Background()
 	if p := e.get(projPath+"/settings", false); p.code != 303 || p.hdr.Get("Location") != projPath+"/settings/channels" {
 		t.Fatalf("settings redirect: %d", p.code)
 	}
 	ch := e.get(projPath+"/settings/channels", false)
-	ch.has(t, `aria-pressed="true" href="/o/homelab/p/prod/settings/channels"`, "No alert channels yet", `for="config"`, `<option value="webhook"`)
-	bad := e.post(projPath+"/settings/channels", url.Values{"name": {"hook"}, "kind": {"webhook"}, "config": {`{"url":"ftp://x"}`}}, false)
-	if bad.code != 422 || !strings.Contains(bad.body, "vk-field--error") {
-		t.Fatalf("bad channel: %d", bad.code)
+	ch.has(t, `aria-current="page">Channels<span class="vk-tab__n">0</span>`, `href="/o/homelab/p/prod/settings/keys">Keys</a>`, "No alert channels yet", `href="/o/homelab/p/prod/settings/channels?add=1"`)
+	add := e.get(projPath+"/settings/channels?add=1", false)
+	add.has(t, `id="channel-panel"`, `<option value="webhook" selected>`, `for="url"`, `form="channel-form"`, `>Send test<`, "Secrets are stored encrypted")
+	ntfy := e.get(projPath+"/settings/channels?add=1&kind=ntfy&name=phone", true)
+	ntfy.has(t, `for="topic"`, `value="phone"`, `<option value="ntfy" selected>`)
+	if strings.Contains(ntfy.body, "<html") {
+		t.Error("htmx tab must be the partial")
 	}
-	ok := e.post(projPath+"/settings/channels", url.Values{"name": {"hook"}, "kind": {"webhook"}, "config": {`{"url":"https://hooks.example.com/x"}`}}, false)
-	if ok.code != 303 {
+	bad := e.post(projPath+"/settings/channels", url.Values{"name": {"hook"}, "kind": {"webhook"}, "url": {"ftp://x"}}, false)
+	if bad.code != 422 || !strings.Contains(bad.body, "vk-field--error") || !strings.Contains(bad.body, `value="hook"`) {
+		t.Fatalf("bad channel: %d %s", bad.code, bad.body)
+	}
+	var hits int
+	hook := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { hits++; w.WriteHeader(200) }))
+	defer hook.Close()
+	ok := e.post(projPath+"/settings/channels", url.Values{"name": {"hook"}, "kind": {"webhook"}, "url": {hook.URL + "/x"}}, false)
+	if ok.code != 303 || ok.hdr.Get("Location") != projPath+"/settings/channels" {
 		t.Fatalf("create channel: %d %s", ok.code, ok.body)
 	}
-	ch = e.get(projPath+"/settings/channels?flash=Channel+added.", false)
-	ch.has(t, "Channel added.", "hooks.example.com/x", `>Test<`, `data-confirm="Really delete?"`)
-	rt := e.get(projPath+"/settings/routes", false)
-	rt.has(t, "on down, up · all monitors", `<option value="`, `name="on" value="late"`)
-	badRoute := e.post(projPath+"/settings/routes", url.Values{"channel_id": {"nope"}, "repeat_every": {"1m"}}, false)
-	if badRoute.code != 422 {
-		t.Fatalf("bad route: %d", badRoute.code)
+	ch = e.get(projPath+"/settings/channels", false)
+	ch.has(t, "hook", hook.URL+"/x", `>Test<`, "1 route", "never sent", `aria-checked="true"`, `?edit=`)
+	channels, _ := e.svc.ListChannels(ctx, e.scope)
+	id := channels[0].ID
+	// the switch flips enabled and answers with the tab
+	off := e.post(projPath+"/settings/channels/"+id+"/toggle", nil, true)
+	if off.code != 200 || !strings.Contains(off.body, `aria-checked="false"`) || !strings.Contains(off.body, "vk-srow--muted") {
+		t.Fatalf("toggle: %d %s", off.code, off.body)
 	}
-	channels, _ := e.svc.ListChannels(context.Background(), e.scope)
-	okRoute := e.post(projPath+"/settings/routes", url.Values{"channel_id": {channels[0].ID}, "match_tags": {"prod"}, "on": {"down", "late"}, "repeat_every": {"4h"}}, false)
+	if on := e.post(projPath+"/settings/channels/"+id+"/toggle", nil, false); on.code != 303 {
+		t.Fatalf("toggle back: %d", on.code)
+	}
+	// a test from the row shows its result under the row
+	sent := e.post(projPath+"/settings/channels/"+id+"/test", nil, true)
+	if sent.code != 200 || !strings.Contains(sent.body, "Test sent.") || hits != 1 {
+		t.Fatalf("test: %d hits=%d %s", sent.code, hits, sent.body)
+	}
+	// a test from the panel uses the unsaved form
+	dead := e.post(projPath+"/settings/channels", url.Values{"name": {"dead"}, "kind": {"webhook"}, "url": {"http://127.0.0.1:1/x"}, "action": {"test"}}, true)
+	if dead.code != 200 || !strings.Contains(dead.body, "Test failed.") || !strings.Contains(dead.body, "<code>") || !strings.Contains(dead.body, `value="dead"`) {
+		t.Fatalf("panel test: %d %s", dead.code, dead.body)
+	}
+	if list, _ := e.svc.ListChannels(ctx, e.scope); len(list) != 1 {
+		t.Fatal("a test must not save the channel")
+	}
+	// edit in place keeps secrets
+	edit := e.get(projPath+"/settings/channels?edit="+id, false)
+	edit.has(t, `id="channel-panel"`, `value="hook"`, `>Save<`, `Delete channel`, `<input type="hidden" name="kind" value="webhook"`)
+	saved := e.post(projPath+"/settings/channels/"+id, url.Values{"name": {"hook2"}, "url": {hook.URL + "/y"}, "headers": {"X-Token: abc"}}, false)
+	if saved.code != 303 {
+		t.Fatalf("edit channel: %d %s", saved.code, saved.body)
+	}
+	edit = e.get(projPath+"/settings/channels?edit="+id, false)
+	edit.has(t, `value="hook2"`, ">***</textarea>")
+	if p := e.post(projPath+"/settings/channels/"+id, url.Values{"name": {"hook2"}, "url": {hook.URL + "/y"}, "headers": {"***"}}, false); p.code != 303 {
+		t.Fatalf("edit with kept secret: %d %s", p.code, p.body)
+	}
+	if c, _ := e.svc.Channel(ctx, e.scope, id); !strings.Contains(string(c.Config), "abc") {
+		t.Fatalf("secret not kept: %s", c.Config)
+	}
+	// routes
+	rt := e.get(projPath+"/settings/routes", false)
+	rt.has(t, "Every monitor", "→ hook2", `vk-state--down`, `vk-state--up`, "no repeat", `vk-srow__lead">1<`, `?edit=`)
+	addRoute := e.get(projPath+"/settings/routes?add=1", false)
+	addRoute.has(t, `id="route-panel"`, `name="channels" value="`+id+`"`, `name="on" value="late"`, `form="route-form"`)
+	badRoute := e.post(projPath+"/settings/routes", url.Values{"repeat_every": {"1m"}}, false)
+	if badRoute.code != 422 || !strings.Contains(badRoute.body, "Pick at least one channel.") || !strings.Contains(badRoute.body, "Must be at least 5m.") {
+		t.Fatalf("bad route: %d %s", badRoute.code, badRoute.body)
+	}
+	okRoute := e.post(projPath+"/settings/routes", url.Values{"channels": {id}, "match_tags": {"prod"}, "on": {"down", "late"}, "repeat_every": {"4h"}}, false)
 	if okRoute.code != 303 {
 		t.Fatalf("create route: %d %s", okRoute.code, okRoute.body)
 	}
 	rt = e.get(projPath+"/settings/routes", false)
-	rt.has(t, "on down, late · repeat every 4h", `<span class="vk-tag">prod</span>`)
-	keys := e.get(projPath+"/settings/keys", false)
-	keys.has(t, e.project.PingKey, "Rotate ping key", "No API keys", `<option value="rw">`)
-	created := e.post(projPath+"/settings/keys", url.Values{"name": {"laptop"}, "access": {"ro"}}, false)
-	if created.code != 303 || !strings.Contains(created.hdr.Get("Location"), "?key=vk_") {
-		t.Fatalf("create key: %d %s", created.code, created.hdr.Get("Location"))
+	rt.has(t, `<span class="vk-tag">prod</span>`, "repeat every 4 h", `vk-state--late`, `vk-srow__lead">2<`)
+	routes, _ := e.svc.ListRoutes(ctx, e.scope)
+	var rid string
+	for _, r := range routes {
+		if len(r.MatchTags) == 1 {
+			rid = r.ID
+		}
 	}
-	shown := e.get(created.hdr.Get("Location"), false)
-	shown.has(t, "Shown once", "laptop", "never used", ">Revoke<")
+	editRoute := e.get(projPath+"/settings/routes?edit="+rid, false)
+	editRoute.has(t, `value="prod"`, `value="`+id+`" checked`, `value="late" checked`, "Delete route")
+	if p := e.post(projPath+"/settings/routes/"+rid, url.Values{"channels": {id}, "match_tags": {"prod, db"}, "on": {"down"}}, false); p.code != 303 {
+		t.Fatalf("edit route: %d %s", p.code, p.body)
+	}
+	if r, _ := e.svc.Route(ctx, e.scope, rid); len(r.MatchTags) != 2 || len(r.On) != 1 {
+		t.Fatalf("edited route: %+v", r)
+	}
+	if p := e.post(projPath+"/settings/routes/"+rid+"/delete", nil, false); p.code != 303 {
+		t.Fatalf("delete route: %d", p.code)
+	}
+	// keys
+	keys := e.get(projPath+"/settings/keys", false)
+	keys.has(t, e.project.PingKey, "Rotate key", "No API keys", `name="access" value="rw"`, `for="key_name"`)
+	created := e.post(projPath+"/settings/keys", url.Values{"name": {"laptop"}, "access": {"ro"}}, false)
+	if created.code != 200 {
+		t.Fatalf("create key: %d %s", created.code, created.body)
+	}
+	created.has(t, "Key created.", `data-copy="vk_`, "laptop", "never used", ">Revoke<", `<span class="vk-tag">ro</span>`, "j · today")
+	apiKeys, _ := e.svc.ListAPIKeys(ctx, e.scope)
+	revoked := e.post(projPath+"/settings/keys/"+apiKeys[0].ID+"/revoke", nil, false)
+	if revoked.code != 303 || !strings.Contains(revoked.hdr.Get("Location"), "flash=Key+revoked.") {
+		t.Fatalf("revoke: %d %s", revoked.code, revoked.hdr.Get("Location"))
+	}
+	if p := e.get(revoked.hdr.Get("Location"), false); !strings.Contains(p.body, "Key revoked.") {
+		t.Error("flash not shown")
+	}
+	if p := e.post(projPath+"/settings/ping-key/rotate", nil, false); p.code != 303 {
+		t.Fatalf("rotate: %d", p.code)
+	}
+	if p := e.get(projPath+"/settings/maintenance", false); p.code != 200 || !strings.Contains(p.body, "Not yet") {
+		t.Fatalf("maintenance placeholder: %d", p.code)
+	}
 	if p := e.get(projPath+"/settings/nope", false); p.code != 404 {
 		t.Fatalf("unknown tab: %d", p.code)
 	}

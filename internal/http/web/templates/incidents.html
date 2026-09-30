@@ -1,8 +1,8 @@
-{{define "content"}}<div class="vk-page"><main class="vk-main" id="incidents">{{template "incidents-main" .}}</main></div>{{end}}
+{{define "content"}}<div class="vk-page vk-page--full"><main class="vk-main" id="incidents" hx-get="{{.MainPath}}" hx-trigger="every 15s [document.visibilityState=='visible']" hx-swap="innerHTML">{{template "incidents-main" .}}</main></div>{{end}}
 
 {{define "incidents-main"}}<div class="vk-main__head"><h1>Incidents</h1><span class="vk-muted vk-mono" data-down-count="{{.DownCount}}">{{.OpenCount}} open</span></div>
-{{template "incidents-list" .}}{{end}}
-
-{{define "incidents-list"}}<div class="vk-list" id="incident-list" hx-get="{{.ListPath}}" hx-trigger="every 15s [document.visibilityState=='visible']" hx-swap="outerHTML">
-{{if .Rows}}{{range .Rows}}<div class="vk-row vk-row--static">{{glyph .State "vk-row__glyph"}}<span class="vk-row__name"><a class="vk-crumb-link" href="{{.MonitorPath}}">{{.MonitorName}}</a><span class="vk-row__slug">{{.MonitorSlug}}</span></span><span class="vk-row__data vk-row__data--wide{{if .Open}} vk-row__data--down{{end}}" title="{{.OpenedAbs}}">{{.Text}}</span>{{if .CanAck}}<form method="post" action="{{.AckPath}}" hx-post="{{.AckPath}}" hx-target="#incidents"><input type="hidden" name="_csrf" value="{{$.CSRF}}">{{button (dict "Label" "Acknowledge" "Type" "submit")}}</form>{{else if .AckedBy}}<span class="vk-row__data" title="{{.AckedAbs}}">acked by {{.AckedBy}}</span>{{end}}</div>{{end}}{{else}}<div class="vk-drawer__msg">No incidents. An incident opens when a monitor goes down and closes when it comes back up.</div>{{end}}
-</div>{{end}}
+<form class="vk-filterbar" method="get" action="{{.IncidentsPath}}" hx-get="{{.MainPath}}" hx-target="#incidents" hx-trigger="submit, change" hx-push-url="{{.IncidentsPath}}"><div class="vk-chips">{{range .Chips}}{{chip .}}{{end}}</div>{{segmented (dict "Name" "period" "Label" "Resolved in the last" "Options" (opts "7d" "7 d" "30d" "30 d" "90d" "90 d") "Value" (list .Period) "Mono" true)}}{{if .FilterTag}}<input type="hidden" name="tag" value="{{.FilterTag}}">{{end}}</form>
+<h2 class="vk-listhead">Open <span>{{.OpenCount}}</span></h2>
+<div class="vk-irows">{{range .Open}}{{incidentrow .}}{{else}}<div class="vk-empty"><h3>Nothing open</h3><p>An incident opens when a monitor goes down and closes when it comes back up.</p></div>{{end}}</div>
+<h2 class="vk-listhead">Resolved <span>{{.ResolvedCount}} in the last {{.PeriodLabel}}</span></h2>
+<div class="vk-irows">{{range .Resolved}}{{incidentrow .}}{{else}}<div class="vk-empty"><h3>No resolved incidents</h3><p>Nothing was resolved in this period.</p></div>{{end}}</div>{{end}}

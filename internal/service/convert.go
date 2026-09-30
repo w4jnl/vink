@@ -61,10 +61,10 @@ func eventFromRow(r db.Event) *domain.Event {
 	}
 }
 
-func routeFromListRow(r db.ListRoutesRow) *domain.Route {
+func routeFromRow(r db.Route) *domain.Route {
 	rt := &domain.Route{
-		ID: r.ID, ProjectID: r.ProjectID, ChannelID: r.ChannelID, ChannelName: r.ChannelName, ChannelKind: domain.ChannelKind(r.ChannelKind),
-		MatchTags: domain.ParseTags(r.MatchTags), RepeatEvery: time.Duration(r.RepeatEveryS) * time.Second, Priority: int(r.Priority),
+		ID: r.ID, ProjectID: r.ProjectID, MatchTags: domain.ParseTags(r.MatchTags),
+		RepeatEvery: time.Duration(r.RepeatEveryS) * time.Second, Priority: int(r.Priority),
 		CreatedAt: domain.FromMillis(r.CreatedAt), UpdatedAt: domain.FromMillis(r.UpdatedAt),
 	}
 	for _, s := range domain.ParseTags(r.OnStates) {
@@ -74,6 +74,21 @@ func routeFromListRow(r db.ListRoutesRow) *domain.Route {
 		rt.MatchTags = []string{}
 	}
 	return rt
+}
+
+// attachChannels fills Channels and ChannelIDs from the join rows.
+func attachChannels(routes []*domain.Route, rows []db.ListRouteChannelsRow) {
+	byRoute := map[string][]domain.RouteChannel{}
+	for _, rc := range rows {
+		byRoute[rc.RouteID] = append(byRoute[rc.RouteID], domain.RouteChannel{ID: rc.ChannelID, Name: rc.ChannelName, Kind: domain.ChannelKind(rc.ChannelKind), Enabled: rc.ChannelEnabled})
+	}
+	for _, rt := range routes {
+		rt.Channels = byRoute[rt.ID]
+		rt.ChannelIDs = rt.ChannelIDs[:0]
+		for _, c := range rt.Channels {
+			rt.ChannelIDs = append(rt.ChannelIDs, c.ID)
+		}
+	}
 }
 
 func statesJSON(states []domain.State) string {

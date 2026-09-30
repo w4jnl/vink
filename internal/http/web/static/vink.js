@@ -1,6 +1,7 @@
 /* vink UI behaviour beyond htmx: copy buttons, two-step destructive
-   confirms, the CSRF header, three keyboard shortcuts and the favicon
-   swap while something is down. No framework, no build step. */
+   confirms, switches that post at once, the CSRF header, three keyboard
+   shortcuts and the favicon swap while something is down. No framework,
+   no build step. */
 (function () {
   'use strict';
 
@@ -12,6 +13,14 @@
         var t = b.getAttribute('data-copy');
         var done = function () { var l = b.textContent; b.textContent = 'Copied'; setTimeout(function () { b.textContent = l; }, 1400); };
         if (navigator.clipboard) navigator.clipboard.writeText(t).then(done, function () {});
+      });
+    });
+    root.querySelectorAll('.vk-switch').forEach(function (s) {
+      if (s.__vk) return; s.__vk = 1;
+      s.addEventListener('click', function () {
+        if (s.hasAttribute('hx-post')) return; // htmx posts and swaps the row
+        var on = s.getAttribute('aria-checked') !== 'true';
+        s.setAttribute('aria-checked', on); s.querySelector('.vk-switch__word').textContent = on ? 'on' : 'off';
       });
     });
     root.querySelectorAll('[data-confirm]').forEach(function (b) {

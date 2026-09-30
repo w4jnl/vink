@@ -9,17 +9,32 @@ import (
 	"context"
 )
 
+const countRoutesForChannel = `-- name: CountRoutesForChannel :one
+SELECT COUNT(*) FROM route_channels WHERE project_id = ? AND channel_id = ?
+`
+
+type CountRoutesForChannelParams struct {
+	ProjectID string
+	ChannelID string
+}
+
+func (q *Queries) CountRoutesForChannel(ctx context.Context, arg CountRoutesForChannelParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countRoutesForChannel, arg.ProjectID, arg.ChannelID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createRoute = `-- name: CreateRoute :one
-INSERT INTO routes (id, project_id, match_tags, channel_id, on_states, repeat_every_s, priority, created_at, updated_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-RETURNING id, project_id, match_tags, channel_id, on_states, repeat_every_s, priority, created_at, updated_at
+INSERT INTO routes (id, project_id, match_tags, on_states, repeat_every_s, priority, created_at, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+RETURNING id, project_id, match_tags, on_states, repeat_every_s, priority, created_at, updated_at
 `
 
 type CreateRouteParams struct {
 	ID           string
 	ProjectID    string
 	MatchTags    string
-	ChannelID    string
 	OnStates     string
 	RepeatEveryS int64
 	Priority     int64
@@ -32,7 +47,6 @@ func (q *Queries) CreateRoute(ctx context.Context, arg CreateRouteParams) (Route
 		arg.ID,
 		arg.ProjectID,
 		arg.MatchTags,
-		arg.ChannelID,
 		arg.OnStates,
 		arg.RepeatEveryS,
 		arg.Priority,
@@ -44,7 +58,6 @@ func (q *Queries) CreateRoute(ctx context.Context, arg CreateRouteParams) (Route
 		&i.ID,
 		&i.ProjectID,
 		&i.MatchTags,
-		&i.ChannelID,
 		&i.OnStates,
 		&i.RepeatEveryS,
 		&i.Priority,
@@ -52,6 +65,18 @@ func (q *Queries) CreateRoute(ctx context.Context, arg CreateRouteParams) (Route
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const deleteOrphanRoutes = `-- name: DeleteOrphanRoutes :execrows
+DELETE FROM routes WHERE routes.project_id = ? AND NOT EXISTS (SELECT 1 FROM route_channels rc WHERE rc.route_id = routes.id)
+`
+
+func (q *Queries) DeleteOrphanRoutes(ctx context.Context, projectID string) (int64, error) {
+	result, err := q.db.ExecContext(ctx, deleteOrphanRoutes, projectID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 const deleteRoute = `-- name: DeleteRoute :execrows
@@ -71,8 +96,22 @@ func (q *Queries) DeleteRoute(ctx context.Context, arg DeleteRouteParams) (int64
 	return result.RowsAffected()
 }
 
+const deleteRouteChannels = `-- name: DeleteRouteChannels :exec
+DELETE FROM route_channels WHERE project_id = ? AND route_id = ?
+`
+
+type DeleteRouteChannelsParams struct {
+	ProjectID string
+	RouteID   string
+}
+
+func (q *Queries) DeleteRouteChannels(ctx context.Context, arg DeleteRouteChannelsParams) error {
+	_, err := q.db.ExecContext(ctx, deleteRouteChannels, arg.ProjectID, arg.RouteID)
+	return err
+}
+
 const getRoute = `-- name: GetRoute :one
-SELECT id, project_id, match_tags, channel_id, on_states, repeat_every_s, priority, created_at, updated_at FROM routes WHERE project_id = ? AND id = ?
+SELECT id, project_id, match_tags, on_states, repeat_every_s, priority, created_at, updated_at FROM routes WHERE project_id = ? AND id = ?
 `
 
 type GetRouteParams struct {
@@ -87,7 +126,6 @@ func (q *Queries) GetRoute(ctx context.Context, arg GetRouteParams) (Route, erro
 		&i.ID,
 		&i.ProjectID,
 		&i.MatchTags,
-		&i.ChannelID,
 		&i.OnStates,
 		&i.RepeatEveryS,
 		&i.Priority,
@@ -97,47 +135,48 @@ func (q *Queries) GetRoute(ctx context.Context, arg GetRouteParams) (Route, erro
 	return i, err
 }
 
-const listRoutes = `-- name: ListRoutes :many
-SELECT r.id, r.project_id, r.match_tags, r.channel_id, r.on_states, r.repeat_every_s, r.priority, r.created_at, r.updated_at, c.name AS channel_name, c.kind AS channel_kind, c.enabled AS channel_enabled
-FROM routes r JOIN channels c ON c.id = r.channel_id
-WHERE r.project_id = ?
-ORDER BY r.priority DESC, r.created_at, r.id
+const insertRouteChannel = `-- name: InsertRouteChannel :exec
+INSERT INTO route_channels (route_id, channel_id, project_id) VALUES (?, ?, ?)
 `
 
-type ListRoutesRow struct {
-	ID             string
-	ProjectID      string
-	MatchTags      string
+type InsertRouteChannelParams struct {
+	RouteID   string
+	ChannelID string
+	ProjectID string
+}
+
+func (q *Queries) InsertRouteChannel(ctx context.Context, arg InsertRouteChannelParams) error {
+	_, err := q.db.ExecContext(ctx, insertRouteChannel, arg.RouteID, arg.ChannelID, arg.ProjectID)
+	return err
+}
+
+const listRouteChannels = `-- name: ListRouteChannels :many
+SELECT rc.route_id, c.id AS channel_id, c.name AS channel_name, c.kind AS channel_kind, c.enabled AS channel_enabled
+FROM route_channels rc JOIN channels c ON c.id = rc.channel_id
+WHERE rc.project_id = ?
+ORDER BY rc.route_id, c.name
+`
+
+type ListRouteChannelsRow struct {
+	RouteID        string
 	ChannelID      string
-	OnStates       string
-	RepeatEveryS   int64
-	Priority       int64
-	CreatedAt      int64
-	UpdatedAt      int64
 	ChannelName    string
 	ChannelKind    string
 	ChannelEnabled bool
 }
 
-func (q *Queries) ListRoutes(ctx context.Context, projectID string) ([]ListRoutesRow, error) {
-	rows, err := q.db.QueryContext(ctx, listRoutes, projectID)
+func (q *Queries) ListRouteChannels(ctx context.Context, projectID string) ([]ListRouteChannelsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listRouteChannels, projectID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ListRoutesRow
+	var items []ListRouteChannelsRow
 	for rows.Next() {
-		var i ListRoutesRow
+		var i ListRouteChannelsRow
 		if err := rows.Scan(
-			&i.ID,
-			&i.ProjectID,
-			&i.MatchTags,
+			&i.RouteID,
 			&i.ChannelID,
-			&i.OnStates,
-			&i.RepeatEveryS,
-			&i.Priority,
-			&i.CreatedAt,
-			&i.UpdatedAt,
 			&i.ChannelName,
 			&i.ChannelKind,
 			&i.ChannelEnabled,
@@ -155,16 +194,51 @@ func (q *Queries) ListRoutes(ctx context.Context, projectID string) ([]ListRoute
 	return items, nil
 }
 
+const listRoutes = `-- name: ListRoutes :many
+SELECT id, project_id, match_tags, on_states, repeat_every_s, priority, created_at, updated_at FROM routes WHERE project_id = ? ORDER BY priority DESC, created_at, id
+`
+
+func (q *Queries) ListRoutes(ctx context.Context, projectID string) ([]Route, error) {
+	rows, err := q.db.QueryContext(ctx, listRoutes, projectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Route
+	for rows.Next() {
+		var i Route
+		if err := rows.Scan(
+			&i.ID,
+			&i.ProjectID,
+			&i.MatchTags,
+			&i.OnStates,
+			&i.RepeatEveryS,
+			&i.Priority,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const updateRoute = `-- name: UpdateRoute :one
 UPDATE routes
-SET match_tags = ?, channel_id = ?, on_states = ?, repeat_every_s = ?, priority = ?, updated_at = ?
+SET match_tags = ?, on_states = ?, repeat_every_s = ?, priority = ?, updated_at = ?
 WHERE project_id = ? AND id = ?
-RETURNING id, project_id, match_tags, channel_id, on_states, repeat_every_s, priority, created_at, updated_at
+RETURNING id, project_id, match_tags, on_states, repeat_every_s, priority, created_at, updated_at
 `
 
 type UpdateRouteParams struct {
 	MatchTags    string
-	ChannelID    string
 	OnStates     string
 	RepeatEveryS int64
 	Priority     int64
@@ -176,7 +250,6 @@ type UpdateRouteParams struct {
 func (q *Queries) UpdateRoute(ctx context.Context, arg UpdateRouteParams) (Route, error) {
 	row := q.db.QueryRowContext(ctx, updateRoute,
 		arg.MatchTags,
-		arg.ChannelID,
 		arg.OnStates,
 		arg.RepeatEveryS,
 		arg.Priority,
@@ -189,7 +262,6 @@ func (q *Queries) UpdateRoute(ctx context.Context, arg UpdateRouteParams) (Route
 		&i.ID,
 		&i.ProjectID,
 		&i.MatchTags,
-		&i.ChannelID,
 		&i.OnStates,
 		&i.RepeatEveryS,
 		&i.Priority,

@@ -120,20 +120,22 @@ components:
             updated_at: {type: string, format: date-time}
     RouteIn:
       type: object
-      required: [channel_id]
+      required: [channels]
       properties:
         match_tags: {type: array, items: {type: string}, description: All-of; empty matches every monitor.}
-        channel_id: {type: string}
+        channels: {type: array, items: {type: string}, description: Channel ids; at least one.}
         on: {type: array, items: {type: string, enum: [down, up, late]}, default: [down, up]}
         repeat_every: {type: string, description: "0 or empty means never; otherwise at least 5m."}
         priority: {type: integer}
     Route:
-      allOf:
-        - $ref: "#/components/schemas/RouteIn"
-        - type: object
-          properties:
-            id: {type: string}
-            channel: {type: string}
+      type: object
+      properties:
+        id: {type: string}
+        match_tags: {type: array, items: {type: string}}
+        channels: {type: array, items: {type: object, properties: {id: {type: string}, name: {type: string}, kind: {type: string}, enabled: {type: boolean}}}}
+        on: {type: array, items: {type: string}}
+        repeat_every: {type: string}
+        priority: {type: integer}
     Key:
       type: object
       properties:

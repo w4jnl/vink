@@ -221,7 +221,7 @@ func TestCLIPingRunLogsStatusAck(t *testing.T) {
 	if code != 3 || !strings.Contains(out, "◆ down 1") || !strings.Contains(out, "job down for") {
 		t.Fatalf("status down: %d %s %s", code, out, errs)
 	}
-	incidents, _ := e.svc.ListIncidents(context.Background(), e.scope, true, 0)
+	incidents, _ := e.svc.ListIncidents(context.Background(), e.scope, true, 0, time.Time{})
 	out, _, code = e.run("", "ack", incidents[0].ID)
 	if code != 0 || !strings.Contains(out, "acknowledged incident") {
 		t.Fatalf("ack: %d %s", code, out)

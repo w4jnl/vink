@@ -1,40 +1,868 @@
 [
-  {"name": "statebadge-up", "component": "StateBadge", "props": {"state": "up"}},
-  {"name": "statebadge-down-pill-since", "component": "StateBadge", "props": {"state": "down", "pill": true, "since": "for 4 min"}},
-  {"name": "statebadge-label", "component": "StateBadge", "props": {"state": "late", "label": "late & slow"}},
-  {"name": "statebadge-unknown", "component": "StateBadge", "props": {"state": "weird"}},
-  {"name": "button-quiet", "component": "Button", "props": {"label": "Pause"}},
-  {"name": "button-primary", "component": "Button", "props": {"label": "Create monitor", "variant": "primary"}},
-  {"name": "button-danger-confirm", "component": "Button", "props": {"label": "Delete monitor", "variant": "danger", "confirm": "Really delete?"}},
-  {"name": "button-disabled", "component": "Button", "props": {"label": "Check now", "disabled": true}},
-  {"name": "chip-state", "component": "Chip", "props": {"label": "down", "state": "down", "count": 1, "pressed": true}},
-  {"name": "chip-tag", "component": "Chip", "props": {"label": "prod", "count": 3}},
-  {"name": "chip-plain", "component": "Chip", "props": {"label": "all"}},
-  {"name": "chip-zero", "component": "Chip", "props": {"label": "paused", "state": "paused", "count": 0}},
-  {"name": "tag", "component": "Tag", "props": {"label": "backup"}},
-  {"name": "kindicon-heartbeat", "component": "KindIcon", "props": {"kind": "heartbeat"}},
-  {"name": "kindicon-http", "component": "KindIcon", "props": {"kind": "http"}},
-  {"name": "kindicon-tcp", "component": "KindIcon", "props": {"kind": "tcp"}},
-  {"name": "kindicon-dns", "component": "KindIcon", "props": {"kind": "dns"}},
-  {"name": "kindicon-tls", "component": "KindIcon", "props": {"kind": "tls"}},
-  {"name": "kindicon-icmp", "component": "KindIcon", "props": {"kind": "icmp"}},
-  {"name": "field-hint", "component": "Field", "props": {"id": "slug", "label": "Slug", "value": "nightly-backup", "hint": "Lowercase letters, digits and dashes.", "mono": true}},
-  {"name": "field-error", "component": "Field", "props": {"id": "grace", "label": "Grace", "value": "30s", "error": "Must be at least 60s.", "mono": true}},
-  {"name": "field-plain", "component": "Field", "props": {"id": "name", "label": "Name", "placeholder": "Nightly backup"}},
-  {"name": "pingurl", "component": "PingUrl", "props": {"base": "https://vink.w4j.nl/ping/", "key": "k7f3q9x2mzabcdefghijkl", "slug": "nightly-backup"}},
-  {"name": "sparkline", "component": "Sparkline", "props": {"points": [80, 82, 79, 85, 90, 400, 900, 1200], "state": "down"}},
-  {"name": "sparkline-flat", "component": "Sparkline", "props": {"points": [3, 3, 3], "state": "up"}},
-  {"name": "sparkline-one", "component": "Sparkline", "props": {"points": [12]}},
-  {"name": "sparkline-empty", "component": "Sparkline", "props": {"points": []}},
-  {"name": "monitorrow-heartbeat", "component": "MonitorRow", "props": {"state": "up", "name": "Nightly backup", "slug": "nightly-backup", "kind": "heartbeat", "last": "3 h ago · 4m12s", "lastAbs": "2026-09-27 03:04 CEST", "next": "due in 21 h", "tags": ["backup", "prod"], "href": "/o/w4j/p/homelab/m/nightly-backup"}},
-  {"name": "monitorrow-down-current", "component": "MonitorRow", "props": {"state": "down", "name": "Public API", "slug": "api-health", "kind": "http", "last": "2 min ago · 503", "points": [80, 82, 79, 85, 90, 400, 900, 1200], "tags": ["api", "prod"], "href": "/o/w4j/p/homelab/m/api-health", "current": true}},
-  {"name": "monitorrow-new", "component": "MonitorRow", "props": {"state": "new", "name": "Weekly restic check", "slug": "restic-check", "kind": "heartbeat", "last": "no pings yet", "next": "due Sun 04:00", "tags": ["backup"], "href": "/o/w4j/p/homelab/m/restic-check"}},
-  {"name": "monitorrow-late", "component": "MonitorRow", "props": {"state": "late", "name": "Hourly sync", "slug": "hourly-sync", "kind": "heartbeat", "last": "1 h ago", "next": "3 min late", "tags": [], "href": "/o/w4j/p/homelab/m/hourly-sync"}},
-  {"name": "uptimebar-compact", "component": "UptimeBar", "props": {"days": ["up", "up", "late", "down", "none", "up"], "compact": true, "label": "last 24 hours", "legend": ["24 h ago", "98.6% up", "now"]}},
-  {"name": "uptimebar-plain", "component": "UptimeBar", "props": {"days": ["up", "up", "up"]}},
-  {"name": "statusbanner-down", "component": "StatusBanner", "props": {"state": "down", "text": "1 service down", "detail": "since 14:07"}},
-  {"name": "statusbanner-maintenance", "component": "StatusBanner", "props": {"state": "maintenance", "text": "Maintenance"}},
-  {"name": "emptystate", "component": "EmptyState", "props": {"base": "https://vink.w4j.nl/ping/", "key": "k7f3q9x2mzabcdefghijkl"}},
-  {"name": "mark", "component": "Mark", "props": {"size": 22}},
-  {"name": "mark-default", "component": "Mark", "props": {}}
+ {
+  "name": "statebadge-up",
+  "component": "StateBadge",
+  "props": {
+   "state": "up"
+  }
+ },
+ {
+  "name": "statebadge-down-pill-since",
+  "component": "StateBadge",
+  "props": {
+   "state": "down",
+   "pill": true,
+   "since": "for 4 min"
+  }
+ },
+ {
+  "name": "statebadge-label",
+  "component": "StateBadge",
+  "props": {
+   "state": "late",
+   "label": "late & slow"
+  }
+ },
+ {
+  "name": "statebadge-unknown",
+  "component": "StateBadge",
+  "props": {
+   "state": "weird"
+  }
+ },
+ {
+  "name": "button-quiet",
+  "component": "Button",
+  "props": {
+   "label": "Pause"
+  }
+ },
+ {
+  "name": "button-primary",
+  "component": "Button",
+  "props": {
+   "label": "Create monitor",
+   "variant": "primary"
+  }
+ },
+ {
+  "name": "button-danger-confirm",
+  "component": "Button",
+  "props": {
+   "label": "Delete monitor",
+   "variant": "danger",
+   "confirm": "Really delete?"
+  }
+ },
+ {
+  "name": "button-disabled",
+  "component": "Button",
+  "props": {
+   "label": "Check now",
+   "disabled": true
+  }
+ },
+ {
+  "name": "chip-state",
+  "component": "Chip",
+  "props": {
+   "label": "down",
+   "state": "down",
+   "count": 1,
+   "pressed": true
+  }
+ },
+ {
+  "name": "chip-tag",
+  "component": "Chip",
+  "props": {
+   "label": "prod",
+   "count": 3
+  }
+ },
+ {
+  "name": "chip-plain",
+  "component": "Chip",
+  "props": {
+   "label": "all"
+  }
+ },
+ {
+  "name": "chip-zero",
+  "component": "Chip",
+  "props": {
+   "label": "paused",
+   "state": "paused",
+   "count": 0
+  }
+ },
+ {
+  "name": "tag",
+  "component": "Tag",
+  "props": {
+   "label": "backup"
+  }
+ },
+ {
+  "name": "kindicon-heartbeat",
+  "component": "KindIcon",
+  "props": {
+   "kind": "heartbeat"
+  }
+ },
+ {
+  "name": "kindicon-http",
+  "component": "KindIcon",
+  "props": {
+   "kind": "http"
+  }
+ },
+ {
+  "name": "kindicon-tcp",
+  "component": "KindIcon",
+  "props": {
+   "kind": "tcp"
+  }
+ },
+ {
+  "name": "kindicon-dns",
+  "component": "KindIcon",
+  "props": {
+   "kind": "dns"
+  }
+ },
+ {
+  "name": "kindicon-tls",
+  "component": "KindIcon",
+  "props": {
+   "kind": "tls"
+  }
+ },
+ {
+  "name": "kindicon-icmp",
+  "component": "KindIcon",
+  "props": {
+   "kind": "icmp"
+  }
+ },
+ {
+  "name": "field-hint",
+  "component": "Field",
+  "props": {
+   "id": "slug",
+   "label": "Slug",
+   "value": "nightly-backup",
+   "hint": "Lowercase letters, digits and dashes.",
+   "mono": true
+  }
+ },
+ {
+  "name": "field-error",
+  "component": "Field",
+  "props": {
+   "id": "grace",
+   "label": "Grace",
+   "value": "30s",
+   "error": "Must be at least 60s.",
+   "mono": true
+  }
+ },
+ {
+  "name": "field-plain",
+  "component": "Field",
+  "props": {
+   "id": "name",
+   "label": "Name",
+   "placeholder": "Nightly backup"
+  }
+ },
+ {
+  "name": "pingurl",
+  "component": "PingUrl",
+  "props": {
+   "base": "https://vink.w4j.nl/ping/",
+   "key": "k7f3q9x2mzabcdefghijkl",
+   "slug": "nightly-backup"
+  }
+ },
+ {
+  "name": "sparkline",
+  "component": "Sparkline",
+  "props": {
+   "points": [
+    80,
+    82,
+    79,
+    85,
+    90,
+    400,
+    900,
+    1200
+   ],
+   "state": "down"
+  }
+ },
+ {
+  "name": "sparkline-flat",
+  "component": "Sparkline",
+  "props": {
+   "points": [
+    3,
+    3,
+    3
+   ],
+   "state": "up"
+  }
+ },
+ {
+  "name": "sparkline-one",
+  "component": "Sparkline",
+  "props": {
+   "points": [
+    12
+   ]
+  }
+ },
+ {
+  "name": "sparkline-empty",
+  "component": "Sparkline",
+  "props": {
+   "points": []
+  }
+ },
+ {
+  "name": "monitorrow-heartbeat",
+  "component": "MonitorRow",
+  "props": {
+   "state": "up",
+   "name": "Nightly backup",
+   "slug": "nightly-backup",
+   "kind": "heartbeat",
+   "last": "3 h ago · 4m12s",
+   "lastAbs": "2026-09-27 03:04 CEST",
+   "next": "due in 21 h",
+   "tags": [
+    "backup",
+    "prod"
+   ],
+   "href": "/o/w4j/p/homelab/m/nightly-backup"
+  }
+ },
+ {
+  "name": "monitorrow-down-current",
+  "component": "MonitorRow",
+  "props": {
+   "state": "down",
+   "name": "Public API",
+   "slug": "api-health",
+   "kind": "http",
+   "last": "2 min ago · 503",
+   "points": [
+    80,
+    82,
+    79,
+    85,
+    90,
+    400,
+    900,
+    1200
+   ],
+   "tags": [
+    "api",
+    "prod"
+   ],
+   "href": "/o/w4j/p/homelab/m/api-health",
+   "current": true
+  }
+ },
+ {
+  "name": "monitorrow-new",
+  "component": "MonitorRow",
+  "props": {
+   "state": "new",
+   "name": "Weekly restic check",
+   "slug": "restic-check",
+   "kind": "heartbeat",
+   "last": "no pings yet",
+   "next": "due Sun 04:00",
+   "tags": [
+    "backup"
+   ],
+   "href": "/o/w4j/p/homelab/m/restic-check"
+  }
+ },
+ {
+  "name": "monitorrow-late",
+  "component": "MonitorRow",
+  "props": {
+   "state": "late",
+   "name": "Hourly sync",
+   "slug": "hourly-sync",
+   "kind": "heartbeat",
+   "last": "1 h ago",
+   "next": "3 min late",
+   "tags": [],
+   "href": "/o/w4j/p/homelab/m/hourly-sync"
+  }
+ },
+ {
+  "name": "uptimebar-compact",
+  "component": "UptimeBar",
+  "props": {
+   "days": [
+    "up",
+    "up",
+    "late",
+    "down",
+    "none",
+    "up"
+   ],
+   "compact": true,
+   "label": "last 24 hours",
+   "legend": [
+    "24 h ago",
+    "98.6% up",
+    "now"
+   ]
+  }
+ },
+ {
+  "name": "uptimebar-plain",
+  "component": "UptimeBar",
+  "props": {
+   "days": [
+    "up",
+    "up",
+    "up"
+   ]
+  }
+ },
+ {
+  "name": "statusbanner-down",
+  "component": "StatusBanner",
+  "props": {
+   "state": "down",
+   "text": "1 service down",
+   "detail": "since 14:07"
+  }
+ },
+ {
+  "name": "statusbanner-maintenance",
+  "component": "StatusBanner",
+  "props": {
+   "state": "maintenance",
+   "text": "Maintenance"
+  }
+ },
+ {
+  "name": "emptystate",
+  "component": "EmptyState",
+  "props": {
+   "base": "https://vink.w4j.nl/ping/",
+   "key": "k7f3q9x2mzabcdefghijkl"
+  }
+ },
+ {
+  "name": "mark",
+  "component": "Mark",
+  "props": {
+   "size": 22
+  }
+ },
+ {
+  "name": "mark-default",
+  "component": "Mark",
+  "props": {}
+ },
+ {
+  "name": "button-href",
+  "component": "Button",
+  "props": {
+   "label": "Create monitor",
+   "variant": "primary",
+   "href": "/o/w4j/p/homelab/m/new"
+  }
+ },
+ {
+  "name": "button-submit-block",
+  "component": "Button",
+  "props": {
+   "label": "Sign in",
+   "variant": "primary",
+   "type": "submit",
+   "block": true
+  }
+ },
+ {
+  "name": "field-noid",
+  "component": "Field",
+  "props": {
+   "label": "Search",
+   "name": "q",
+   "hint": "never shown as msg id"
+  }
+ },
+ {
+  "name": "field-select",
+  "component": "Field",
+  "props": {
+   "id": "timezone",
+   "label": "Timezone",
+   "control": "select",
+   "value": "Europe/Amsterdam",
+   "options": [
+    {
+     "value": "Europe/Amsterdam",
+     "label": "Europe/Amsterdam (project)"
+    },
+    "UTC",
+    "Europe/London"
+   ]
+  }
+ },
+ {
+  "name": "field-textarea",
+  "component": "Field",
+  "props": {
+   "id": "headers",
+   "label": "Headers",
+   "control": "textarea",
+   "mono": true,
+   "rows": 2,
+   "value": "Accept: application/json",
+   "placeholder": "Name: value, one per line"
+  }
+ },
+ {
+  "name": "field-password-autocomplete",
+  "component": "Field",
+  "props": {
+   "id": "password",
+   "label": "Password",
+   "type": "password",
+   "autocomplete": "current-password"
+  }
+ },
+ {
+  "name": "field-prefix",
+  "component": "Field",
+  "props": {
+   "id": "sp_slug",
+   "label": "Address",
+   "mono": true,
+   "prefix": "vink.w4j.nl/s/",
+   "value": "homelab"
+  }
+ },
+ {
+  "name": "field-suffix-disabled",
+  "component": "Field",
+  "props": {
+   "id": "failure_threshold",
+   "label": "Down after",
+   "mono": true,
+   "suffix": "failures",
+   "value": "1",
+   "disabled": true
+  }
+ },
+ {
+  "name": "field-html",
+  "component": "Field",
+  "props": {
+   "id": "repeat",
+   "label": "Repeat",
+   "html": "<div class=\"vk-seg\">x</div>"
+  }
+ },
+ {
+  "name": "field-before-after",
+  "component": "Field",
+  "props": {
+   "id": "schedule",
+   "label": "Schedule",
+   "mono": true,
+   "value": "0 3 * * *",
+   "before": "<b>B</b>",
+   "after": "<i>A</i>",
+   "hint": "Next runs: tonight 03:00"
+  }
+ },
+ {
+  "name": "fieldrow-2",
+  "component": "FieldRow",
+  "props": {
+   "fields": [
+    "<div>a</div>",
+    "<div>b</div>"
+   ]
+  }
+ },
+ {
+  "name": "fieldrow-4",
+  "component": "FieldRow",
+  "props": {
+   "fields": [
+    "<div>a</div>",
+    "<div>b</div>",
+    "<div>c</div>",
+    "<div>d</div>"
+   ]
+  }
+ },
+ {
+  "name": "fieldrow-lead",
+  "component": "FieldRow",
+  "props": {
+   "fields": [
+    "<div>a</div>",
+    "<div>b</div>"
+   ],
+   "lead": true
+  }
+ },
+ {
+  "name": "checkbox",
+  "component": "Checkbox",
+  "props": {
+   "label": "Follow redirects",
+   "name": "follow_redirects",
+   "checked": true
+  }
+ },
+ {
+  "name": "checkbox-hint-value",
+  "component": "Checkbox",
+  "props": {
+   "label": "Verify the certificate",
+   "name": "verify_tls",
+   "value": "1",
+   "hint": "Off shows a warning on the monitor.",
+   "disabled": true
+  }
+ },
+ {
+  "name": "checkbox-labelhtml",
+  "component": "Checkbox",
+  "props": {
+   "labelHtml": "<span class=\"vk-state vk-state--late\">late</span>",
+   "name": "rt_on",
+   "value": "late",
+   "checked": true
+  }
+ },
+ {
+  "name": "switch-on",
+  "component": "Switch",
+  "props": {
+   "checked": true,
+   "label": "ntfy enabled"
+  }
+ },
+ {
+  "name": "switch-off",
+  "component": "Switch",
+  "props": {}
+ },
+ {
+  "name": "segmented-radio",
+  "component": "Segmented",
+  "props": {
+   "name": "schedule_type",
+   "label": "Schedule type",
+   "options": [
+    {
+     "value": "period",
+     "label": "Period"
+    },
+    {
+     "value": "cron",
+     "label": "Cron"
+    },
+    {
+     "value": "oncalendar",
+     "label": "OnCalendar"
+    }
+   ],
+   "value": "cron"
+  }
+ },
+ {
+  "name": "segmented-multi-mono",
+  "component": "Segmented",
+  "props": {
+   "name": "mw_days",
+   "label": "Days",
+   "options": [
+    "Mon",
+    "Tue",
+    "Wed"
+   ],
+   "value": [
+    "Tue",
+    "Wed"
+   ],
+   "multi": true,
+   "mono": true
+  }
+ },
+ {
+  "name": "segmented-defaults",
+  "component": "Segmented",
+  "props": {
+   "label": "Access",
+   "options": [
+    "ro",
+    "rw"
+   ]
+  }
+ },
+ {
+  "name": "kindpicker",
+  "component": "KindPicker",
+  "props": {
+   "value": "http"
+  }
+ },
+ {
+  "name": "kindpicker-locked",
+  "component": "KindPicker",
+  "props": {
+   "value": "tls",
+   "locked": true
+  }
+ },
+ {
+  "name": "kindpicker-default",
+  "component": "KindPicker",
+  "props": {}
+ },
+ {
+  "name": "disclosure",
+  "component": "Disclosure",
+  "props": {
+   "summary": "max runtime none · down after 1",
+   "body": "<p>body</p>"
+  }
+ },
+ {
+  "name": "disclosure-open-title",
+  "component": "Disclosure",
+  "props": {
+   "title": "As YAML",
+   "summary": "for vink.yaml and vink apply",
+   "body": "<pre>x</pre>",
+   "open": true
+  }
+ },
+ {
+  "name": "notice-ok",
+  "component": "Notice",
+  "props": {
+   "tone": "ok",
+   "title": "Test sent.",
+   "text": "The mail server accepted it: 250 2.0.0 OK."
+  }
+ },
+ {
+  "name": "notice-error-html",
+  "component": "Notice",
+  "props": {
+   "tone": "error",
+   "title": "Test failed.",
+   "text": "Alertmanager did not answer:",
+   "html": "<code>dial tcp: connection refused</code>"
+  }
+ },
+ {
+  "name": "notice-info",
+  "component": "Notice",
+  "props": {
+   "text": "Plain info & <b>not html</b>"
+  }
+ },
+ {
+  "name": "notice-warn",
+  "component": "Notice",
+  "props": {
+   "tone": "warn",
+   "title": "Careful."
+  }
+ },
+ {
+  "name": "code-yaml-copy",
+  "component": "Code",
+  "props": {
+   "text": "slug: nightly-backup\nname: Nightly backup\ntags: [backup, prod]\nschedule: {cron: \"0 3 * * *\"}\nhttp:\n  url: https://x\n  - item: 1",
+   "copy": true,
+   "copyLabel": "Copy YAML",
+   "yaml": true
+  }
+ },
+ {
+  "name": "code-plain",
+  "component": "Code",
+  "props": {
+   "text": "0 3 * * * curl -fsS <url>"
+  }
+ },
+ {
+  "name": "panel",
+  "component": "Panel",
+  "props": {
+   "title": "Add channel",
+   "note": "Secrets are stored encrypted and shown as *** afterwards.",
+   "body": "<div>fields</div>",
+   "actions": "<button>Save</button>",
+   "id": "add-channel"
+  }
+ },
+ {
+  "name": "panel-bare",
+  "component": "Panel",
+  "props": {
+   "body": "<div>x</div>"
+  }
+ },
+ {
+  "name": "topbar",
+  "component": "TopBar",
+  "props": {
+   "org": "w4j",
+   "project": "homelab",
+   "section": "incidents",
+   "incidents": 2,
+   "user": "jaro"
+  }
+ },
+ {
+  "name": "topbar-defaults",
+  "component": "TopBar",
+  "props": {}
+ },
+ {
+  "name": "topbar-hrefs",
+  "component": "TopBar",
+  "props": {
+   "org": "acme",
+   "project": "prod",
+   "section": "settings",
+   "user": "Ann",
+   "hrefs": {
+    "home": "/home",
+    "settings": "/o/acme/p/prod/settings/keys"
+   }
+  }
+ },
+ {
+  "name": "tabs",
+  "component": "Tabs",
+  "props": {
+   "label": "Settings",
+   "current": "routes",
+   "tabs": [
+    {
+     "id": "channels",
+     "label": "Channels",
+     "count": 3,
+     "href": "/s/channels"
+    },
+    {
+     "id": "routes",
+     "label": "Routes",
+     "count": 0,
+     "href": "/s/routes"
+    },
+    {
+     "id": "keys",
+     "label": "Keys"
+    }
+   ]
+  }
+ },
+ {
+  "name": "incidentrow-open",
+  "component": "IncidentRow",
+  "props": {
+   "state": "open",
+   "name": "Public API",
+   "slug": "api-health",
+   "href": "/o/w4j/p/homelab/m/api-health",
+   "reason": "503 · 3 of 3 checks failed",
+   "opened": "14:07 · 4 min ago",
+   "openedAbs": "Mon 28 Sep 14:07:31 CEST",
+   "duration": "open 4 min"
+  }
+ },
+ {
+  "name": "incidentrow-acked",
+  "component": "IncidentRow",
+  "props": {
+   "state": "acked",
+   "name": "Postgres",
+   "slug": "postgres",
+   "reason": "connection refused",
+   "opened": "13:51 · 20 min ago",
+   "duration": "open 20 min",
+   "ackedBy": "j · 13:55"
+  }
+ },
+ {
+  "name": "incidentrow-resolved",
+  "component": "IncidentRow",
+  "props": {
+   "state": "resolved",
+   "name": "Nightly backup",
+   "slug": "nightly-backup",
+   "reason": "no ping by 03:30",
+   "opened": "today 03:30",
+   "duration": "lasted 1 h 12 min",
+   "resolved": "04:42"
+  }
+ },
+ {
+  "name": "settingsrow",
+  "component": "SettingsRow",
+  "props": {
+   "title": "ops mail",
+   "sub": "smtp · ops@example.com",
+   "cells": [
+    {
+     "html": "<b>on</b>",
+     "size": "s"
+    },
+    {
+     "text": "2 routes"
+    },
+    {
+     "text": "sent 3 h ago",
+     "mono": true
+    },
+    {
+     "text": "ink",
+     "ink": true,
+     "size": "l"
+    }
+   ],
+   "actions": "<button>Test</button>"
+  }
+ },
+ {
+  "name": "settingsrow-lead-muted",
+  "component": "SettingsRow",
+  "props": {
+   "lead": "1",
+   "titleHtml": "<span class=\"vk-tag\">prod</span>",
+   "sub": "→ ops mail, ntfy",
+   "muted": true
+  }
+ },
+ {
+  "name": "settingsrow-lead-zero",
+  "component": "SettingsRow",
+  "props": {
+   "lead": 0,
+   "title": "zero lead"
+  }
+ }
 ]

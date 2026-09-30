@@ -2,48 +2,82 @@ package service
 
 import (
 	"context"
+	"sort"
 
 	"github.com/w4jnl/vink/internal/db"
 	"github.com/w4jnl/vink/internal/domain"
 )
 
-func (s *Service) prepareRoute(ctx context.Context, sc domain.Scope, r *domain.Route) error {
+// prepareRoute normalises and validates a route and checks that every
+// channel belongs to the project.
+func (s *Service) prepareRoute(ctx context.Context, q *db.Queries, sc domain.Scope, r *domain.Route) error {
 	r.MatchTags = domain.NormalizeTags(r.MatchTags)
 	if len(r.On) == 0 {
 		r.On = []domain.State{domain.StateDown, domain.StateUp}
 	}
+	seen := map[string]bool{}
+	ids := r.ChannelIDs[:0]
+	for _, id := range r.ChannelIDs {
+		if id != "" && !seen[id] {
+			seen[id] = true
+			ids = append(ids, id)
+		}
+	}
+	r.ChannelIDs = ids
 	if err := r.Validate(); err != nil {
 		return err
 	}
-	if _, err := s.db.Read().GetChannel(ctx, db.GetChannelParams{ProjectID: sc.ProjectID, ID: r.ChannelID}); err != nil {
-		if db.IsNotFound(err) {
-			return (&domain.ValidationError{Errors: []domain.FieldError{{Field: "channel_id", Msg: "no such channel in this project"}}}).OrNil()
+	for _, id := range r.ChannelIDs {
+		if _, err := q.GetChannel(ctx, db.GetChannelParams{ProjectID: sc.ProjectID, ID: id}); err != nil {
+			if db.IsNotFound(err) {
+				return (&domain.ValidationError{Errors: []domain.FieldError{{Field: "channels", Msg: "no such channel in this project"}}}).OrNil()
+			}
+			return err
 		}
-		return err
 	}
 	return nil
 }
 
-// CreateRoute adds a route.
+func (s *Service) writeRouteChannels(ctx context.Context, q *db.Queries, sc domain.Scope, routeID string, channelIDs []string) error {
+	if err := q.DeleteRouteChannels(ctx, db.DeleteRouteChannelsParams{ProjectID: sc.ProjectID, RouteID: routeID}); err != nil {
+		return err
+	}
+	for _, id := range channelIDs {
+		if err := q.InsertRouteChannel(ctx, db.InsertRouteChannelParams{RouteID: routeID, ChannelID: id, ProjectID: sc.ProjectID}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// CreateRoute adds a route with its channels.
 func (s *Service) CreateRoute(ctx context.Context, sc domain.Scope, r *domain.Route) (*domain.Route, error) {
 	if err := requireEdit(sc); err != nil {
 		return nil, err
 	}
-	if err := s.prepareRoute(ctx, sc, r); err != nil {
-		return nil, err
-	}
-	now := s.now()
-	row, err := s.db.Write().CreateRoute(ctx, db.CreateRouteParams{
-		ID: domain.NewID(), ProjectID: sc.ProjectID, MatchTags: tagsJSON(r.MatchTags), ChannelID: r.ChannelID, OnStates: statesJSON(r.On),
-		RepeatEveryS: int64(r.RepeatEvery.Seconds()), Priority: int64(r.Priority), CreatedAt: domain.Millis(now), UpdatedAt: domain.Millis(now),
+	var id string
+	err := s.db.Tx(ctx, func(q *db.Queries) error {
+		if err := s.prepareRoute(ctx, q, sc, r); err != nil {
+			return err
+		}
+		now := s.now()
+		row, err := q.CreateRoute(ctx, db.CreateRouteParams{
+			ID: domain.NewID(), ProjectID: sc.ProjectID, MatchTags: tagsJSON(r.MatchTags), OnStates: statesJSON(r.On),
+			RepeatEveryS: int64(r.RepeatEvery.Seconds()), Priority: int64(r.Priority), CreatedAt: domain.Millis(now), UpdatedAt: domain.Millis(now),
+		})
+		if err != nil {
+			return err
+		}
+		id = row.ID
+		return s.writeRouteChannels(ctx, q, sc, id, r.ChannelIDs)
 	})
 	if err != nil {
 		return nil, err
 	}
-	return s.Route(ctx, sc, row.ID)
+	return s.Route(ctx, sc, id)
 }
 
-// Route returns one route with its channel name and kind.
+// Route returns one route with its channels.
 func (s *Service) Route(ctx context.Context, sc domain.Scope, id string) (*domain.Route, error) {
 	routes, err := s.ListRoutes(ctx, sc)
 	if err != nil {
@@ -57,37 +91,58 @@ func (s *Service) Route(ctx context.Context, sc domain.Scope, id string) (*domai
 	return nil, domain.NotFound("route")
 }
 
-// ListRoutes lists routes by priority.
+// ListRoutes lists routes by priority, each with its channels.
 func (s *Service) ListRoutes(ctx context.Context, sc domain.Scope) ([]*domain.Route, error) {
 	if err := requireProject(sc); err != nil {
 		return nil, err
 	}
-	rows, err := s.db.Read().ListRoutes(ctx, sc.ProjectID)
+	return s.listRoutes(ctx, s.db.Read(), sc.ProjectID)
+}
+
+func (s *Service) listRoutes(ctx context.Context, q *db.Queries, projectID string) ([]*domain.Route, error) {
+	rows, err := q.ListRoutes(ctx, projectID)
 	if err != nil {
 		return nil, err
 	}
 	out := make([]*domain.Route, 0, len(rows))
 	for _, r := range rows {
-		out = append(out, routeFromListRow(r))
+		out = append(out, routeFromRow(r))
 	}
+	rcs, err := q.ListRouteChannels(ctx, projectID)
+	if err != nil {
+		return nil, err
+	}
+	attachChannels(out, rcs)
+	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].Priority != out[j].Priority {
+			return out[i].Priority > out[j].Priority
+		}
+		return out[i].CreatedAt.Before(out[j].CreatedAt)
+	})
 	return out, nil
 }
 
-// UpdateRoute replaces a route.
+// UpdateRoute replaces a route and its channels.
 func (s *Service) UpdateRoute(ctx context.Context, sc domain.Scope, id string, r *domain.Route) (*domain.Route, error) {
 	if err := requireEdit(sc); err != nil {
 		return nil, err
 	}
-	if _, err := s.db.Read().GetRoute(ctx, db.GetRouteParams{ProjectID: sc.ProjectID, ID: id}); err != nil {
-		return nil, notFoundIfNoRows(err, "route")
-	}
-	if err := s.prepareRoute(ctx, sc, r); err != nil {
-		return nil, err
-	}
-	if _, err := s.db.Write().UpdateRoute(ctx, db.UpdateRouteParams{
-		MatchTags: tagsJSON(r.MatchTags), ChannelID: r.ChannelID, OnStates: statesJSON(r.On), RepeatEveryS: int64(r.RepeatEvery.Seconds()),
-		Priority: int64(r.Priority), UpdatedAt: domain.Millis(s.now()), ProjectID: sc.ProjectID, ID: id,
-	}); err != nil {
+	err := s.db.Tx(ctx, func(q *db.Queries) error {
+		if _, err := q.GetRoute(ctx, db.GetRouteParams{ProjectID: sc.ProjectID, ID: id}); err != nil {
+			return notFoundIfNoRows(err, "route")
+		}
+		if err := s.prepareRoute(ctx, q, sc, r); err != nil {
+			return err
+		}
+		if _, err := q.UpdateRoute(ctx, db.UpdateRouteParams{
+			MatchTags: tagsJSON(r.MatchTags), OnStates: statesJSON(r.On), RepeatEveryS: int64(r.RepeatEvery.Seconds()),
+			Priority: int64(r.Priority), UpdatedAt: domain.Millis(s.now()), ProjectID: sc.ProjectID, ID: id,
+		}); err != nil {
+			return err
+		}
+		return s.writeRouteChannels(ctx, q, sc, id, r.ChannelIDs)
+	})
+	if err != nil {
 		return nil, err
 	}
 	return s.Route(ctx, sc, id)
@@ -106,4 +161,13 @@ func (s *Service) DeleteRoute(ctx context.Context, sc domain.Scope, id string) e
 		return domain.NotFound("route")
 	}
 	return nil
+}
+
+// RouteCountForChannel says how many routes send to a channel.
+func (s *Service) RouteCountForChannel(ctx context.Context, sc domain.Scope, channelID string) (int, error) {
+	if err := requireProject(sc); err != nil {
+		return 0, err
+	}
+	n, err := s.db.Read().CountRoutesForChannel(ctx, db.CountRoutesForChannelParams{ProjectID: sc.ProjectID, ChannelID: channelID})
+	return int(n), err
 }

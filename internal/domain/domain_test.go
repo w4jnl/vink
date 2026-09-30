@@ -221,7 +221,7 @@ func TestValidationErrorAndSentinels(t *testing.T) {
 }
 
 func TestRouteValidate(t *testing.T) {
-	r := &Route{ChannelID: "c", On: []State{StateDown, StateUp}, RepeatEvery: 4 * time.Hour, MatchTags: []string{"prod"}}
+	r := &Route{ChannelIDs: []string{"c"}, On: []State{StateDown, StateUp}, RepeatEvery: 4 * time.Hour, MatchTags: []string{"prod"}}
 	if err := r.Validate(); err != nil {
 		t.Fatal(err)
 	}
@@ -231,6 +231,6 @@ func TestRouteValidate(t *testing.T) {
 	bad := &Route{On: []State{StatePaused}, RepeatEvery: time.Minute}
 	ve, ok := AsValidation(bad.Validate())
 	if !ok || len(ve.Errors) < 3 {
-		t.Errorf("expected channel_id, on and repeat_every errors, got %v", ve)
+		t.Errorf("expected channels, on and repeat_every errors, got %v", ve)
 	}
 }

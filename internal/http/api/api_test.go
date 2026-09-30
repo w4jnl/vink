@@ -415,7 +415,7 @@ func TestChannelsRoutesKeysPingKey(t *testing.T) {
 	r = e.key(e.rw, "GET", "/routes", nil)
 	var routes page[RouteOut]
 	r.json(t, &routes)
-	if len(routes.Items) != 1 || routes.Items[0].ChannelID != ch.ID || len(routes.Items[0].On) != 2 || len(routes.Items[0].MatchTags) != 0 {
+	if len(routes.Items) != 1 || len(routes.Items[0].Channels) != 1 || routes.Items[0].Channels[0].ID != ch.ID || len(routes.Items[0].On) != 2 || len(routes.Items[0].MatchTags) != 0 {
 		t.Fatalf("default route: %+v", routes.Items)
 	}
 	// update with *** keeps the token
@@ -435,22 +435,22 @@ func TestChannelsRoutesKeysPingKey(t *testing.T) {
 		t.Errorf("bad kind: %d", r.code)
 	}
 	// routes
-	r = e.key(e.rw, "POST", "/routes", map[string]any{"match_tags": []string{"prod"}, "channel_id": ch.ID, "on": []string{"down", "late"}, "repeat_every": "4h", "priority": 5})
+	r = e.key(e.rw, "POST", "/routes", map[string]any{"match_tags": []string{"prod"}, "channels": []string{ch.ID}, "on": []string{"down", "late"}, "repeat_every": "4h", "priority": 5})
 	if r.code != 201 {
 		t.Fatalf("create route: %d %s", r.code, r.body)
 	}
 	var rt RouteOut
 	r.json(t, &rt)
-	if rt.Channel != "ntfy" || rt.RepeatEvery.String() != "4h" || rt.Priority != 5 {
+	if len(rt.Channels) != 1 || rt.Channels[0].Name != "ntfy" || rt.RepeatEvery.String() != "4h" || rt.Priority != 5 {
 		t.Fatalf("route: %+v", rt)
 	}
-	if r := e.key(e.rw, "POST", "/routes", map[string]any{"channel_id": "nope"}); r.code != 422 {
+	if r := e.key(e.rw, "POST", "/routes", map[string]any{"channels": []string{"nope"}}); r.code != 422 {
 		t.Errorf("route with unknown channel: %d", r.code)
 	}
-	if r := e.key(e.rw, "POST", "/routes", map[string]any{"channel_id": ch.ID, "repeat_every": "1m"}); r.code != 422 {
+	if r := e.key(e.rw, "POST", "/routes", map[string]any{"channels": []string{ch.ID}, "repeat_every": "1m"}); r.code != 422 {
 		t.Errorf("route repeat too short: %d", r.code)
 	}
-	r = e.key(e.rw, "PUT", "/routes/"+rt.ID, map[string]any{"channel_id": ch.ID, "on": []string{"up"}})
+	r = e.key(e.rw, "PUT", "/routes/"+rt.ID, map[string]any{"channels": []string{ch.ID}, "on": []string{"up"}})
 	r.json(t, &rt)
 	if r.code != 200 || len(rt.On) != 1 || rt.On[0] != domain.StateUp {
 		t.Fatalf("update route: %d %+v", r.code, rt)

@@ -87,6 +87,7 @@ func Handler(d Deps, withPing bool) http.Handler {
 		if err != nil {
 			panic(fmt.Errorf("web templates: %w", err))
 		}
+		ui.SetSMTPFrom(d.Cfg.SMTP.From)
 		ui.Mount(mux)
 	}
 	mux.HandleFunc("GET /a/{token}", d.ackLink)
@@ -161,7 +162,7 @@ func Run(ctx context.Context, log *slog.Logger, name, listen string, h http.Hand
 	}
 	ln, err := (&net.ListenConfig{}).Listen(ctx, "tcp", listen)
 	if err != nil {
-		return fmt.Errorf("%s: listen %s: %w", name, listen, err)
+		return fmt.Errorf("listen %s: %w", listen, err)
 	}
 	log.Info("listening", "name", name, "addr", ln.Addr().String())
 	errc := make(chan error, 1)

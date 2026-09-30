@@ -188,25 +188,32 @@ func channelOut(c *domain.Channel) ChannelOut {
 // RouteIn creates or replaces a route.
 type RouteIn struct {
 	MatchTags   []string        `json:"match_tags"`
-	ChannelID   string          `json:"channel_id"`
+	Channels    []string        `json:"channels"`
 	On          []domain.State  `json:"on"`
 	RepeatEvery domain.Duration `json:"repeat_every"`
 	Priority    int             `json:"priority"`
 }
 
 func (in RouteIn) toDomain() *domain.Route {
-	return &domain.Route{MatchTags: in.MatchTags, ChannelID: in.ChannelID, On: in.On, RepeatEvery: in.RepeatEvery.Std(), Priority: in.Priority}
+	return &domain.Route{MatchTags: in.MatchTags, ChannelIDs: in.Channels, On: in.On, RepeatEvery: in.RepeatEvery.Std(), Priority: in.Priority}
 }
 
-// RouteOut is a route with its channel name.
+// RouteChannelOut names one target of a route.
+type RouteChannelOut struct {
+	ID      string             `json:"id"`
+	Name    string             `json:"name"`
+	Kind    domain.ChannelKind `json:"kind"`
+	Enabled bool               `json:"enabled"`
+}
+
+// RouteOut is a route with its channels.
 type RouteOut struct {
-	ID          string          `json:"id"`
-	MatchTags   []string        `json:"match_tags"`
-	ChannelID   string          `json:"channel_id"`
-	Channel     string          `json:"channel"`
-	On          []domain.State  `json:"on"`
-	RepeatEvery domain.Duration `json:"repeat_every"`
-	Priority    int             `json:"priority"`
+	ID          string            `json:"id"`
+	MatchTags   []string          `json:"match_tags"`
+	Channels    []RouteChannelOut `json:"channels"`
+	On          []domain.State    `json:"on"`
+	RepeatEvery domain.Duration   `json:"repeat_every"`
+	Priority    int               `json:"priority"`
 }
 
 func routeOut(r *domain.Route) RouteOut {
@@ -214,7 +221,11 @@ func routeOut(r *domain.Route) RouteOut {
 	if on == nil {
 		on = []domain.State{}
 	}
-	return RouteOut{ID: r.ID, MatchTags: r.MatchTags, ChannelID: r.ChannelID, Channel: r.ChannelName, On: on, RepeatEvery: domain.Duration(r.RepeatEvery), Priority: r.Priority}
+	chans := make([]RouteChannelOut, 0, len(r.Channels))
+	for _, c := range r.Channels {
+		chans = append(chans, RouteChannelOut{ID: c.ID, Name: c.Name, Kind: c.Kind, Enabled: c.Enabled})
+	}
+	return RouteOut{ID: r.ID, MatchTags: r.MatchTags, Channels: chans, On: on, RepeatEvery: domain.Duration(r.RepeatEvery), Priority: r.Priority}
 }
 
 // KeyOut is an API key without its secret.

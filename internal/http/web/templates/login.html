@@ -1,6 +1,13 @@
-{{define "content"}}<main class="vk-main vk-login"><div class="vk-main__head"><span class="vk-top__mark">{{mark 22}}<span>vink</span></span></div>
-<form class="vk-form" method="post" action="/login"><input type="hidden" name="_csrf" value=""><input type="hidden" name="next" value="{{.Next}}">
-{{if .Error}}<p class="vk-field__error" role="alert">{{glyph "down" ""}}{{.Error}}</p>{{end}}
-{{field (dict "ID" "user" "Label" "User" "Value" .User "Name" "user" "Attrs" (attrs "autocomplete" "username" "autofocus" "" "required" ""))}}
-{{field (dict "ID" "password" "Label" "Password" "Name" "password" "Type" "password" "Attrs" (attrs "autocomplete" "current-password" "required" ""))}}
-<div class="vk-form__actions">{{button (dict "Label" "Sign in" "Variant" "primary" "Type" "submit")}}</div></form></main>{{end}}
+{{define "content"}}<main class="vk-auth">
+<div class="vk-auth__brand">{{mark 22}}<span>vink</span></div>
+<form class="vk-auth__card" action="/login" method="post">
+<input type="hidden" name="next" value="{{.Next}}">
+<h1>Sign in</h1>
+{{if .Error}}{{notice "error" "" .Error ""}}{{end}}
+{{field (dict "ID" "username" "Label" "Username" "Value" .User "Autocomplete" "username" "Attrs" (attrs "autofocus" "" "required" ""))}}
+{{field (dict "ID" "password" "Label" "Password" "Type" "password" "Autocomplete" "current-password" "Attrs" (attrs "required" ""))}}
+{{button (dict "Label" "Sign in" "Variant" "primary" "Type" "submit" "Block" true)}}
+<p>Local accounts only. With single sign-on, the proxy signs you in and this page does not appear.</p>
+</form>
+<p class="vk-auth__foot">vink {{.Version}} · w4j.nl</p>
+</main>{{end}}

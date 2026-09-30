@@ -13,7 +13,9 @@ import (
 	"github.com/w4jnl/vink/internal/auth"
 	"github.com/w4jnl/vink/internal/domain"
 	"github.com/w4jnl/vink/internal/http/middleware"
+	"github.com/w4jnl/vink/internal/http/web/ui"
 	"github.com/w4jnl/vink/internal/service"
+	"github.com/w4jnl/vink/internal/version"
 )
 
 // Web serves the UI.
@@ -24,6 +26,8 @@ type Web struct {
 	static *Static
 	tmpl   *Templates
 	now    func() time.Time
+	// smtpFrom is shown as the placeholder of a mail channel's From.
+	smtpFrom string
 }
 
 // New builds the UI handlers.
@@ -42,6 +46,9 @@ func New(svc *service.Service, authn *auth.Authenticator, log *slog.Logger) (*We
 // SetClock replaces the clock, for tests.
 func (h *Web) SetClock(now func() time.Time) { h.now = now }
 
+// SetSMTPFrom sets the instance mail sender shown in the channel form.
+func (h *Web) SetSMTPFrom(from string) { h.smtpFrom = from }
+
 // Mount registers every UI route.
 func (h *Web) Mount(mux *http.ServeMux) {
 	mux.Handle("GET /static/", h.static.Handler())
@@ -55,9 +62,11 @@ func (h *Web) Mount(mux *http.ServeMux) {
 	mux.Handle("GET "+p, h.project(h.monitors))
 	mux.Handle("GET "+p+"/m/new", h.project(h.newMonitor))
 	mux.Handle("POST "+p+"/m/new", h.project(h.createMonitor))
+	mux.Handle("POST "+p+"/m/preview", h.project(h.previewMonitor))
 	mux.Handle("GET "+p+"/m/{slug}", h.project(h.monitor))
 	mux.Handle("GET "+p+"/m/{slug}/edit", h.project(h.editMonitor))
 	mux.Handle("POST "+p+"/m/{slug}/edit", h.project(h.updateMonitor))
+	mux.Handle("POST "+p+"/m/{slug}/preview", h.project(h.previewMonitor))
 	mux.Handle("POST "+p+"/m/{slug}/pause", h.project(h.pauseMonitor))
 	mux.Handle("POST "+p+"/m/{slug}/resume", h.project(h.resumeMonitor))
 	mux.Handle("POST "+p+"/m/{slug}/delete", h.project(h.deleteMonitor))
@@ -65,10 +74,13 @@ func (h *Web) Mount(mux *http.ServeMux) {
 	mux.Handle("POST "+p+"/incidents/{id}/ack", h.project(h.ackIncident))
 	mux.Handle("GET "+p+"/settings", h.project(h.settingsRedirect))
 	mux.Handle("GET "+p+"/settings/{tab}", h.project(h.settings))
-	mux.Handle("POST "+p+"/settings/channels", h.project(h.createChannel))
+	mux.Handle("POST "+p+"/settings/channels", h.project(h.saveChannel))
+	mux.Handle("POST "+p+"/settings/channels/{id}", h.project(h.saveChannel))
 	mux.Handle("POST "+p+"/settings/channels/{id}/delete", h.project(h.deleteChannel))
 	mux.Handle("POST "+p+"/settings/channels/{id}/test", h.project(h.testChannel))
-	mux.Handle("POST "+p+"/settings/routes", h.project(h.createRoute))
+	mux.Handle("POST "+p+"/settings/channels/{id}/toggle", h.project(h.toggleChannel))
+	mux.Handle("POST "+p+"/settings/routes", h.project(h.saveRoute))
+	mux.Handle("POST "+p+"/settings/routes/{id}", h.project(h.saveRoute))
 	mux.Handle("POST "+p+"/settings/routes/{id}/delete", h.project(h.deleteRoute))
 	mux.Handle("POST "+p+"/settings/keys", h.project(h.createKey))
 	mux.Handle("POST "+p+"/settings/keys/{id}/revoke", h.project(h.revokeKey))
@@ -163,8 +175,8 @@ func (h *Web) project(fn handlerFn) http.Handler {
 
 var errCSRF = errors.New("the form token is missing or stale; reload the page and try again")
 
-// anonymous sends people to the login form in local mode and shows a 403
-// in proxy-only mode.
+// anonymous sends people to the login form in local mode and shows the
+// proxy-denied page in proxy-only mode.
 func (h *Web) anonymous(c *reqCtx) error {
 	if h.authn.LocalEnabled() {
 		if c.r.Method != http.MethodGet {
@@ -174,81 +186,141 @@ func (h *Web) anonymous(c *reqCtx) error {
 		http.Redirect(c.w, c.r, "/login?next="+url.QueryEscape(next), http.StatusSeeOther)
 		return nil
 	}
-	return h.errorPage(c, http.StatusForbidden, "No identity", "The reverse proxy did not send an identity for this request.")
+	return h.proxyDenied(c)
 }
 
 // fail maps an error to a page.
 func (h *Web) fail(c *reqCtx, err error) {
 	switch {
 	case errors.Is(err, errCSRF):
-		_ = h.errorPage(c, http.StatusForbidden, "Form expired", err.Error())
+		_ = h.authPage(c, http.StatusForbidden, authPage{Heading: "The form expired", Lead: err.Error(), Actions: []ui.ButtonProps{{Label: "Reload", Variant: "primary", Href: c.r.URL.RequestURI()}}})
 	case errors.Is(err, domain.ErrNotFound):
-		_ = h.errorPage(c, http.StatusNotFound, "Not found", "There is nothing at this address, or you cannot see it.")
+		_ = h.authPage(c, http.StatusNotFound, authPage{Heading: "Not found", Lead: "There is nothing at this address, or you cannot see it.", Actions: []ui.ButtonProps{{Label: "Back to vink", Variant: "primary", Href: "/"}}})
 	case errors.Is(err, domain.ErrForbidden):
-		_ = h.errorPage(c, http.StatusForbidden, "Not allowed", "Your role does not allow this.")
+		_ = h.authPage(c, http.StatusForbidden, authPage{Heading: "Not allowed", Lead: "Your role does not allow this.", Actions: []ui.ButtonProps{{Label: "Back", Variant: "primary", Href: "/"}}})
 	case errors.Is(err, domain.ErrUnauthorized):
-		_ = h.errorPage(c, http.StatusUnauthorized, "Sign in", "Sign in to continue.")
+		_ = h.authPage(c, http.StatusUnauthorized, authPage{Heading: "Sign in", Lead: "Sign in to continue.", Actions: []ui.ButtonProps{{Label: "Sign in", Variant: "primary", Href: "/login"}}})
 	default:
-		h.log.Error("ui error", "err", err, "path", c.r.URL.Path, "req_id", middleware.GetRequestID(c.r.Context()))
-		_ = h.errorPage(c, http.StatusInternalServerError, "Something broke", "Request "+middleware.GetRequestID(c.r.Context())+" failed. The log has the details.")
+		reqID := middleware.GetRequestID(c.r.Context())
+		h.log.Error("ui error", "err", err, "path", c.r.URL.Path, "req_id", reqID)
+		_ = h.authPage(c, http.StatusInternalServerError, authPage{
+			Heading: "Something broke", Lead: "The request failed inside vink. The server log has the reason.",
+			KV:      []kv{{"status", "500"}, {"request", reqID}, {"time", c.now.Format("2006-01-02 15:04:05 MST")}},
+			Note:    "Give your admin the request id.",
+			Actions: []ui.ButtonProps{{Label: "Try again", Variant: "primary", Href: c.r.URL.RequestURI()}, {Label: "Copy details", Attrs: ui.Attr("data-copy", "500 "+reqID+" "+c.now.Format(time.RFC3339))}},
+		})
 	}
 }
 
 // base is the layout data every page carries.
 type base struct {
-	Title       string
-	CSRF        string
-	UserName    string
-	UserInitial string
-	OrgSlug     string
-	ProjectSlug string
-	ProjectPath string
-	Query       string
-	FilterState string
-	FilterTag   string
-	Down        bool
+	Title         string
+	CSRF          string
+	UserName      string
+	OrgSlug       string
+	ProjectSlug   string
+	ProjectPath   string
+	Section       string
+	OpenIncidents int
+	Query         string
+	FilterState   string
+	FilterTag     string
+	Down          bool
+	Fill          bool
+	Version       string
 }
 
-func (h *Web) baseFor(c *reqCtx, title string) base {
-	b := base{Title: title, CSRF: c.csrf()}
+func (h *Web) baseFor(c *reqCtx, title, section string) base {
+	b := base{Title: title, CSRF: c.csrf(), Section: section, Version: version.Version}
 	if c.principal != nil {
 		b.UserName = c.principal.User.DisplayName
 		if b.UserName == "" {
 			b.UserName = c.principal.User.Subject
 		}
-		b.UserInitial = strings.ToUpper(string([]rune(b.UserName)[:1]))
 	}
 	if c.project != nil {
 		b.OrgSlug, b.ProjectSlug, b.ProjectPath = c.org.Slug, c.project.Slug, c.projectPath()
 		if counts, err := h.svc.MonitorCounts(c.r.Context(), c.scope); err == nil {
 			b.Down = counts[domain.StateDown] > 0
 		}
+		if open, err := h.svc.ListIncidents(c.r.Context(), c.scope, true, 0, time.Time{}); err == nil {
+			b.OpenIncidents = len(open)
+		}
 	}
 	return b
 }
 
-type errorData struct {
+type kv struct{ Key, Value string }
+
+// authPage is a card on the auth layout: sign-in, proxy denied, no
+// access, not found, and errors.
+type authPage struct {
 	base
-	Heading  string
-	Message  string
-	BackPath string
+	Heading string
+	Lead    string
+	KV      []kv
+	Note    string
+	Actions []ui.ButtonProps
 }
 
-func (h *Web) errorPage(c *reqCtx, status int, heading, message string) error {
-	data := errorData{base: h.baseFor(c, heading), Heading: heading, Message: message}
-	if c.project != nil {
-		data.BackPath = c.projectPath()
-	} else if c.principal != nil {
-		data.BackPath = "/"
-	}
-	out, err := h.tmpl.Render("error", "layout", data)
+func (h *Web) authPage(c *reqCtx, status int, page authPage) error {
+	page.base = h.baseFor(c, page.Heading, "")
+	page.ProjectPath = "" // the auth layout has no top bar
+	page.Fill = true
+	out, err := h.tmpl.Render("auth", "layout", page)
 	if err != nil {
-		http.Error(c.w, heading, status)
+		http.Error(c.w, page.Heading, status)
 		return nil
 	}
 	c.w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	c.w.WriteHeader(status)
 	_, _ = c.w.Write(out)
+	return nil
+}
+
+// proxyDenied is the 403 for a proxy-mode request without identity.
+func (h *Web) proxyDenied(c *reqCtx) error {
+	reqID := middleware.GetRequestID(c.r.Context())
+	return h.authPage(c, http.StatusForbidden, authPage{
+		Heading: "No identity from the proxy",
+		Lead:    "This vink signs people in through an authenticating proxy, and this request arrived without a user. Open vink through the proxy’s address. If you did, ask your admin to check the proxy settings.",
+		KV:      []kv{{"status", "403"}, {"request", reqID}, {"time", c.now.Format("2006-01-02 15:04:05 MST")}},
+		Note:    "Give your admin the request id; the server log has the reason.",
+		Actions: []ui.ButtonProps{{Label: "Try again", Variant: "primary", Href: c.r.URL.RequestURI()}, {Label: "Copy details", Attrs: ui.Attr("data-copy", "403 "+reqID+" "+c.now.Format(time.RFC3339))}},
+	})
+}
+
+// noAccess is shown to a signed-in person with no org membership.
+func (h *Web) noAccess(c *reqCtx) error {
+	p := c.principal
+	page := authPage{Heading: "Signed in, but not in an org yet"}
+	if p.Source == "proxy" {
+		page.Lead = "The proxy signed you in as " + p.User.Subject + ", but none of your groups gives access to an org in vink."
+		page.KV = []kv{{"user", p.User.Subject}, {"groups", strings.Join(p.Groups, ", ")}, {"needs", "vink:<org>:<role>, for example vink:homelab:viewer"}}
+		page.Note = "Ask an admin to add you to one of those groups. vink reads your groups again on the next page load."
+		page.Actions = []ui.ButtonProps{{Label: "Reload", Variant: "primary", Href: "/"}}
+		if h.authn.LogoutURL() != "" {
+			page.Actions = append(page.Actions, ui.ButtonProps{Label: "Sign out", Href: h.authn.LogoutURL()})
+		}
+	} else {
+		page.Lead = "You are signed in as " + p.User.Subject + ", but no org lists you as a member."
+		page.KV = []kv{{"user", p.User.Subject}}
+		page.Note = "Ask an admin to add you with vink admin user create --org <slug>, or to an org through the API."
+		page.Actions = []ui.ButtonProps{{Label: "Reload", Variant: "primary", Href: "/"}, {Label: "Sign out", Type: "submit", Attrs: ui.Attr("form", "logout-form")}}
+	}
+	if len(page.KV) > 0 && page.KV[len(page.KV)-1].Key == "groups" && len(p.Groups) == 0 {
+		page.KV[len(page.KV)-1].Value = "none"
+	}
+	page.base = h.baseFor(c, page.Heading, "")
+	page.ProjectPath, page.Fill = "", true
+	out, err := h.tmpl.Render("auth", "layout", page)
+	if err != nil {
+		return err
+	}
+	c.w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	c.w.WriteHeader(http.StatusForbidden)
+	_, _ = c.w.Write(out)
+	_, _ = c.w.Write([]byte(`<form id="logout-form" class="vk-sr" method="post" action="/logout"><input type="hidden" name="_csrf" value="` + c.csrf() + `"></form>`))
 	return nil
 }
 

@@ -317,20 +317,24 @@ func (s *Service) persistDecision(ctx context.Context, q *db.Queries, m *domain.
 
 // enqueueDeliveries inserts one outbox row per matching, enabled route.
 func (s *Service) enqueueDeliveries(ctx context.Context, q *db.Queries, m *domain.Monitor, eventID string, to domain.State, now time.Time) error {
-	routes, err := q.ListRoutes(ctx, m.ProjectID)
+	routes, err := s.listRoutes(ctx, q, m.ProjectID)
 	if err != nil {
 		return err
 	}
-	for _, r := range routes {
-		rt := routeFromListRow(r)
-		if !r.ChannelEnabled || !rt.Fires(to) || !m.HasAllTags(rt.MatchTags) {
+	for _, rt := range routes {
+		if !rt.Fires(to) || !m.HasAllTags(rt.MatchTags) {
 			continue
 		}
-		if err := q.InsertDelivery(ctx, db.InsertDeliveryParams{
-			ID: domain.NewID(), EventID: eventID, ChannelID: rt.ChannelID, ProjectID: m.ProjectID, MonitorID: m.ID, RouteID: &rt.ID,
-			Kind: string(to), Repeat: false, Attempt: 0, NextAttemptAt: domain.Millis(now), CreatedAt: domain.Millis(now),
-		}); err != nil {
-			return fmt.Errorf("enqueue delivery: %w", err)
+		for _, ch := range rt.Channels {
+			if !ch.Enabled {
+				continue
+			}
+			if err := q.InsertDelivery(ctx, db.InsertDeliveryParams{
+				ID: domain.NewID(), EventID: eventID, ChannelID: ch.ID, ProjectID: m.ProjectID, MonitorID: m.ID, RouteID: &rt.ID,
+				Kind: string(to), Repeat: false, Attempt: 0, NextAttemptAt: domain.Millis(now), CreatedAt: domain.Millis(now),
+			}); err != nil {
+				return fmt.Errorf("enqueue delivery: %w", err)
+			}
 		}
 	}
 	return nil

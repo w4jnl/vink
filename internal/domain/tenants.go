@@ -135,20 +135,37 @@ type Channel struct {
 	UpdatedAt time.Time
 }
 
-// Route sends events for monitors matching all of MatchTags to a channel.
+// RouteChannel is one channel a route sends to.
+type RouteChannel struct {
+	ID      string
+	Name    string
+	Kind    ChannelKind
+	Enabled bool
+}
+
+// Route sends events for monitors matching all of MatchTags to its channels.
 type Route struct {
-	ID          string
-	ProjectID   string
-	MatchTags   []string
-	ChannelID   string
-	ChannelName string
-	ChannelKind ChannelKind
+	ID        string
+	ProjectID string
+	MatchTags []string
+	// Channels are the targets; ChannelIDs is the input form.
+	Channels   []RouteChannel
+	ChannelIDs []string
 	// On lists the states that trigger a delivery: down, up, late.
 	On          []State
 	RepeatEvery time.Duration
 	Priority    int
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
+}
+
+// ChannelNames lists the channel names, for display.
+func (r *Route) ChannelNames() []string {
+	out := make([]string, 0, len(r.Channels))
+	for _, c := range r.Channels {
+		out = append(out, c.Name)
+	}
+	return out
 }
 
 // Fires reports whether the route wants deliveries for a flip to state.
@@ -165,8 +182,8 @@ func (r *Route) Fires(to State) bool {
 func (r *Route) Validate() error {
 	ve := &ValidationError{}
 	ValidateTags(ve, "match_tags", r.MatchTags)
-	if r.ChannelID == "" {
-		ve.Add("channel_id", "must name a channel")
+	if len(r.ChannelIDs) == 0 {
+		ve.Add("channels", "pick at least one channel")
 	}
 	if len(r.On) == 0 {
 		ve.Add("on", "list at least one of down, up, late")

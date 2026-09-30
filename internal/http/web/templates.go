@@ -58,7 +58,55 @@ func NewTemplates(static *Static) (*Templates, error) {
 			}
 			return b.String()
 		},
-		"join": strings.Join,
+		"opts": ui.Opts,
+		"list": func(v ...any) []any { return v },
+		"strs": func(v ...string) []string { return v },
+		"strmap": func(kv ...string) map[string]string {
+			m := make(map[string]string, len(kv)/2)
+			for i := 0; i+1 < len(kv); i += 2 {
+				m[kv[i]] = kv[i+1]
+			}
+			return m
+		},
+		"html": toHTML,
+		"fieldrow": func(items []any, lead bool) ui.HTML {
+			fields := make([]ui.HTML, 0, len(items))
+			for _, it := range items {
+				fields = append(fields, toHTML(it))
+			}
+			return ui.FieldRow(fields, lead)
+		},
+		"checkbox": func(v any) (ui.HTML, error) { var p ui.CheckboxProps; err := assign(v, &p); return ui.Checkbox(p), err },
+		"switch":   ui.Switch,
+		"segmented": func(v any) (ui.HTML, error) {
+			var p ui.SegmentedProps
+			err := assign(v, &p)
+			return ui.Segmented(p), err
+		},
+		"kindpicker": ui.KindPicker,
+		"disclosure": func(title, summary string, body any, open bool) ui.HTML {
+			return ui.Disclosure(title, summary, toHTML(body), open)
+		},
+		"notice": func(tone, title, text string, extra any) ui.HTML { return ui.Notice(tone, title, text, toHTML(extra)) },
+		"code":   ui.Code,
+		"panel": func(title, note string, body, actions any, id string) ui.HTML {
+			return ui.Panel(title, note, toHTML(body), toHTML(actions), id)
+		},
+		"topbar": func(v any) (ui.HTML, error) { var p ui.TopBarProps; err := assign(v, &p); return ui.TopBar(p), err },
+		"tabs":   ui.Tabs,
+		"incidentrow": func(v any) (ui.HTML, error) {
+			var p ui.IncidentRowProps
+			err := assign(v, &p)
+			return ui.IncidentRow(p), err
+		},
+		"settingsrow": func(v any) (ui.HTML, error) {
+			var p ui.SettingsRowProps
+			err := assign(v, &p)
+			return ui.SettingsRow(p), err
+		},
+		// partial is replaced per page set below; the base never executes.
+		"partial": func(string, any) (ui.HTML, error) { return "", fmt.Errorf("partial outside a page") },
+		"join":    strings.Join,
 		"dict": func(kv ...any) (map[string]any, error) {
 			if len(kv)%2 != 0 {
 				return nil, fmt.Errorf("dict needs pairs")
@@ -89,13 +137,39 @@ func NewTemplates(static *Static) (*Templates, error) {
 		if name == "layout.html" || strings.HasPrefix(name, "_") || !strings.HasSuffix(name, ".html") {
 			continue
 		}
-		set, err := template.Must(base.Clone()).ParseFS(templateFiles, "templates/"+name)
-		if err != nil {
+		set := template.Must(base.Clone())
+		set.Funcs(template.FuncMap{"partial": partialFunc(set)})
+		if _, err := set.ParseFS(templateFiles, "templates/"+name); err != nil {
 			return nil, fmt.Errorf("parse %s: %w", name, err)
 		}
 		t.pages[strings.TrimSuffix(name, ".html")] = set
 	}
 	return t, nil
+}
+
+// partialFunc executes a define of the page's own set from inside a
+// template, so a component can take another partial as its body.
+func partialFunc(set *template.Template) func(string, any) (ui.HTML, error) {
+	return func(name string, data any) (ui.HTML, error) {
+		var buf bytes.Buffer
+		if err := set.ExecuteTemplate(&buf, name, data); err != nil {
+			return "", err
+		}
+		return ui.HTML(buf.String()), nil
+	}
+}
+
+// toHTML accepts trusted markup as ui.HTML or a plain string.
+func toHTML(v any) ui.HTML {
+	switch x := v.(type) {
+	case nil:
+		return ""
+	case ui.HTML:
+		return x
+	case string:
+		return ui.HTML(x)
+	}
+	return ui.HTML(fmt.Sprint(v))
 }
 
 // Render executes a named template of a page into a buffer.

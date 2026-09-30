@@ -9,11 +9,14 @@ import (
 )
 
 // home sends the person to their last project, their only project, or
-// the project list.
+// the project list; without any membership, the no-access page.
 func (h *Web) home(c *reqCtx) error {
 	list, err := h.svc.ProjectsForUser(c.r.Context(), c.principal.User.ID, c.principal.InstanceAdmin)
 	if err != nil {
 		return err
+	}
+	if len(list) == 0 {
+		return h.noAccess(c)
 	}
 	if c.principal.Session != nil && c.principal.Session.LastProjectID != "" {
 		for _, p := range list {
@@ -46,7 +49,10 @@ func (h *Web) projects(c *reqCtx) error {
 	if err != nil {
 		return err
 	}
-	data := projectsData{base: h.baseFor(c, "Projects")}
+	if len(list) == 0 {
+		return h.noAccess(c)
+	}
+	data := projectsData{base: h.baseFor(c, "Projects", "")}
 	for _, p := range list {
 		data.Projects = append(data.Projects, projectRow{Name: p.Name, Slug: p.Slug, OrgSlug: p.OrgSlug, Path: "/o/" + p.OrgSlug + "/p/" + p.Slug, Role: p.Role})
 	}
@@ -62,13 +68,15 @@ type loginData struct {
 
 func (h *Web) loginForm(c *reqCtx) error {
 	if !h.authn.LocalEnabled() {
-		return h.errorPage(c, http.StatusNotFound, "No local sign-in", "This instance signs people in through the reverse proxy.")
+		return domain.NotFound("local sign-in")
 	}
 	if c.principal != nil {
 		http.Redirect(c.w, c.r, safeNext(c.r.URL.Query().Get("next")), http.StatusSeeOther)
 		return nil
 	}
-	return h.render(c, http.StatusOK, "login", "layout", loginData{base: h.baseFor(c, "Sign in"), Next: safeNext(c.r.URL.Query().Get("next"))})
+	data := loginData{base: h.baseFor(c, "Sign in", ""), Next: safeNext(c.r.URL.Query().Get("next"))}
+	data.Fill = true
+	return h.render(c, http.StatusOK, "login", "layout", data)
 }
 
 func (h *Web) login(c *reqCtx) error {
@@ -78,18 +86,19 @@ func (h *Web) login(c *reqCtx) error {
 	if err := c.r.ParseForm(); err != nil {
 		return err
 	}
-	user := strings.TrimSpace(c.r.PostFormValue("user"))
+	user := strings.TrimSpace(c.r.PostFormValue("username"))
 	next := safeNext(c.r.PostFormValue("next"))
 	_, err := h.authn.Login(c.w, c.r, user, c.r.PostFormValue("password"))
 	if err != nil {
-		data := loginData{base: h.baseFor(c, "Sign in"), User: user, Next: next}
+		data := loginData{base: h.baseFor(c, "Sign in", ""), User: user, Next: next}
+		data.Fill = true
 		status := http.StatusUnauthorized
 		switch {
 		case errors.Is(err, domain.ErrRateLimited):
 			data.Error = "Too many attempts. Wait a minute and try again."
 			status = http.StatusTooManyRequests
 		case errors.Is(err, domain.ErrUnauthorized):
-			data.Error = "Wrong user or password."
+			data.Error = "Wrong username or password."
 		default:
 			return err
 		}

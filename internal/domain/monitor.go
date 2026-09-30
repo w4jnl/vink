@@ -164,10 +164,13 @@ type Event struct {
 
 // Incident is opened on down and closed on up.
 type Incident struct {
-	ID           string
-	MonitorID    string
-	MonitorSlug  string
-	MonitorName  string
+	ID          string
+	MonitorID   string
+	MonitorSlug string
+	MonitorName string
+	MonitorTags []string
+	// Reason is the opening event's reason.
+	Reason       string
 	ProjectID    string
 	OpenedAt     time.Time
 	ResolvedAt   *time.Time

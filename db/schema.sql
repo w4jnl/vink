@@ -145,18 +145,6 @@ CREATE TABLE channels (
   updated_at INTEGER NOT NULL,
   UNIQUE (project_id, name)
 );
-CREATE TABLE routes (
-  id TEXT PRIMARY KEY,
-  project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-  match_tags TEXT NOT NULL DEFAULT '[]',
-  channel_id TEXT NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
-  on_states TEXT NOT NULL DEFAULT '["down","up"]',
-  repeat_every_s INTEGER NOT NULL DEFAULT 0,
-  priority INTEGER NOT NULL DEFAULT 0,
-  created_at INTEGER NOT NULL,
-  updated_at INTEGER NOT NULL
-);
-CREATE INDEX routes_project ON routes(project_id, priority DESC);
 CREATE TABLE deliveries (
   id TEXT PRIMARY KEY,
   event_id TEXT NOT NULL REFERENCES events(id) ON DELETE CASCADE,
@@ -225,6 +213,26 @@ CREATE TABLE sessions (
 );
 CREATE INDEX sessions_user ON sessions(user_id);
 CREATE INDEX sessions_expires ON sessions(expires_at);
+CREATE TABLE route_channels (
+  route_id TEXT NOT NULL REFERENCES routes(id) ON DELETE CASCADE,
+  channel_id TEXT NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
+  project_id TEXT NOT NULL,
+  PRIMARY KEY (route_id, channel_id)
+);
+CREATE INDEX route_channels_channel ON route_channels(channel_id);
+CREATE INDEX route_channels_project ON route_channels(project_id);
+CREATE TABLE "routes" (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  match_tags TEXT NOT NULL DEFAULT '[]',
+  on_states TEXT NOT NULL DEFAULT '["down","up"]',
+  repeat_every_s INTEGER NOT NULL DEFAULT 0,
+  priority INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+CREATE INDEX routes_project ON routes(project_id, priority DESC);
 -- Dbmate schema migrations
 INSERT INTO "schema_migrations" (version) VALUES
-  ('20260927000000');
+  ('20260927000000'),
+  ('20260930000000');

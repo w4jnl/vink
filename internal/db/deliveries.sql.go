@@ -99,6 +99,23 @@ func (q *Queries) LastDeliveryForRoute(ctx context.Context, arg LastDeliveryForR
 	return i, err
 }
 
+const lastSentForChannel = `-- name: LastSentForChannel :one
+SELECT CAST(COALESCE(MAX(delivered_at), 0) AS INTEGER) AS last_sent
+FROM deliveries WHERE project_id = ? AND channel_id = ? AND delivered_at IS NOT NULL
+`
+
+type LastSentForChannelParams struct {
+	ProjectID string
+	ChannelID string
+}
+
+func (q *Queries) LastSentForChannel(ctx context.Context, arg LastSentForChannelParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, lastSentForChannel, arg.ProjectID, arg.ChannelID)
+	var last_sent int64
+	err := row.Scan(&last_sent)
+	return last_sent, err
+}
+
 const listDeliveriesForEvent = `-- name: ListDeliveriesForEvent :many
 SELECT id, event_id, channel_id, project_id, monitor_id, route_id, kind, repeat, attempt, next_attempt_at, delivered_at, failed_at, error, created_at FROM deliveries WHERE project_id = ? AND event_id = ? ORDER BY created_at, id
 `

@@ -5,6 +5,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"testing"
 )
 
@@ -54,7 +56,7 @@ func render(t *testing.T, c goldenCase) string {
 	case "StateBadge":
 		return string(StateBadge(StateBadgeProps{State: str("state"), Pill: boolean("pill"), Label: str("label"), Since: str("since")}))
 	case "Button":
-		return string(Button(ButtonProps{Label: str("label"), Variant: str("variant"), Confirm: str("confirm"), Disabled: boolean("disabled")}))
+		return string(Button(ButtonProps{Label: str("label"), Variant: str("variant"), Confirm: str("confirm"), Disabled: boolean("disabled"), Href: str("href"), Type: str("type"), Block: boolean("block")}))
 	case "Chip":
 		cp := ChipProps{Label: str("label"), Pressed: boolean("pressed"), State: str("state")}
 		if v, ok := p["count"].(float64); ok {
@@ -66,7 +68,84 @@ func render(t *testing.T, c goldenCase) string {
 	case "KindIcon":
 		return string(KindIcon(str("kind")))
 	case "Field":
-		return string(Field(FieldProps{ID: str("id"), Label: str("label"), Value: str("value"), Placeholder: str("placeholder"), Hint: str("hint"), Error: str("error"), Mono: boolean("mono")}))
+		fp := FieldProps{ID: str("id"), Name: str("name"), Label: str("label"), Value: str("value"), Placeholder: str("placeholder"), Hint: str("hint"), Error: str("error"), Mono: boolean("mono"),
+			Control: str("control"), Type: str("type"), Prefix: str("prefix"), Suffix: str("suffix"), Disabled: boolean("disabled"), Autocomplete: str("autocomplete"),
+			HTML: HTML(str("html")), Before: HTML(str("before")), After: HTML(str("after"))}
+		if v, ok := p["rows"].(float64); ok {
+			fp.Rows = int(v)
+		}
+		fp.Options = optionsOf(p["options"])
+		return string(Field(fp))
+	case "FieldRow":
+		var fields []HTML
+		for _, f := range strs("fields") {
+			fields = append(fields, HTML(f))
+		}
+		return string(FieldRow(fields, boolean("lead")))
+	case "Checkbox":
+		return string(Checkbox(CheckboxProps{Label: str("label"), LabelHTML: HTML(str("labelHtml")), Name: str("name"), ID: str("id"), Value: str("value"), Checked: boolean("checked"), Disabled: boolean("disabled"), Hint: str("hint")}))
+	case "Switch":
+		return string(Switch(boolean("checked"), str("label"), ""))
+	case "Segmented":
+		sp := SegmentedProps{Name: str("name"), Label: str("label"), Multi: boolean("multi"), Mono: boolean("mono"), Options: optionsOf(p["options"])}
+		switch v := p["value"].(type) {
+		case string:
+			sp.Value = []string{v}
+		case []any:
+			sp.Value = strs("value")
+		}
+		return string(Segmented(sp))
+	case "KindPicker":
+		return string(KindPicker(str("value"), boolean("locked"), ""))
+	case "Disclosure":
+		return string(Disclosure(str("title"), str("summary"), HTML(str("body")), boolean("open")))
+	case "Notice":
+		return string(Notice(str("tone"), str("title"), str("text"), HTML(str("html"))))
+	case "Code":
+		return string(Code(str("text"), boolean("copy"), str("copyLabel"), boolean("yaml")))
+	case "Panel":
+		return string(Panel(str("title"), str("note"), HTML(str("body")), HTML(str("actions")), str("id")))
+	case "TopBar":
+		tp := TopBarProps{Org: str("org"), Project: str("project"), Section: str("section"), User: str("user")}
+		if v, ok := p["incidents"].(float64); ok {
+			tp.Incidents = int(v)
+		}
+		if h, ok := p["hrefs"].(map[string]any); ok {
+			tp.Hrefs = map[string]string{}
+			for k, v := range h {
+				tp.Hrefs[k] = v.(string)
+			}
+		}
+		return string(TopBar(tp))
+	case "Tabs":
+		var tabs []Tab
+		for _, raw := range p["tabs"].([]any) {
+			m := raw.(map[string]any)
+			tab := Tab{ID: stringOf(m["id"]), Label: stringOf(m["label"]), Href: stringOf(m["href"])}
+			if v, ok := m["count"].(float64); ok {
+				tab.Count = Count(int(v))
+			}
+			tabs = append(tabs, tab)
+		}
+		return string(Tabs(tabs, str("current"), str("label")))
+	case "IncidentRow":
+		return string(IncidentRow(IncidentRowProps{State: str("state"), Name: str("name"), Slug: str("slug"), Href: str("href"), Reason: str("reason"), Opened: str("opened"), OpenedAbs: str("openedAbs"), Duration: str("duration"), AckedBy: str("ackedBy"), Resolved: str("resolved")}))
+	case "SettingsRow":
+		sp := SettingsRowProps{Title: str("title"), TitleHTML: HTML(str("titleHtml")), Sub: str("sub"), Muted: boolean("muted"), Actions: HTML(str("actions"))}
+		if lead, ok := p["lead"]; ok {
+			sp.HasLead = true
+			sp.Lead = stringOf(lead)
+		}
+		if cells, ok := p["cells"].([]any); ok {
+			for _, raw := range cells {
+				m := raw.(map[string]any)
+				c := Cell{Text: stringOf(m["text"]), HTML: HTML(stringOf(m["html"])), Size: stringOf(m["size"])}
+				c.Mono, _ = m["mono"].(bool)
+				c.Ink, _ = m["ink"].(bool)
+				sp.Cells = append(sp.Cells, c)
+			}
+		}
+		return string(SettingsRow(sp))
 	case "PingUrl":
 		return string(PingURL(str("base"), str("key"), str("slug")))
 	case "Sparkline":
@@ -92,6 +171,42 @@ func render(t *testing.T, c goldenCase) string {
 	}
 	t.Fatalf("unknown component %s", c.Component)
 	return ""
+}
+
+// stringOf renders a JSON scalar the way JS String() would.
+func stringOf(v any) string {
+	switch x := v.(type) {
+	case nil:
+		return ""
+	case string:
+		return x
+	case float64:
+		if x == float64(int64(x)) {
+			return strconv.FormatInt(int64(x), 10)
+		}
+		return strconv.FormatFloat(x, 'f', -1, 64)
+	case bool:
+		return strconv.FormatBool(x)
+	}
+	return ""
+}
+
+// optionsOf maps JSON options (strings or {value,label}) to Options.
+func optionsOf(v any) []Option {
+	raw, ok := v.([]any)
+	if !ok {
+		return nil
+	}
+	out := make([]Option, 0, len(raw))
+	for _, o := range raw {
+		switch x := o.(type) {
+		case string:
+			out = append(out, Option{Value: x, Label: x})
+		case map[string]any:
+			out = append(out, Option{Value: stringOf(x["value"]), Label: stringOf(x["label"])})
+		}
+	}
+	return out
 }
 
 func loadCases(t *testing.T) []goldenCase {
@@ -152,17 +267,24 @@ func TestGoldenFilesAreFresh(t *testing.T) {
 }
 
 func TestExtras(t *testing.T) {
-	got := string(Field(FieldProps{ID: "pw", Label: "Password", Name: "password", Type: "password", Attrs: Attr("autocomplete", "current-password")}))
-	if got != `<div class="vk-field"><label class="vk-field__label" for="pw">Password</label><input class="vk-input" id="pw" name="password" type="password" value="" placeholder="" autocomplete="current-password"></div>` {
+	got := string(Field(FieldProps{ID: "pw", Label: "Password", Name: "password", Type: "password", Attrs: Attr("required", "")}))
+	if got != `<div class="vk-field"><label class="vk-field__label" for="pw">Password</label><input class="vk-input" id="pw" name="password" type="password" value="" placeholder="" required=""></div>` {
 		t.Errorf("field extras: %s", got)
 	}
-	got = string(Button(ButtonProps{Label: "Save", Variant: "primary", Type: "submit"}))
-	if got != `<button type="submit" class="vk-btn vk-btn--primary">Save</button>` {
+	got = string(Button(ButtonProps{Label: "Save", Variant: "primary", Type: "submit", Attrs: Attr("form", "f1")}))
+	if got != `<button type="submit" class="vk-btn vk-btn--primary" form="f1">Save</button>` {
 		t.Errorf("submit button: %s", got)
 	}
-	got = string(Field(FieldProps{ID: "c", Label: "Config", Textarea: true, Value: `{"a":"<b>"}`}))
-	if got != `<div class="vk-field"><label class="vk-field__label" for="c">Config</label><textarea class="vk-input vk-input--area" id="c" placeholder="">{&quot;a&quot;:&quot;&lt;b&gt;&quot;}</textarea></div>` {
+	got = string(Field(FieldProps{ID: "c", Label: "Config", Control: "textarea", Value: `{"a":"<b>"}`, Attrs: Attr("hx-post", "/x")}))
+	if got != `<div class="vk-field"><label class="vk-field__label" for="c">Config</label><textarea class="vk-input vk-input--area" id="c" name="c" rows="3" placeholder="" hx-post="/x">{&quot;a&quot;:&quot;&lt;b&gt;&quot;}</textarea></div>` {
 		t.Errorf("textarea: %s", got)
+	}
+	got = string(Switch(true, "x", Attr("hx-post", "/toggle")))
+	if !strings.Contains(got, `aria-checked="true" aria-label="x" hx-post="/toggle">`) {
+		t.Errorf("switch attrs: %s", got)
+	}
+	if len(Opts("a", "A", "b")) != 2 || Opts("a", "A", "b")[1].Label != "b" {
+		t.Error("Opts")
 	}
 	if esc(`<a href="x">'&'</a>`) != `&lt;a href=&quot;x&quot;&gt;&#39;&amp;&#39;&lt;/a&gt;` {
 		t.Error("esc")

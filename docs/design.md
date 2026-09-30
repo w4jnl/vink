@@ -109,7 +109,8 @@ Sixteen tables; every row below `projects` carries `project_id`, every row below
 | `events` | `id`, `monitor_id`, `project_id`, `at`, `from_state`, `to_state`, `reason`, `observation_id` | one row per state flip; the audit trail the UI and API show |
 | `incidents` | `id`, `monitor_id`, `project_id`, `opened_at`, `resolved_at`, `acked_by`, `acked_at`, `open_event_id`, `close_event_id` | opened on →`down`, closed on →`up`; ack silences repeats |
 | `channels` | `id`, `project_id`, `org_id`, `name`, `kind` (`smtp`/`webhook`/`ntfy`/`gotify`/`matrix`/`slackhook`/`alertmanager`), `config` (JSON, secrets encrypted with instance key), `enabled` |  |
-| `routes` | `id`, `project_id`, `match_tags` (JSON, all-of), `channel_id`, `on` (`down`,`up`,`late` set), `repeat_every_s` (0 = never), `priority` | empty `match_tags` matches all monitors; default route created with each project |
+| `routes` | `id`, `project_id`, `match_tags` (JSON, all-of), `on` (`down`,`up`,`late` set), `repeat_every_s` (0 = never), `priority` | empty `match_tags` matches all monitors; the first channel of a project gets a default route that sends every down and up |
+| `route_channels` | `route_id`, `channel_id`, `project_id` | a route fans out to one or more channels; deleting a channel deletes routes left without one |
 | `deliveries` | `id`, `event_id`, `channel_id`, `project_id`, `attempt`, `next_attempt_at`, `delivered_at`, `error` | the outbox; dispatcher polls it, exponential backoff to 6 attempts |
 | `maintenance` | `id`, `project_id`, `name`, `match_tags`, `starts_at`, `ends_at`, `rrule` (optional weekly), `timezone` | while active, matching monitors observe but do not alert or flip to `down` |
 | `status_pages` | `id`, `project_id`, `slug` (unique per instance), `title`, `match_tags`, `public` (bool), `password_hash` (optional), `custom_domain` | renders monitors whose tags match |
@@ -323,7 +324,7 @@ The UI is one list and one drawer per entity, rendered by the server, with htmx 
 | `/` | redirect to last project or the only project |  |
 | `/o/{org}/p/{project}` | Monitors: filter bar (state chips with counts, tag chips, kind, text), table rows: state dot, name, kind glyph, last observation relative time, next due or latency sparkline (24 h), tags | list body polls every 15 s (`hx-trigger="every 15s"`) and swaps rows; a row click opens the drawer |
 | `…/m/{slug}` | Monitor drawer (also a full page at the same URL for deep links): header (state, since, pause/resume, check now), ping URL with copy button (heartbeat) or target (pull), 24 h timeline strip, last 20 observations with expand-to-body, events, edit form, "as YAML" toggle | drawer polls every 10 s while open |
-| `…/m/new` | create form: kind selector first, then only that kind's fields; advanced fields (thresholds, confirm, methods, body limit) behind one `Advanced` disclosure |  |
+| `…/m/new` | create form: kind selector first, then only that kind's fields; advanced fields (thresholds, confirm, methods, body limit) behind one `Advanced` disclosure; `…/m/{slug}/edit` is the same form filled in. `POST …/m/preview` and `…/m/{slug}/preview` validate the form without saving and return the schedule and grace sentences, the `Advanced` summary and the YAML as `hx-partial`s |  |
 | `…/incidents` | open incidents on top with ack buttons, resolved below, filter by monitor/tag | polls every 15 s |
 | `…/settings/{tab}` with tab = channels, routes, maintenance, pages, keys | one tab per table; each tab is a list with inline add/edit forms; channel rows have a `Test` button | no polling |
 | `/o/{org}/admin` | members (role select), projects, agents; visible to org admins and owners |  |
@@ -334,6 +335,7 @@ The UI is one list and one drawer per entity, rendered by the server, with htmx 
 
 - Every page is a full server render; htmx adds partial swaps (`hx-get` on filters, `hx-post` on forms with `hx-target` on the list) and polling. No client-side state, no JSON in the browser, no build step. Progressive enhancement: everything works with JavaScript disabled, just with full reloads.
 - Forms post to the same handlers as the API's service methods and render validation errors inline next to the field (`aria-describedby`), never as a toast.
+- The monitor form explains itself as it is filled in: a hidden trigger posts the form to `…/m/preview` on change (debounced 300 ms) and the handler answers with `hx-partial` fragments for the schedule sentence (`Next runs: tonight 03:00 · Wed 03:00 · Thu 03:00`), the grace sentence (`Late at 03:00, down at 03:05.`), the `Advanced` summary and the `As YAML` box. The same function fills those sentences on the first render and on a 422, so nothing depends on JavaScript.
 - One drawer at a time, opened by URL (`hx-push-url`), closed with Escape or the close button. No modals; destructive actions use a two-step inline confirm (`Delete → Really delete?`).
 - Polling uses `hx-trigger="every Ns [document.visibilityState=='visible']"` so hidden tabs stop polling; responses include `ETag`, unchanged content returns 304 and htmx leaves the DOM alone.
 - Time is shown relative (`3 min ago`, `in 2 h`) with the absolute timestamp in the monitor's timezone on hover and in the drawer.

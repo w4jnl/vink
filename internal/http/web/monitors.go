@@ -32,6 +32,13 @@ func (h *Web) pingBase() string {
 	return h.svc.Config().PingBaseURL + "/ping/"
 }
 
+func (h *Web) pingKeyFor(c *reqCtx) string {
+	if c.scope.CanSeePingKey() {
+		return c.project.PingKey
+	}
+	return "<ping key>"
+}
+
 // listData builds the monitors page without a drawer.
 func (h *Web) listData(c *reqCtx) (monitorsData, error) {
 	ctx := c.r.Context()
@@ -44,13 +51,8 @@ func (h *Web) listData(c *reqCtx) (monitorsData, error) {
 	if err != nil {
 		return monitorsData{}, err
 	}
-	d := monitorsData{base: h.baseFor(c, "Monitors"), Total: len(all), PingBase: h.pingBase(), NewPath: c.projectPath() + "/m/new"}
+	d := monitorsData{base: h.baseFor(c, "Monitors", "monitors"), Total: len(all), PingBase: h.pingBase(), PingKey: h.pingKeyFor(c), NewPath: c.projectPath() + "/m/new"}
 	d.Query, d.FilterState, d.FilterTag = filter.Query, string(filter.State), filter.Tag
-	if c.scope.CanSeePingKey() {
-		d.PingKey = c.project.PingKey
-	} else {
-		d.PingKey = "<ping key>"
-	}
 	counts := map[domain.State]int{}
 	tagCounts := map[string]int{}
 	for _, m := range all {
@@ -72,26 +74,13 @@ func (h *Web) listData(c *reqCtx) (monitorsData, error) {
 		}
 		d.Chips = append(d.Chips, ui.ChipProps{Label: string(s), State: string(s), Count: ui.Count(counts[s]), Pressed: pressed, Type: "submit", Attrs: ui.Attr("name", "state") + ui.Attr("value", value)})
 	}
-	tags := make([]string, 0, len(tagCounts))
-	for t := range tagCounts {
-		tags = append(tags, t)
-	}
-	sort.Slice(tags, func(i, j int) bool {
-		if tagCounts[tags[i]] != tagCounts[tags[j]] {
-			return tagCounts[tags[i]] > tagCounts[tags[j]]
-		}
-		return tags[i] < tags[j]
-	})
-	for _, t := range tags {
+	for _, t := range sortedTags(tagCounts) {
 		pressed := filter.Tag == t
 		value := t
 		if pressed {
 			value = ""
 		}
 		d.Chips = append(d.Chips, ui.ChipProps{Label: t, Count: ui.Count(tagCounts[t]), Pressed: pressed, Type: "submit", Attrs: ui.Attr("name", "tag") + ui.Attr("value", value)})
-	}
-	if filter.State != "" {
-		d.Chips = append(d.Chips, ui.ChipProps{Label: "clear", Type: "submit", Attrs: ui.Attr("name", "state") + ui.Attr("value", "") + ui.Attr("formaction", c.projectPath()) + ui.Attr("hidden", "")})
 	}
 	shown := make([]*domain.Monitor, 0, len(all))
 	for _, m := range all {
@@ -117,6 +106,20 @@ func (h *Web) listData(c *reqCtx) (monitorsData, error) {
 	return d, nil
 }
 
+func sortedTags(counts map[string]int) []string {
+	tags := make([]string, 0, len(counts))
+	for t := range counts {
+		tags = append(tags, t)
+	}
+	sort.Slice(tags, func(i, j int) bool {
+		if counts[tags[i]] != counts[tags[j]] {
+			return counts[tags[i]] > counts[tags[j]]
+		}
+		return tags[i] < tags[j]
+	})
+	return tags
+}
+
 func filterMatches(f service.MonitorFilter, m *domain.Monitor) bool {
 	if f.Tag != "" && !m.HasAllTags([]string{f.Tag}) {
 		return false
@@ -131,7 +134,7 @@ func filterMatches(f service.MonitorFilter, m *domain.Monitor) bool {
 }
 
 func (h *Web) location(c *reqCtx, m *domain.Monitor) *time.Location {
-	if m.Heartbeat != nil {
+	if m != nil && m.Heartbeat != nil {
 		if loc, err := m.Heartbeat.Location(c.project.Timezone); err == nil {
 			return loc
 		}
@@ -221,6 +224,7 @@ type drawerData struct {
 	Cells, Legend           []string
 	Observations            []obsRow
 	Events                  []eventRow
+	YAML                    string
 }
 
 type obsRow struct{ State, Clock, Abs, Text, Right string }
@@ -232,12 +236,8 @@ func (h *Web) drawerData(c *reqCtx, m *domain.Monitor) (*drawerData, error) {
 	loc := h.location(c, m)
 	d := &drawerData{
 		Path: c.projectPath() + "/m/" + m.Slug, ProjectPath: c.projectPath(), CSRF: c.csrf(), Name: m.Name, Slug: m.Slug,
-		Badge: ui.StateBadgeProps{State: string(m.State), Pill: true}, Tags: m.Tags, Paused: m.Paused, PingBase: h.pingBase(),
-	}
-	if c.scope.CanSeePingKey() {
-		d.PingKey = c.project.PingKey
-	} else {
-		d.PingKey = "<ping key>"
+		Badge: ui.StateBadgeProps{State: string(m.State), Pill: true}, Tags: m.Tags, Paused: m.Paused, PingBase: h.pingBase(), PingKey: h.pingKeyFor(c),
+		YAML: domain.MonitorYAML(m),
 	}
 	if m.State != domain.StateNew {
 		d.Badge.Since = view.For(m.StateSince, c.now)
@@ -339,16 +339,14 @@ func (h *Web) monitor(c *reqCtx) error {
 }
 
 func (h *Web) pauseMonitor(c *reqCtx) error {
-	_, err := h.svc.PauseMonitor(c.r.Context(), c.scope, c.r.PathValue("slug"))
-	if err != nil {
+	if _, err := h.svc.PauseMonitor(c.r.Context(), c.scope, c.r.PathValue("slug")); err != nil {
 		return err
 	}
 	return h.afterAction(c)
 }
 
 func (h *Web) resumeMonitor(c *reqCtx) error {
-	_, err := h.svc.ResumeMonitor(c.r.Context(), c.scope, c.r.PathValue("slug"))
-	if err != nil {
+	if _, err := h.svc.ResumeMonitor(c.r.Context(), c.scope, c.r.PathValue("slug")); err != nil {
 		return err
 	}
 	return h.afterAction(c)
@@ -382,17 +380,32 @@ func (h *Web) deleteMonitor(c *reqCtx) error {
 // --- create and edit form ---------------------------------------------------
 
 type formData struct {
-	Edit            bool
-	Action          string
-	CancelPath      string
-	CancelHX        string
-	CSRF            string
-	ProjectTimezone string
-	SubmitLabel     string
-	Values          map[string]string
-	Errors          map[string]string
-	Error           string
-	AdvancedOpen    bool
+	Edit                bool
+	Kind                string
+	Action              string
+	PreviewPath         string
+	KindPath            string
+	CancelPath          string
+	CancelHX            string
+	DeletePath          string
+	CSRF                string
+	OrgSlug             string
+	ProjectSlug         string
+	PingBase            string
+	PingKey             string
+	SubmitLabel         string
+	Values              map[string]string
+	Errors              map[string]string
+	Error               string
+	Timezones           []ui.Option
+	SlugHint            string
+	SchedulePlaceholder string
+	ScheduleHint        string
+	GraceHint           string
+	AdvancedSummary     string
+	AdvancedOpen        bool
+	YAMLOpen            bool
+	YAML                string
 }
 
 type formPage struct {
@@ -401,59 +414,126 @@ type formPage struct {
 	Form formData
 }
 
-func (h *Web) blankForm(c *reqCtx) formData {
-	return formData{
-		Action: c.projectPath() + "/m/new", CancelPath: c.projectPath(), CancelHX: c.projectPath() + "?partial=drawer-empty", CSRF: c.csrf(),
-		ProjectTimezone: c.project.Timezone, SubmitLabel: "Create monitor", Values: map[string]string{"grace": "5m"}, Errors: map[string]string{},
+var commonZones = []string{"UTC", "Europe/Amsterdam", "Europe/London", "Europe/Berlin", "Europe/Paris", "America/New_York", "America/Chicago", "America/Los_Angeles", "Asia/Tokyo", "Asia/Singapore", "Australia/Sydney"}
+
+func (h *Web) timezoneOptions(c *reqCtx, current string) []ui.Option {
+	out := []ui.Option{{Value: "", Label: c.project.Timezone + " (project)"}}
+	seen := map[string]bool{c.project.Timezone: true}
+	if current != "" && !seen[current] {
+		out = append(out, ui.Option{Value: current, Label: current})
+		seen[current] = true
 	}
+	for _, z := range commonZones {
+		if !seen[z] {
+			out = append(out, ui.Option{Value: z, Label: z})
+			seen[z] = true
+		}
+	}
+	return out
 }
 
-func formFromMonitor(c *reqCtx, m *domain.Monitor) formData {
-	f := formData{
-		Edit: true, Action: c.projectPath() + "/m/" + m.Slug + "/edit", CancelPath: c.projectPath() + "/m/" + m.Slug, CancelHX: c.projectPath() + "/m/" + m.Slug,
-		CSRF: c.csrf(), ProjectTimezone: c.project.Timezone, SubmitLabel: "Save", Values: map[string]string{}, Errors: map[string]string{},
+func (h *Web) newForm(c *reqCtx, kind string) formData {
+	if kind == "" {
+		kind = string(domain.KindHeartbeat)
 	}
+	f := formData{
+		Kind: kind, Action: c.projectPath() + "/m/new", PreviewPath: c.projectPath() + "/m/preview", KindPath: c.projectPath() + "/m/new",
+		CancelPath: c.projectPath(), CancelHX: c.projectPath() + "?partial=drawer-empty", CSRF: c.csrf(),
+		OrgSlug: c.org.Slug, ProjectSlug: c.project.Slug, PingBase: h.pingBase(), PingKey: h.pingKeyFor(c), SubmitLabel: "Create monitor",
+		Values: map[string]string{"name": "", "slug": "", "schedule": "", "schedule_type": "period", "timezone": "", "grace": "5m", "tags": "", "max_runtime": "", "methods": "any", "failure_threshold": "1", "recovery_threshold": "1", "body_limit": ""},
+		Errors: map[string]string{}, SlugHint: "Part of the ping URL. Empty derives it from the name.", YAMLOpen: true,
+	}
+	f.Timezones = h.timezoneOptions(c, "")
+	return f
+}
+
+func (h *Web) formFromMonitor(c *reqCtx, m *domain.Monitor) formData {
+	f := h.newForm(c, string(m.Kind))
+	f.Edit = true
+	f.Action = c.projectPath() + "/m/" + m.Slug + "/edit"
+	f.PreviewPath = c.projectPath() + "/m/" + m.Slug + "/preview"
+	f.KindPath = f.Action
+	f.CancelPath = c.projectPath() + "/m/" + m.Slug
+	f.CancelHX = f.CancelPath
+	f.DeletePath = c.projectPath() + "/m/" + m.Slug + "/delete"
+	f.SubmitLabel = "Save"
+	f.SlugHint = "Part of the ping URL; it cannot change."
+	f.YAMLOpen = false
 	f.Values["name"], f.Values["slug"], f.Values["tags"] = m.Name, m.Slug, strings.Join(m.Tags, ", ")
 	if s := m.Heartbeat; s != nil {
-		if s.Schedule.Period != 0 {
-			f.Values["period"] = s.Schedule.Period.String()
+		if s.Schedule.Cron != "" {
+			f.Values["schedule_type"], f.Values["schedule"] = "cron", s.Schedule.Cron
+		} else {
+			f.Values["schedule_type"], f.Values["schedule"] = "period", s.Schedule.Period.String()
 		}
-		f.Values["cron"], f.Values["timezone"], f.Values["grace"] = s.Schedule.Cron, s.Timezone, s.Grace.String()
+		f.Values["timezone"], f.Values["grace"] = s.Timezone, s.Grace.String()
 		if s.MaxRuntime != 0 {
 			f.Values["max_runtime"] = s.MaxRuntime.String()
 		}
 		f.Values["failure_threshold"] = strconv.Itoa(s.FailureThreshold)
 		f.Values["recovery_threshold"] = strconv.Itoa(s.RecoveryThreshold)
-		f.Values["methods"] = strings.Join(s.Methods, ", ")
+		if len(s.Methods) == 1 && s.Methods[0] == "POST" {
+			f.Values["methods"] = "post"
+		}
 		if s.BodyLimit != 0 {
-			f.Values["body_limit"] = strconv.FormatInt(s.BodyLimit, 10)
+			f.Values["body_limit"] = bytesWord(s.BodyLimit)
 		}
 		f.AdvancedOpen = s.MaxRuntime != 0 || s.FailureThreshold != 1 || s.RecoveryThreshold != 1 || len(s.Methods) > 0 || s.BodyLimit != 0
 	}
+	f.Timezones = h.timezoneOptions(c, f.Values["timezone"])
 	return f
 }
 
-// parseMonitorForm turns posted values into a monitor, collecting parse
-// errors per field.
-func parseMonitorForm(r *http.Request, f *formData) *domain.Monitor {
+// parseMonitorForm turns form values (post or query) into a monitor,
+// collecting parse errors per field.
+func parseMonitorForm(values map[string][]string, f *formData) *domain.Monitor {
 	get := func(k string) string {
-		v := strings.TrimSpace(r.PostFormValue(k))
+		v := ""
+		if vs := values[k]; len(vs) > 0 {
+			v = strings.TrimSpace(vs[0])
+		}
 		f.Values[k] = v
 		return v
 	}
-	m := &domain.Monitor{Kind: domain.KindHeartbeat, Name: get("name"), Slug: get("slug")}
+	kind := get("kind")
+	if kind == "" {
+		kind = string(domain.KindHeartbeat)
+	}
+	f.Kind = kind
+	m := &domain.Monitor{Kind: domain.Kind(kind), Name: get("name"), Slug: get("slug")}
+	if !m.Kind.Valid() {
+		f.Errors["kind"] = "Unknown kind."
+	} else if m.Kind != domain.KindHeartbeat {
+		f.Errors["kind"] = "HTTP, TCP, DNS, TLS and ICMP monitors arrive later in phase 1."
+	}
 	if m.Slug == "" && m.Name != "" {
 		m.Slug = domain.Slugify(m.Name)
+		f.Values["slug"] = m.Slug
 	}
 	spec := &domain.HeartbeatSpec{}
-	if v := get("period"); v != "" {
-		d, err := domain.ParseDuration(v)
-		if err != nil {
-			f.Errors["period"] = "Use a duration such as 1h or 1d."
-		}
-		spec.Schedule.Period = d
+	scheduleType := get("schedule_type")
+	if scheduleType == "" {
+		scheduleType = "period"
+		f.Values["schedule_type"] = scheduleType
 	}
-	spec.Schedule.Cron = get("cron")
+	schedule := get("schedule")
+	switch scheduleType {
+	case "period":
+		f.SchedulePlaceholder = "1h"
+		if schedule != "" {
+			d, err := domain.ParseDuration(schedule)
+			if err != nil {
+				f.Errors["schedule"] = "Use a duration such as 1h or 1d."
+			}
+			spec.Schedule.Period = d
+		}
+	case "cron":
+		f.SchedulePlaceholder = "0 3 * * *"
+		spec.Schedule.Cron = schedule
+	default:
+		f.SchedulePlaceholder = "Mon..Fri 09:00"
+		f.Errors["schedule"] = "OnCalendar schedules arrive later in phase 1; use Period or Cron."
+	}
 	spec.Timezone = get("timezone")
 	if v := get("grace"); v != "" {
 		d, err := domain.ParseDuration(v)
@@ -465,46 +545,62 @@ func parseMonitorForm(r *http.Request, f *formData) *domain.Monitor {
 	if v := get("tags"); v != "" {
 		m.Tags = domain.NormalizeTags(strings.Split(v, ","))
 	}
-	if v := get("failure_threshold"); v != "" {
-		n, err := strconv.Atoi(v)
-		if err != nil {
-			f.Errors["failure_threshold"] = "Must be a whole number."
-		}
-		spec.FailureThreshold = n
-	}
-	if v := get("recovery_threshold"); v != "" {
-		n, err := strconv.Atoi(v)
-		if err != nil {
-			f.Errors["recovery_threshold"] = "Must be a whole number."
-		}
-		spec.RecoveryThreshold = n
-	}
-	if v := get("max_runtime"); v != "" {
+	if v := get("max_runtime"); v != "" && v != "none" {
 		d, err := domain.ParseDuration(v)
 		if err != nil {
 			f.Errors["max_runtime"] = "Use a duration such as 2h."
 		}
 		spec.MaxRuntime = d
 	}
-	if v := get("methods"); v != "" {
-		for _, mth := range strings.Split(v, ",") {
-			if mth = strings.TrimSpace(mth); mth != "" {
-				spec.Methods = append(spec.Methods, strings.ToUpper(mth))
+	if get("methods") == "post" {
+		spec.Methods = []string{"POST"}
+	} else {
+		f.Values["methods"] = "any"
+	}
+	for _, k := range []string{"failure_threshold", "recovery_threshold"} {
+		if v := get(k); v != "" {
+			n, err := strconv.Atoi(v)
+			if err != nil {
+				f.Errors[k] = "Must be a whole number."
+			}
+			if k == "failure_threshold" {
+				spec.FailureThreshold = n
+			} else {
+				spec.RecoveryThreshold = n
 			}
 		}
 	}
 	if v := get("body_limit"); v != "" {
-		n, err := strconv.ParseInt(v, 10, 64)
-		if err != nil {
-			f.Errors["body_limit"] = "Must be a whole number of bytes."
+		n, ok := parseBytes(v)
+		if !ok {
+			f.Errors["body_limit"] = "Use a size such as 64 KB."
 		}
 		spec.BodyLimit = n
 	}
 	m.Heartbeat = spec
-	if len(f.Errors) > 0 {
-		f.AdvancedOpen = f.Errors["failure_threshold"] != "" || f.Errors["recovery_threshold"] != "" || f.Errors["max_runtime"] != "" || f.Errors["methods"] != "" || f.Errors["body_limit"] != ""
-	}
+	f.AdvancedOpen = f.AdvancedOpen || f.Errors["failure_threshold"] != "" || f.Errors["recovery_threshold"] != "" || f.Errors["max_runtime"] != "" || f.Errors["methods"] != "" || f.Errors["body_limit"] != ""
 	return m
+}
+
+// fillHints computes the sentences and the YAML for the current values.
+func (h *Web) fillHints(c *reqCtx, f *formData, m *domain.Monitor) {
+	spec := m.Heartbeat
+	if spec != nil {
+		cp := *spec
+		cp.Normalize()
+		spec = &cp
+	}
+	hs := describe(spec, c.project.Timezone, c.now, h.svc.Config().BodyLimit)
+	f.ScheduleHint, f.GraceHint, f.AdvancedSummary = hs.Schedule, hs.Grace, hs.Advanced
+	if f.Errors["schedule"] == "" && f.Values["schedule"] == "" {
+		f.ScheduleHint = "How often a ping is expected: a period such as 1h, or a cron expression."
+	}
+	preview := *m
+	preview.Heartbeat = spec
+	if preview.Slug == "" {
+		preview.Slug = "slug"
+	}
+	f.YAML = domain.MonitorYAML(&preview)
 }
 
 // applyValidation maps service field errors onto form fields.
@@ -515,14 +611,8 @@ func applyValidation(f *formData, err error) bool {
 	}
 	for _, fe := range ve.Errors {
 		field := fe.Field
-		switch field {
-		case "schedule":
-			field = "period"
-			if f.Values["cron"] != "" {
-				field = "cron"
-			}
-		case "spec":
-			field = "period"
+		if field == "spec" {
+			field = "schedule"
 		}
 		if _, exists := f.Errors[field]; !exists {
 			f.Errors[field] = capitalise(fe.Msg) + "."
@@ -549,27 +639,44 @@ func (h *Web) renderForm(c *reqCtx, status int, f formData) error {
 	if err != nil {
 		return err
 	}
-	title := "Create monitor"
+	title := "New monitor"
 	if f.Edit {
 		title = "Edit " + f.Values["name"]
 	}
-	page := formPage{base: h.baseFor(c, title), List: d, Form: f}
+	page := formPage{base: d.base, List: d, Form: f}
+	page.Title = title
 	return h.render(c, status, "monitor_form", "layout", page)
 }
 
+// newMonitor renders the create form; query values prefill it, which is
+// how the kind switch keeps Name, Slug and Tags.
 func (h *Web) newMonitor(c *reqCtx) error {
 	if !c.scope.CanEdit() {
 		return domain.ErrForbidden
 	}
-	return h.renderForm(c, http.StatusOK, h.blankForm(c))
+	f := h.newForm(c, c.r.URL.Query().Get("kind"))
+	q := c.r.URL.Query()
+	if len(q) > 0 && (q.Has("name") || q.Has("kind")) {
+		m := parseMonitorForm(q, &f)
+		delete(f.Errors, "schedule")
+		if f.Values["grace"] == "" {
+			f.Values["grace"] = "5m"
+		}
+		h.fillHints(c, &f, m)
+	} else {
+		h.fillHints(c, &f, &domain.Monitor{Kind: domain.KindHeartbeat, Heartbeat: &domain.HeartbeatSpec{Schedule: domain.Schedule{Period: domain.MustDuration("1h")}}})
+		f.YAML = "slug: <slug>\nkind: heartbeat\nschedule: {period: 1h}"
+	}
+	return h.renderForm(c, http.StatusOK, f)
 }
 
 func (h *Web) createMonitor(c *reqCtx) error {
 	if err := c.r.ParseForm(); err != nil {
 		return err
 	}
-	f := h.blankForm(c)
-	m := parseMonitorForm(c.r, &f)
+	f := h.newForm(c, "")
+	m := parseMonitorForm(c.r.PostForm, &f)
+	h.fillHints(c, &f, m)
 	if len(f.Errors) > 0 {
 		return h.renderForm(c, http.StatusUnprocessableEntity, f)
 	}
@@ -595,7 +702,9 @@ func (h *Web) editMonitor(c *reqCtx) error {
 	if err != nil {
 		return err
 	}
-	return h.renderForm(c, http.StatusOK, formFromMonitor(c, m))
+	f := h.formFromMonitor(c, m)
+	h.fillHints(c, &f, m)
+	return h.renderForm(c, http.StatusOK, f)
 }
 
 func (h *Web) updateMonitor(c *reqCtx) error {
@@ -606,10 +715,12 @@ func (h *Web) updateMonitor(c *reqCtx) error {
 	if err != nil {
 		return err
 	}
-	f := formFromMonitor(c, cur)
-	m := parseMonitorForm(c.r, &f)
-	m.Slug = cur.Slug
-	f.Values["slug"] = cur.Slug
+	f := h.formFromMonitor(c, cur)
+	m := parseMonitorForm(c.r.PostForm, &f)
+	m.Slug, m.Kind = cur.Slug, cur.Kind
+	delete(f.Errors, "kind")
+	f.Values["slug"], f.Kind = cur.Slug, string(cur.Kind)
+	h.fillHints(c, &f, m)
 	if len(f.Errors) > 0 {
 		return h.renderForm(c, http.StatusUnprocessableEntity, f)
 	}
@@ -620,4 +731,25 @@ func (h *Web) updateMonitor(c *reqCtx) error {
 		return err
 	}
 	return h.redirect(c, c.projectPath()+"/m/"+cur.Slug)
+}
+
+// previewMonitor validates the posted form without saving and returns the
+// hint sentences, the Advanced summary and the YAML as partials.
+func (h *Web) previewMonitor(c *reqCtx) error {
+	if err := c.r.ParseForm(); err != nil {
+		return err
+	}
+	f := h.newForm(c, "")
+	m := parseMonitorForm(c.r.PostForm, &f)
+	if slug := c.r.PathValue("slug"); slug != "" {
+		m.Slug = slug
+	}
+	h.fillHints(c, &f, m)
+	if f.Errors["schedule"] != "" {
+		f.ScheduleHint = f.Errors["schedule"]
+	}
+	if f.Errors["grace"] != "" {
+		f.GraceHint = f.Errors["grace"]
+	}
+	return h.render(c, http.StatusOK, "monitor_form", "preview", f)
 }

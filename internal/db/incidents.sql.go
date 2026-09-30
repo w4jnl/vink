@@ -46,7 +46,9 @@ func (q *Queries) CountOpenIncidents(ctx context.Context, projectID string) (int
 }
 
 const getIncident = `-- name: GetIncident :one
-SELECT id, monitor_id, project_id, opened_at, resolved_at, acked_by, acked_at, open_event_id, close_event_id FROM incidents WHERE project_id = ? AND id = ?
+SELECT i.id, i.monitor_id, i.project_id, i.opened_at, i.resolved_at, i.acked_by, i.acked_at, i.open_event_id, i.close_event_id, COALESCE(e.reason, '') AS reason
+FROM incidents i LEFT JOIN events e ON e.id = i.open_event_id
+WHERE i.project_id = ? AND i.id = ?
 `
 
 type GetIncidentParams struct {
@@ -54,9 +56,22 @@ type GetIncidentParams struct {
 	ID        string
 }
 
-func (q *Queries) GetIncident(ctx context.Context, arg GetIncidentParams) (Incident, error) {
+type GetIncidentRow struct {
+	ID           string
+	MonitorID    string
+	ProjectID    string
+	OpenedAt     int64
+	ResolvedAt   *int64
+	AckedBy      *string
+	AckedAt      *int64
+	OpenEventID  string
+	CloseEventID *string
+	Reason       string
+}
+
+func (q *Queries) GetIncident(ctx context.Context, arg GetIncidentParams) (GetIncidentRow, error) {
 	row := q.db.QueryRowContext(ctx, getIncident, arg.ProjectID, arg.ID)
-	var i Incident
+	var i GetIncidentRow
 	err := row.Scan(
 		&i.ID,
 		&i.MonitorID,
@@ -67,6 +82,7 @@ func (q *Queries) GetIncident(ctx context.Context, arg GetIncidentParams) (Incid
 		&i.AckedAt,
 		&i.OpenEventID,
 		&i.CloseEventID,
+		&i.Reason,
 	)
 	return i, err
 }
@@ -101,15 +117,16 @@ func (q *Queries) GetOpenIncidentForMonitor(ctx context.Context, arg GetOpenInci
 }
 
 const listIncidents = `-- name: ListIncidents :many
-SELECT i.id, i.monitor_id, i.project_id, i.opened_at, i.resolved_at, i.acked_by, i.acked_at, i.open_event_id, i.close_event_id, m.slug AS monitor_slug, m.name AS monitor_name
-FROM incidents i JOIN monitors m ON m.id = i.monitor_id
-WHERE i.project_id = ?
+SELECT i.id, i.monitor_id, i.project_id, i.opened_at, i.resolved_at, i.acked_by, i.acked_at, i.open_event_id, i.close_event_id, m.slug AS monitor_slug, m.name AS monitor_name, m.tags AS monitor_tags, COALESCE(e.reason, '') AS reason
+FROM incidents i JOIN monitors m ON m.id = i.monitor_id LEFT JOIN events e ON e.id = i.open_event_id
+WHERE i.project_id = ?1 AND (i.resolved_at IS NULL OR i.resolved_at >= ?2)
 ORDER BY (i.resolved_at IS NULL) DESC, i.opened_at DESC
-LIMIT ?
+LIMIT ?3
 `
 
 type ListIncidentsParams struct {
 	ProjectID string
+	Since     *int64
 	Limit     int64
 }
 
@@ -125,10 +142,12 @@ type ListIncidentsRow struct {
 	CloseEventID *string
 	MonitorSlug  string
 	MonitorName  string
+	MonitorTags  string
+	Reason       string
 }
 
 func (q *Queries) ListIncidents(ctx context.Context, arg ListIncidentsParams) ([]ListIncidentsRow, error) {
-	rows, err := q.db.QueryContext(ctx, listIncidents, arg.ProjectID, arg.Limit)
+	rows, err := q.db.QueryContext(ctx, listIncidents, arg.ProjectID, arg.Since, arg.Limit)
 	if err != nil {
 		return nil, err
 	}
@@ -148,6 +167,8 @@ func (q *Queries) ListIncidents(ctx context.Context, arg ListIncidentsParams) ([
 			&i.CloseEventID,
 			&i.MonitorSlug,
 			&i.MonitorName,
+			&i.MonitorTags,
+			&i.Reason,
 		); err != nil {
 			return nil, err
 		}
@@ -163,8 +184,8 @@ func (q *Queries) ListIncidents(ctx context.Context, arg ListIncidentsParams) ([
 }
 
 const listOpenIncidents = `-- name: ListOpenIncidents :many
-SELECT i.id, i.monitor_id, i.project_id, i.opened_at, i.resolved_at, i.acked_by, i.acked_at, i.open_event_id, i.close_event_id, m.slug AS monitor_slug, m.name AS monitor_name
-FROM incidents i JOIN monitors m ON m.id = i.monitor_id
+SELECT i.id, i.monitor_id, i.project_id, i.opened_at, i.resolved_at, i.acked_by, i.acked_at, i.open_event_id, i.close_event_id, m.slug AS monitor_slug, m.name AS monitor_name, m.tags AS monitor_tags, COALESCE(e.reason, '') AS reason
+FROM incidents i JOIN monitors m ON m.id = i.monitor_id LEFT JOIN events e ON e.id = i.open_event_id
 WHERE i.project_id = ? AND i.resolved_at IS NULL
 ORDER BY i.opened_at DESC
 `
@@ -181,6 +202,8 @@ type ListOpenIncidentsRow struct {
 	CloseEventID *string
 	MonitorSlug  string
 	MonitorName  string
+	MonitorTags  string
+	Reason       string
 }
 
 func (q *Queries) ListOpenIncidents(ctx context.Context, projectID string) ([]ListOpenIncidentsRow, error) {
@@ -204,6 +227,8 @@ func (q *Queries) ListOpenIncidents(ctx context.Context, projectID string) ([]Li
 			&i.CloseEventID,
 			&i.MonitorSlug,
 			&i.MonitorName,
+			&i.MonitorTags,
+			&i.Reason,
 		); err != nil {
 			return nil, err
 		}

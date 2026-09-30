@@ -371,7 +371,7 @@ func (a *API) listIncidents(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	open := r.URL.Query().Get("open") == "1"
-	incidents, err := a.svc.ListIncidents(r.Context(), scope(r), open, limit)
+	incidents, err := a.svc.ListIncidents(r.Context(), scope(r), open, limit, time.Time{})
 	if err != nil {
 		return err
 	}

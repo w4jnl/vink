@@ -9,16 +9,32 @@ import (
 	"github.com/w4jnl/vink/internal/domain"
 )
 
-func incidentFromListRow(id, monitorID, projectID string, openedAt int64, resolvedAt *int64, ackedBy *string, ackedAt *int64, openEvent string, closeEvent *string, slug, name string) *domain.Incident {
-	return &domain.Incident{
-		ID: id, MonitorID: monitorID, MonitorSlug: slug, MonitorName: name, ProjectID: projectID, OpenedAt: domain.FromMillis(openedAt),
-		ResolvedAt: domain.FromMillisPtr(resolvedAt), AckedBy: strp(ackedBy), AckedAt: domain.FromMillisPtr(ackedAt),
-		OpenEventID: openEvent, CloseEventID: strp(closeEvent),
-	}
+type incidentRow struct {
+	ID, MonitorID, ProjectID string
+	OpenedAt                 int64
+	ResolvedAt               *int64
+	AckedBy                  *string
+	AckedAt                  *int64
+	OpenEventID              string
+	CloseEventID             *string
+	Slug, Name, Tags, Reason string
 }
 
-// ListIncidents returns incidents, open first then newest first.
-func (s *Service) ListIncidents(ctx context.Context, sc domain.Scope, openOnly bool, limit int) ([]*domain.Incident, error) {
+func incidentFrom(r incidentRow) *domain.Incident {
+	inc := &domain.Incident{
+		ID: r.ID, MonitorID: r.MonitorID, MonitorSlug: r.Slug, MonitorName: r.Name, MonitorTags: domain.ParseTags(r.Tags), Reason: r.Reason,
+		ProjectID: r.ProjectID, OpenedAt: domain.FromMillis(r.OpenedAt), ResolvedAt: domain.FromMillisPtr(r.ResolvedAt),
+		AckedBy: strp(r.AckedBy), AckedAt: domain.FromMillisPtr(r.AckedAt), OpenEventID: r.OpenEventID, CloseEventID: strp(r.CloseEventID),
+	}
+	if inc.MonitorTags == nil {
+		inc.MonitorTags = []string{}
+	}
+	return inc
+}
+
+// ListIncidents returns incidents, open first then newest first. Resolved
+// incidents older than since are left out; a zero since keeps them all.
+func (s *Service) ListIncidents(ctx context.Context, sc domain.Scope, openOnly bool, limit int, since time.Time) ([]*domain.Incident, error) {
 	if err := requireProject(sc); err != nil {
 		return nil, err
 	}
@@ -32,16 +48,16 @@ func (s *Service) ListIncidents(ctx context.Context, sc domain.Scope, openOnly b
 			return nil, err
 		}
 		for _, r := range rows {
-			out = append(out, incidentFromListRow(r.ID, r.MonitorID, r.ProjectID, r.OpenedAt, r.ResolvedAt, r.AckedBy, r.AckedAt, r.OpenEventID, r.CloseEventID, r.MonitorSlug, r.MonitorName))
+			out = append(out, incidentFrom(incidentRow{r.ID, r.MonitorID, r.ProjectID, r.OpenedAt, r.ResolvedAt, r.AckedBy, r.AckedAt, r.OpenEventID, r.CloseEventID, r.MonitorSlug, r.MonitorName, r.MonitorTags, r.Reason}))
 		}
 		return out, nil
 	}
-	rows, err := s.db.Read().ListIncidents(ctx, db.ListIncidentsParams{ProjectID: sc.ProjectID, Limit: int64(limit)})
+	rows, err := s.db.Read().ListIncidents(ctx, db.ListIncidentsParams{ProjectID: sc.ProjectID, Since: ptri(domain.Millis(since)), Limit: int64(limit)})
 	if err != nil {
 		return nil, err
 	}
 	for _, r := range rows {
-		out = append(out, incidentFromListRow(r.ID, r.MonitorID, r.ProjectID, r.OpenedAt, r.ResolvedAt, r.AckedBy, r.AckedAt, r.OpenEventID, r.CloseEventID, r.MonitorSlug, r.MonitorName))
+		out = append(out, incidentFrom(incidentRow{r.ID, r.MonitorID, r.ProjectID, r.OpenedAt, r.ResolvedAt, r.AckedBy, r.AckedAt, r.OpenEventID, r.CloseEventID, r.MonitorSlug, r.MonitorName, r.MonitorTags, r.Reason}))
 	}
 	return out, nil
 }
@@ -59,7 +75,7 @@ func (s *Service) Incident(ctx context.Context, sc domain.Scope, id string) (*do
 	if err != nil {
 		return nil, notFoundIfNoRows(err, "incident")
 	}
-	return incidentFromListRow(row.ID, row.MonitorID, row.ProjectID, row.OpenedAt, row.ResolvedAt, row.AckedBy, row.AckedAt, row.OpenEventID, row.CloseEventID, m.Slug, m.Name), nil
+	return incidentFrom(incidentRow{row.ID, row.MonitorID, row.ProjectID, row.OpenedAt, row.ResolvedAt, row.AckedBy, row.AckedAt, row.OpenEventID, row.CloseEventID, m.Slug, m.Name, m.Tags, row.Reason}), nil
 }
 
 // AckIncident silences repeats for an open incident.
@@ -134,7 +150,7 @@ func (s *Service) Status(ctx context.Context, sc domain.Scope) (*StatusSummary, 
 	if err != nil {
 		return nil, err
 	}
-	open, err := s.ListIncidents(ctx, sc, true, 0)
+	open, err := s.ListIncidents(ctx, sc, true, 0, time.Time{})
 	if err != nil {
 		return nil, err
 	}

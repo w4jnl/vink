@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/w4jnl/vink/internal/auth"
 	"github.com/w4jnl/vink/internal/config"
@@ -67,7 +68,7 @@ func TestCrossTenantIsolation(t *testing.T) {
 		tn.obs = obs.ID
 		events, _ := svc.ListEvents(ctx, sc, m.Slug, 1)
 		tn.event = events[0].ID
-		incs, _ := svc.ListIncidents(ctx, sc, true, 0)
+		incs, _ := svc.ListIncidents(ctx, sc, true, 0, time.Time{})
 		tn.incident = incs[0].ID
 		ch, _ := svc.CreateChannel(ctx, sc, &domain.Channel{Name: "hook", Kind: domain.ChannelWebhook, Config: json.RawMessage(`{"url":"https://hooks.example.com/x"}`), Enabled: true})
 		tn.channel = ch.ID

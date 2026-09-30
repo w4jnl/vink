@@ -1,0 +1,10 @@
+{{define "content"}}<main class="vk-auth">
+<div class="vk-auth__brand">{{mark 22}}<span>vink</span></div>
+<div class="vk-auth__card vk-auth__card--wide">
+<h1>{{.Heading}}</h1>
+<p>{{.Lead}}</p>
+{{if .KV}}<dl class="vk-kv">{{range .KV}}<dt>{{.Key}}</dt><dd>{{.Value}}</dd>{{end}}</dl>{{end}}
+{{if .Note}}<p>{{.Note}}</p>{{end}}
+<div class="vk-actions">{{range .Actions}}{{button .}}{{end}}</div>
+</div>
+</main>{{end}}

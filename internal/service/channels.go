@@ -70,13 +70,17 @@ func (s *Service) CreateChannel(ctx context.Context, sc domain.Scope, c *domain.
 			return err
 		}
 		if len(routes) == 0 {
-			_, err = q.CreateRoute(ctx, db.CreateRouteParams{
-				ID: domain.NewID(), ProjectID: sc.ProjectID, MatchTags: "[]", ChannelID: out.ID,
+			route, err := q.CreateRoute(ctx, db.CreateRouteParams{
+				ID: domain.NewID(), ProjectID: sc.ProjectID, MatchTags: "[]",
 				OnStates: statesJSON([]domain.State{domain.StateDown, domain.StateUp}), RepeatEveryS: 0, Priority: 0,
 				CreatedAt: domain.Millis(now), UpdatedAt: domain.Millis(now),
 			})
+			if err != nil {
+				return err
+			}
+			return q.InsertRouteChannel(ctx, db.InsertRouteChannelParams{RouteID: route.ID, ChannelID: out.ID, ProjectID: sc.ProjectID})
 		}
-		return err
+		return nil
 	})
 	if err != nil {
 		return nil, err
@@ -175,12 +179,20 @@ func (s *Service) DeleteChannel(ctx context.Context, sc domain.Scope, id string)
 	if err := requireEdit(sc); err != nil {
 		return err
 	}
-	n, err := s.db.Write().DeleteChannel(ctx, db.DeleteChannelParams{ProjectID: sc.ProjectID, ID: id})
+	err := s.db.Tx(ctx, func(q *db.Queries) error {
+		n, err := q.DeleteChannel(ctx, db.DeleteChannelParams{ProjectID: sc.ProjectID, ID: id})
+		if err != nil {
+			return err
+		}
+		if n == 0 {
+			return domain.NotFound("channel")
+		}
+		// A route whose last channel went away has nowhere to send.
+		_, err = q.DeleteOrphanRoutes(ctx, sc.ProjectID)
+		return err
+	})
 	if err != nil {
 		return err
-	}
-	if n == 0 {
-		return domain.NotFound("channel")
 	}
 	s.log.Info("channel deleted", "project_id", sc.ProjectID, "channel_id", id, "actor", sc.Actor)
 	return nil

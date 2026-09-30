@@ -7,6 +7,7 @@ package ui
 
 import (
 	"html/template"
+	"regexp"
 	"strconv"
 	"strings"
 )
@@ -79,28 +80,38 @@ type ButtonProps struct {
 	Variant  string // quiet (default), primary, danger
 	Confirm  string
 	Disabled bool
-	// Type overrides type="button", for example submit.
+	// Href renders an anchor styled as a button.
+	Href string
+	// Type is button (default) or submit.
 	Type string
+	// Block fills the width.
+	Block bool
 	// Attrs are extra attributes rendered as given (use Attr).
 	Attrs string
 }
 
-// Button renders a button.
+// Button renders a button, or an anchor when Href is set.
 func Button(p ButtonProps) HTML {
 	v := p.Variant
 	if v == "" {
 		v = "quiet"
 	}
-	typ := p.Type
-	if typ == "" {
-		typ = "button"
+	cls := "vk-btn"
+	if v != "quiet" {
+		cls += " vk-btn--" + esc(v)
+	}
+	if p.Block {
+		cls += " vk-btn--block"
+	}
+	if p.Href != "" {
+		return HTML(`<a class="` + cls + `" href="` + esc(p.Href) + `"` + p.Attrs + `>` + esc(p.Label) + `</a>`)
+	}
+	typ := "button"
+	if p.Type == "submit" {
+		typ = "submit"
 	}
 	var b strings.Builder
-	b.WriteString(`<button type="` + esc(typ) + `" class="vk-btn`)
-	if v != "quiet" {
-		b.WriteString(" vk-btn--" + esc(v))
-	}
-	b.WriteString(`"`)
+	b.WriteString(`<button type="` + typ + `" class="` + cls + `"`)
 	if p.Confirm != "" {
 		b.WriteString(` data-confirm="` + esc(p.Confirm) + `"`)
 	}
@@ -169,21 +180,63 @@ func KindIcon(kind string) HTML {
 	return HTML(`<span class="vk-kind" title="` + kind + `"><svg viewBox="0 0 16 16" role="img" aria-label="` + kind + `">` + path + `</svg></span>`)
 }
 
-// FieldProps: label, input and one line of help.
+// Option is a select or segmented choice.
+type Option struct {
+	Value string
+	Label string
+}
+
+// Opts builds options from value, label pairs; a lone value is its own label.
+func Opts(kv ...string) []Option {
+	out := make([]Option, 0, (len(kv)+1)/2)
+	for i := 0; i < len(kv); i += 2 {
+		o := Option{Value: kv[i], Label: kv[i]}
+		if i+1 < len(kv) {
+			o.Label = kv[i+1]
+		}
+		out = append(out, o)
+	}
+	return out
+}
+
+func options(list []Option, value string) string {
+	var b strings.Builder
+	for _, o := range list {
+		b.WriteString(`<option value="` + esc(o.Value) + `"`)
+		if o.Value == value {
+			b.WriteString(" selected")
+		}
+		b.WriteString(">" + esc(o.Label) + "</option>")
+	}
+	return b.String()
+}
+
+// FieldProps: label, control and one line of help.
 type FieldProps struct {
 	ID          string
+	Name        string
 	Label       string
 	Value       string
 	Placeholder string
 	Hint        string
 	Error       string
 	Mono        bool
-	// Name defaults to ID; Type defaults to text. Attrs are extra input
-	// attributes. Textarea renders a textarea instead of an input.
-	Name     string
-	Type     string
-	Attrs    string
-	Textarea bool
+	// Control is input (default), select or textarea.
+	Control string
+	Options []Option
+	Rows    int
+	// Type is the input type: text (default), password, url, email, search.
+	Type         string
+	Prefix       string
+	Suffix       string
+	Disabled     bool
+	Autocomplete string
+	// HTML replaces the control; Before and After sit beside it. All trusted.
+	HTML   HTML
+	Before HTML
+	After  HTML
+	// Attrs are extra control attributes rendered as given (use Attr).
+	Attrs string
 }
 
 // Field renders a form field.
@@ -193,44 +246,552 @@ func Field(p FieldProps) HTML {
 		id = "f"
 	}
 	id = esc(id)
-	hid := id + "-msg"
+	hid := ""
+	if p.ID != "" {
+		hid = id + "-msg"
+	}
+	name := p.Name
+	if name == "" {
+		name = p.ID
+	}
+	if name == "" {
+		name = "f"
+	}
+	attrs := ` id="` + id + `" name="` + esc(name) + `"`
+	if (p.Error != "" || p.Hint != "") && hid != "" {
+		attrs += ` aria-describedby="` + hid + `"`
+	}
+	if p.Error != "" {
+		attrs += ` aria-invalid="true"`
+	}
+	if p.Disabled {
+		attrs += " disabled"
+	}
+	cls := "vk-input"
+	if p.Mono {
+		cls += " vk-input--mono"
+	}
+	var el string
+	switch p.Control {
+	case "select":
+		el = `<span class="vk-select"><select class="` + cls + `"` + attrs + p.Attrs + `>` + options(p.Options, p.Value) + `</select></span>`
+	case "textarea":
+		rows := p.Rows
+		if rows == 0 {
+			rows = 3
+		}
+		el = `<textarea class="` + cls + ` vk-input--area"` + attrs + ` rows="` + strconv.Itoa(rows) + `" placeholder="` + esc(p.Placeholder) + `"` + p.Attrs + `>` + esc(p.Value) + `</textarea>`
+	default:
+		typ := p.Type
+		if typ == "" {
+			typ = "text"
+		}
+		el = `<input class="` + cls + `"` + attrs + ` type="` + esc(typ) + `" value="` + esc(p.Value) + `" placeholder="` + esc(p.Placeholder) + `"`
+		if p.Autocomplete != "" {
+			el += ` autocomplete="` + esc(p.Autocomplete) + `"`
+		}
+		el += p.Attrs + ">"
+		if p.Prefix != "" || p.Suffix != "" {
+			wrapped := `<span class="vk-affix">`
+			if p.Prefix != "" {
+				wrapped += `<span class="vk-affix__text">` + esc(p.Prefix) + `</span>`
+			}
+			wrapped += el
+			if p.Suffix != "" {
+				wrapped += `<span class="vk-affix__text">` + esc(p.Suffix) + `</span>`
+			}
+			el = wrapped + "</span>"
+		}
+	}
+	if p.HTML != "" {
+		el = string(p.HTML)
+	}
+	if p.Before != "" || p.After != "" {
+		el = `<div class="vk-field__row">` + string(p.Before) + el + string(p.After) + "</div>"
+	}
 	var b strings.Builder
 	b.WriteString(`<div class="vk-field`)
 	if p.Error != "" {
 		b.WriteString(" vk-field--error")
 	}
-	b.WriteString(`"><label class="vk-field__label" for="` + id + `">` + esc(p.Label) + `</label>`)
-	cls := "vk-input"
-	if p.Mono {
-		cls += " vk-input--mono"
-	}
-	extra := ""
-	if p.Name != "" {
-		extra += Attr("name", p.Name)
-	}
-	if p.Type != "" && !p.Textarea {
-		extra += Attr("type", p.Type)
-	}
-	describe := ""
-	if p.Error != "" || p.Hint != "" {
-		describe = ` aria-describedby="` + hid + `"`
-	}
-	invalid := ""
-	if p.Error != "" {
-		invalid = ` aria-invalid="true"`
-	}
-	if p.Textarea {
-		b.WriteString(`<textarea class="` + cls + ` vk-input--area" id="` + id + `"` + extra + ` placeholder="` + esc(p.Placeholder) + `"` + describe + invalid + p.Attrs + `>` + esc(p.Value) + `</textarea>`)
+	b.WriteString(`">`)
+	if p.HTML != "" {
+		b.WriteString(`<span class="vk-field__label">` + esc(p.Label) + `</span>`)
 	} else {
-		b.WriteString(`<input class="` + cls + `" id="` + id + `"` + extra + ` value="` + esc(p.Value) + `" placeholder="` + esc(p.Placeholder) + `"` + describe + invalid + p.Attrs + `>`)
+		b.WriteString(`<label class="vk-field__label" for="` + id + `">` + esc(p.Label) + `</label>`)
+	}
+	b.WriteString(el)
+	idAttr := ""
+	if hid != "" {
+		idAttr = ` id="` + hid + `"`
 	}
 	switch {
 	case p.Error != "":
-		b.WriteString(`<span class="vk-field__error" id="` + hid + `">` + string(Glyph("down", "")) + esc(p.Error) + `</span>`)
+		b.WriteString(`<span class="vk-field__error"` + idAttr + `>` + string(Glyph("down", "")) + esc(p.Error) + `</span>`)
 	case p.Hint != "":
-		b.WriteString(`<span class="vk-field__hint" id="` + hid + `">` + esc(p.Hint) + `</span>`)
+		b.WriteString(`<span class="vk-field__hint"` + idAttr + `>` + esc(p.Hint) + `</span>`)
 	}
 	b.WriteString("</div>")
+	return HTML(b.String())
+}
+
+// FieldRow puts two to four rendered fields side by side.
+func FieldRow(fields []HTML, lead bool) HTML {
+	cls := "vk-fieldrow"
+	switch {
+	case lead:
+		cls += " vk-fieldrow--lead"
+	case len(fields) > 2:
+		cls += " vk-fieldrow--" + strconv.Itoa(len(fields))
+	}
+	var b strings.Builder
+	b.WriteString(`<div class="` + cls + `">`)
+	for _, f := range fields {
+		b.WriteString(string(f))
+	}
+	b.WriteString("</div>")
+	return HTML(b.String())
+}
+
+// CheckboxProps: a native checkbox with label and optional hint.
+type CheckboxProps struct {
+	Label     string
+	LabelHTML HTML
+	Name      string
+	ID        string
+	Value     string
+	Checked   bool
+	Disabled  bool
+	Hint      string
+	Attrs     string
+}
+
+// Checkbox renders a checkbox.
+func Checkbox(p CheckboxProps) HTML {
+	name := p.Name
+	if name == "" {
+		name = p.ID
+	}
+	if name == "" {
+		name = "c"
+	}
+	var b strings.Builder
+	b.WriteString(`<label class="vk-check"><input type="checkbox" name="` + esc(name) + `"`)
+	if p.Value != "" {
+		b.WriteString(` value="` + esc(p.Value) + `"`)
+	}
+	if p.Checked {
+		b.WriteString(" checked")
+	}
+	if p.Disabled {
+		b.WriteString(" disabled")
+	}
+	b.WriteString(p.Attrs)
+	b.WriteString(`><span class="vk-check__text">`)
+	if p.LabelHTML != "" {
+		b.WriteString(string(p.LabelHTML))
+	} else {
+		b.WriteString(esc(p.Label))
+	}
+	if p.Hint != "" {
+		b.WriteString(`<span class="vk-check__hint">` + esc(p.Hint) + `</span>`)
+	}
+	b.WriteString("</span></label>")
+	return HTML(b.String())
+}
+
+// Switch renders an immediate on/off control; attrs carry hx-post.
+func Switch(checked bool, label string, attrs string) HTML {
+	if label == "" {
+		label = "Enabled"
+	}
+	word := "off"
+	if checked {
+		word = "on"
+	}
+	return HTML(`<button type="button" class="vk-switch" role="switch" aria-checked="` + strconv.FormatBool(checked) + `" aria-label="` + esc(label) + `"` + attrs + `>` +
+		`<span class="vk-switch__track" aria-hidden="true"></span><span class="vk-switch__word">` + word + `</span></button>`)
+}
+
+// SegmentedProps: a radio or checkbox group drawn as one control.
+type SegmentedProps struct {
+	Name    string
+	Label   string
+	Options []Option
+	Value   []string
+	Multi   bool
+	Mono    bool
+	// Attrs are extra attributes on every input, for htmx triggers.
+	Attrs string
+}
+
+// Segmented renders the group.
+func Segmented(p SegmentedProps) HTML {
+	typ, role := "radio", "radiogroup"
+	if p.Multi {
+		typ, role = "checkbox", "group"
+	}
+	name := p.Name
+	if name == "" {
+		name = "seg"
+	}
+	cls := "vk-seg"
+	if p.Mono {
+		cls += " vk-seg--mono"
+	}
+	var b strings.Builder
+	b.WriteString(`<div class="` + cls + `" role="` + role + `" aria-label="` + esc(p.Label) + `">`)
+	for _, o := range p.Options {
+		b.WriteString(`<label class="vk-seg__opt"><input type="` + typ + `" name="` + esc(name) + `" value="` + esc(o.Value) + `"`)
+		for _, v := range p.Value {
+			if v == o.Value {
+				b.WriteString(" checked")
+				break
+			}
+		}
+		b.WriteString(p.Attrs)
+		b.WriteString(`><span>` + esc(o.Label) + `</span></label>`)
+	}
+	b.WriteString("</div>")
+	return HTML(b.String())
+}
+
+// KindInfo lists the six kinds with their card texts.
+var KindInfo = [][3]string{
+	{"heartbeat", "Heartbeat", "jobs ping vink"}, {"http", "HTTP", "requests a URL"}, {"tcp", "TCP", "opens a port"},
+	{"dns", "DNS", "resolves a name"}, {"tls", "TLS certificate", "checks expiry"}, {"icmp", "ICMP ping", "pings a host"},
+}
+
+// KindPicker renders the six kinds as radio cards; locked disables the
+// others on edit. attrs go on every radio, for the htmx kind switch.
+func KindPicker(value string, locked bool, attrs string) HTML {
+	if value == "" {
+		value = "heartbeat"
+	}
+	var b strings.Builder
+	b.WriteString(`<fieldset class="vk-kinds"><legend class="vk-field__label">Kind</legend><div class="vk-kinds__grid">`)
+	for _, k := range KindInfo {
+		b.WriteString(`<label class="vk-kindopt"><input type="radio" name="kind" value="` + k[0] + `"`)
+		if k[0] == value {
+			b.WriteString(" checked")
+		}
+		if locked && k[0] != value {
+			b.WriteString(" disabled")
+		}
+		b.WriteString(attrs)
+		b.WriteString(`><span class="vk-kindopt__card">` + string(KindIcon(k[0])) + `<span class="vk-kindopt__name">` + k[1] + `</span><span class="vk-kindopt__desc">` + k[2] + `</span></span></label>`)
+	}
+	b.WriteString("</div></fieldset>")
+	return HTML(b.String())
+}
+
+// Disclosure renders a details element with a mono summary.
+func Disclosure(title, summary string, body HTML, open bool) HTML {
+	if title == "" {
+		title = "Advanced"
+	}
+	var b strings.Builder
+	b.WriteString(`<details class="vk-details"`)
+	if open {
+		b.WriteString(" open")
+	}
+	b.WriteString(`><summary><span class="vk-details__title">` + esc(title) + `</span>`)
+	if summary != "" {
+		b.WriteString(`<span class="vk-details__sum">` + esc(summary) + `</span>`)
+	}
+	b.WriteString(`</summary><div class="vk-details__body">` + string(body) + `</div></details>`)
+	return HTML(b.String())
+}
+
+var toneGlyph = map[string]string{"ok": "up", "error": "down", "warn": "late"}
+
+// Notice renders an inline result: ok, error, warn or info.
+func Notice(tone, title, text string, html HTML) HTML {
+	if tone == "" {
+		tone = "info"
+	}
+	role := "status"
+	if tone == "error" {
+		role = "alert"
+	}
+	var b strings.Builder
+	b.WriteString(`<div class="vk-notice vk-notice--` + esc(tone) + `" role="` + role + `">`)
+	if g, ok := toneGlyph[tone]; ok {
+		b.WriteString(string(Glyph(g, "")))
+	}
+	b.WriteString(`<div class="vk-notice__text"><p>`)
+	if title != "" {
+		b.WriteString(`<b class="vk-notice__title">` + esc(title) + `</b> `)
+	}
+	b.WriteString(esc(text) + "</p>" + string(html) + "</div></div>")
+	return HTML(b.String())
+}
+
+var yamlKeyRe = regexp.MustCompile(`^(\s*(?:- )?)([\w.-]+:)`)
+
+// Code renders read-only code with an optional Copy; yaml dims the keys.
+func Code(text string, copy bool, copyLabel string, yaml bool) HTML {
+	body := esc(text)
+	if yaml {
+		lines := strings.Split(body, "\n")
+		for i, l := range lines {
+			lines[i] = yamlKeyRe.ReplaceAllString(l, "$1<i>$2</i>")
+		}
+		body = strings.Join(lines, "\n")
+	}
+	var b strings.Builder
+	b.WriteString(`<div class="vk-codebox"><pre class="vk-code">` + body + `</pre>`)
+	if copy {
+		if copyLabel == "" {
+			copyLabel = "Copy"
+		}
+		b.WriteString(`<button type="button" class="vk-btn vk-copy" data-copy="` + esc(text) + `">` + esc(copyLabel) + `</button>`)
+	}
+	b.WriteString("</div>")
+	return HTML(b.String())
+}
+
+// Panel renders an inline add or edit form box.
+func Panel(title, note string, body, actions HTML, id string) HTML {
+	var b strings.Builder
+	b.WriteString(`<section class="vk-panel"`)
+	if id != "" {
+		b.WriteString(` id="` + esc(id) + `"`)
+	}
+	b.WriteString(">")
+	if title != "" {
+		b.WriteString(`<div class="vk-panel__head"><h2>` + esc(title) + `</h2>`)
+		if note != "" {
+			b.WriteString("<p>" + esc(note) + "</p>")
+		}
+		b.WriteString("</div>")
+	}
+	b.WriteString(string(body))
+	if actions != "" {
+		b.WriteString(`<div class="vk-actions">` + string(actions) + `</div>`)
+	}
+	b.WriteString("</section>")
+	return HTML(b.String())
+}
+
+// TopBarProps: the signed-in header.
+type TopBarProps struct {
+	Org       string
+	Project   string
+	Section   string // monitors (default), incidents, settings
+	Incidents int
+	User      string
+	Hrefs     map[string]string // home, monitors, incidents, settings
+	// CrumbAttrs, SearchAttrs and UserAttrs are extra attributes for the
+	// app's forms; goldens leave them empty.
+	CrumbAttrs  string
+	SearchAttrs string
+	UserAttrs   string
+}
+
+// TopBar renders the header.
+func TopBar(p TopBarProps) HTML {
+	org, proj := p.Org, p.Project
+	if org == "" {
+		org = "w4j"
+	}
+	if proj == "" {
+		proj = "homelab"
+	}
+	org, proj = esc(org), esc(proj)
+	cur := p.Section
+	if cur == "" {
+		cur = "monitors"
+	}
+	base := "/o/" + org + "/p/" + proj
+	href := func(id, def string) string {
+		if v, ok := p.Hrefs[id]; ok && v != "" {
+			return esc(v)
+		}
+		return def
+	}
+	link := func(id, label, def, extra string) string {
+		s := `<a class="vk-top__link" href="` + href(id, def) + `"`
+		if cur == id {
+			s += ` aria-current="page"`
+		}
+		return s + ">" + label + extra + "</a>"
+	}
+	user := p.User
+	if user == "" {
+		user = "j"
+	}
+	initial := strings.ToUpper(string([]rune(user)[0]))
+	count := ""
+	if p.Incidents > 0 {
+		n := strconv.Itoa(p.Incidents)
+		count = `<span class="vk-top__count" title="` + n + ` open">` + string(Glyph("down", "")) + n + `</span>`
+	}
+	return HTML(`<header class="vk-top"><a class="vk-top__mark" href="` + href("home", "/") + `">` + string(Mark(22)) + `<span>vink</span></a>` +
+		`<nav class="vk-top__nav" aria-label="Project"><button type="button" class="vk-top__crumb" aria-haspopup="menu"` + p.CrumbAttrs + `>` + org + ` / <b>` + proj + `</b><i class="vk-caret" aria-hidden="true"></i></button>` +
+		link("monitors", "Monitors", base, "") + link("incidents", "Incidents", base+"/incidents", count) + link("settings", "Settings", base+"/settings/channels", "") + `</nav>` +
+		`<input class="vk-input vk-top__search" type="search" placeholder="Search monitors  /" aria-label="Search monitors"` + p.SearchAttrs + `>` +
+		`<button type="button" class="vk-top__user" aria-haspopup="menu" title="` + esc(user) + `"` + p.UserAttrs + `>` + esc(initial) + `</button></header>`)
+}
+
+// Tab is one settings tab.
+type Tab struct {
+	ID    string
+	Label string
+	Count *int
+	Href  string
+}
+
+// Tabs renders page sections as links.
+func Tabs(tabs []Tab, current, label string) HTML {
+	if label == "" {
+		label = "Sections"
+	}
+	var b strings.Builder
+	b.WriteString(`<nav class="vk-tabs" aria-label="` + esc(label) + `">`)
+	for _, t := range tabs {
+		href := t.Href
+		if href == "" {
+			href = "#"
+		}
+		b.WriteString(`<a class="vk-tab" href="` + esc(href) + `"`)
+		if t.ID == current {
+			b.WriteString(` aria-current="page"`)
+		}
+		b.WriteString(">" + esc(t.Label))
+		if t.Count != nil {
+			b.WriteString(`<span class="vk-tab__n">` + strconv.Itoa(*t.Count) + `</span>`)
+		}
+		b.WriteString("</a>")
+	}
+	b.WriteString("</nav>")
+	return HTML(b.String())
+}
+
+// IncidentRowProps: one incident.
+type IncidentRowProps struct {
+	State     string // open (default), acked, resolved
+	Name      string
+	Slug      string
+	Href      string
+	Reason    string
+	Opened    string
+	OpenedAbs string
+	Duration  string
+	AckedBy   string
+	Resolved  string
+	// AckHTML replaces the plain Ack button, for a form. Trusted.
+	AckHTML HTML
+}
+
+// IncidentRow renders one incident row.
+func IncidentRow(p IncidentRowProps) HTML {
+	s := p.State
+	if s == "" {
+		s = "open"
+	}
+	done := s == "resolved"
+	var act string
+	switch s {
+	case "open":
+		if p.AckHTML != "" {
+			act = string(p.AckHTML)
+		} else {
+			act = string(Button(ButtonProps{Label: "Ack"}))
+		}
+	case "acked":
+		by := p.AckedBy
+		if by == "" {
+			by = "j"
+		}
+		act = "<span>acked by " + esc(by) + "</span>"
+	default:
+		act = "<span>resolved " + esc(p.Resolved) + "</span>"
+	}
+	href := p.Href
+	if href == "" {
+		href = "#"
+	}
+	g := "down"
+	if done {
+		g = "up"
+	}
+	live := ""
+	if !done {
+		live = " vk-irow__data--live"
+	}
+	return HTML(`<div class="vk-irow vk-irow--` + esc(s) + `">` + string(Glyph(g, "")) +
+		`<a class="vk-irow__name" href="` + esc(href) + `"><span>` + esc(p.Name) + `</span><span class="vk-row__slug">` + esc(p.Slug) + `</span></a>` +
+		`<span class="vk-irow__data" title="` + esc(p.Reason) + `">` + esc(p.Reason) + `</span>` +
+		`<span class="vk-irow__data" title="` + esc(p.OpenedAbs) + `">` + esc(p.Opened) + `</span>` +
+		`<span class="vk-irow__data` + live + `">` + esc(p.Duration) + `</span>` +
+		`<span class="vk-irow__act">` + act + `</span></div>`)
+}
+
+// Cell is one fixed-width cell of a settings row.
+type Cell struct {
+	Text string
+	HTML HTML
+	Size string // s, m (default), l
+	Mono bool
+	Ink  bool
+}
+
+// SettingsRowProps: one row of a settings list.
+type SettingsRowProps struct {
+	Title     string
+	TitleHTML HTML
+	Sub       string
+	Lead      string
+	HasLead   bool
+	Muted     bool
+	Cells     []Cell
+	Actions   HTML
+}
+
+// SettingsRow renders one settings list row.
+func SettingsRow(p SettingsRowProps) HTML {
+	var b strings.Builder
+	b.WriteString(`<div class="vk-srow`)
+	if p.Muted {
+		b.WriteString(" vk-srow--muted")
+	}
+	b.WriteString(`">`)
+	if p.HasLead || p.Lead != "" {
+		b.WriteString(`<span class="vk-srow__lead">` + p.Lead + `</span>`)
+	}
+	b.WriteString(`<div class="vk-srow__main"><span class="vk-srow__title">`)
+	if p.TitleHTML != "" {
+		b.WriteString(string(p.TitleHTML))
+	} else {
+		b.WriteString(esc(p.Title))
+	}
+	b.WriteString("</span>")
+	if p.Sub != "" {
+		b.WriteString(`<span class="vk-srow__sub" title="` + esc(p.Sub) + `">` + esc(p.Sub) + `</span>`)
+	}
+	b.WriteString("</div>")
+	for _, c := range p.Cells {
+		size := c.Size
+		if size == "" {
+			size = "m"
+		}
+		b.WriteString(`<span class="vk-srow__cell vk-srow__cell--` + size)
+		if c.Mono {
+			b.WriteString(" vk-srow__cell--mono")
+		}
+		if c.Ink {
+			b.WriteString(" vk-srow__cell--ink")
+		}
+		b.WriteString(`">`)
+		if c.HTML != "" {
+			b.WriteString(string(c.HTML))
+		} else {
+			b.WriteString(esc(c.Text))
+		}
+		b.WriteString("</span>")
+	}
+	b.WriteString(`<span class="vk-srow__actions">` + string(p.Actions) + `</span></div>`)
 	return HTML(b.String())
 }
 

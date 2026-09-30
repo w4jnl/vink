@@ -180,12 +180,17 @@ type Route struct {
 	ID           string
 	ProjectID    string
 	MatchTags    string
-	ChannelID    string
 	OnStates     string
 	RepeatEveryS int64
 	Priority     int64
 	CreatedAt    int64
 	UpdatedAt    int64
+}
+
+type RouteChannel struct {
+	RouteID   string
+	ChannelID string
+	ProjectID string
 }
 
 type SchemaMigration struct {

@@ -42,6 +42,8 @@ type Principal struct {
 	Session *service.Session
 	// Source is "session" or "proxy".
 	Source string
+	// Groups are the raw proxy groups, for the no-access page.
+	Groups []string
 }
 
 // RoleIn returns the principal's role in an org. Instance admins are
@@ -112,6 +114,9 @@ func (a *Authenticator) LocalEnabled() bool { return a.cfg.Local.Enabled }
 // ProxyEnabled reports whether identity headers are honoured.
 func (a *Authenticator) ProxyEnabled() bool { return a.cfg.Proxy.Enabled }
 
+// GroupPattern is the regex that maps groups to roles, for the no-access page.
+func (a *Authenticator) GroupPattern() string { return a.cfg.Proxy.GroupPattern }
+
 // LogoutURL is where a proxy identity signs out, or "".
 func (a *Authenticator) LogoutURL() string { return a.cfg.Proxy.LogoutURL }
 
@@ -170,7 +175,7 @@ func (a *Authenticator) fromProxy(r *http.Request) (*Principal, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Principal{User: *user, InstanceAdmin: user.InstanceAdmin || instanceAdmin, Memberships: memberships, Source: "proxy"}, nil
+	return &Principal{User: *user, InstanceAdmin: user.InstanceAdmin || instanceAdmin, Memberships: memberships, Source: "proxy", Groups: groups}, nil
 }
 
 func (a *Authenticator) trustedPeer(ip net.IP) bool {

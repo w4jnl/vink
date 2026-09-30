@@ -35,7 +35,7 @@ func TestStaticHashedURLsAndCaching(t *testing.T) {
 			t.Errorf("%s: %d", p, rec.Code)
 		}
 	}
-	for _, f := range []string{"bundle.css", "htmx.min.js", "vink.js", "app.css", "favicon.svg", "favicon-down.svg", "fonts/JetBrainsMono-400.woff2", "fonts/JetBrainsMono-700.woff2", "fonts/JetBrainsMono-800.woff2"} {
+	for _, f := range []string{"bundle.css", "htmx.min.js", "vink.js", "favicon.svg", "favicon-down.svg", "fonts/JetBrainsMono-400.woff2", "fonts/JetBrainsMono-700.woff2", "fonts/JetBrainsMono-800.woff2"} {
 		rec = httptest.NewRecorder()
 		h.ServeHTTP(rec, httptest.NewRequest("GET", s.URL(f), nil))
 		if rec.Code != 200 {

@@ -79,7 +79,7 @@ func TestDownToWebhookThroughDispatcher(t *testing.T) {
 		t.Fatal(err)
 	}
 	// the default route came with the first channel; add a repeating one
-	if _, err := f.svc.CreateRoute(ctx, f.member, &domain.Route{ChannelID: ch.ID, On: []domain.State{domain.StateDown}, RepeatEvery: 10 * time.Minute}); err != nil {
+	if _, err := f.svc.CreateRoute(ctx, f.member, &domain.Route{ChannelIDs: []string{ch.ID}, On: []domain.State{domain.StateDown}, RepeatEvery: 10 * time.Minute}); err != nil {
 		t.Fatal(err)
 	}
 	f.heartbeat(t, "job", "1h", "5m", "prod")

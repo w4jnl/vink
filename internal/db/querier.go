@@ -18,6 +18,7 @@ type Querier interface {
 	CountOpenIncidents(ctx context.Context, projectID string) (int64, error)
 	CountOrgs(ctx context.Context) (int64, error)
 	CountProjects(ctx context.Context, orgID string) (int64, error)
+	CountRoutesForChannel(ctx context.Context, arg CountRoutesForChannelParams) (int64, error)
 	CountUsers(ctx context.Context) (int64, error)
 	CreateAPIKey(ctx context.Context, arg CreateAPIKeyParams) (ApiKey, error)
 	CreateChannel(ctx context.Context, arg CreateChannelParams) (Channel, error)
@@ -37,8 +38,10 @@ type Querier interface {
 	// tenancy: root (retention job)
 	DeleteObservationsBefore(ctx context.Context, at int64) (int64, error)
 	DeleteOrg(ctx context.Context, id string) (int64, error)
+	DeleteOrphanRoutes(ctx context.Context, projectID string) (int64, error)
 	DeleteProject(ctx context.Context, arg DeleteProjectParams) (int64, error)
 	DeleteRoute(ctx context.Context, arg DeleteRouteParams) (int64, error)
+	DeleteRouteChannels(ctx context.Context, arg DeleteRouteChannelsParams) error
 	DeleteSession(ctx context.Context, id string) error
 	DeleteUserSessions(ctx context.Context, userID string) error
 	GetAPIKey(ctx context.Context, arg GetAPIKeyParams) (ApiKey, error)
@@ -46,7 +49,7 @@ type Querier interface {
 	GetChannel(ctx context.Context, arg GetChannelParams) (Channel, error)
 	GetChannelByName(ctx context.Context, arg GetChannelByNameParams) (Channel, error)
 	GetEvent(ctx context.Context, arg GetEventParams) (Event, error)
-	GetIncident(ctx context.Context, arg GetIncidentParams) (Incident, error)
+	GetIncident(ctx context.Context, arg GetIncidentParams) (GetIncidentRow, error)
 	GetMembership(ctx context.Context, arg GetMembershipParams) (Membership, error)
 	GetMonitor(ctx context.Context, arg GetMonitorParams) (Monitor, error)
 	// tenancy: root (scheduler reload after a bus event)
@@ -70,9 +73,11 @@ type Querier interface {
 	InsertDelivery(ctx context.Context, arg InsertDeliveryParams) error
 	InsertEvent(ctx context.Context, arg InsertEventParams) error
 	InsertObservation(ctx context.Context, arg InsertObservationParams) error
+	InsertRouteChannel(ctx context.Context, arg InsertRouteChannelParams) error
 	// tenancy: root (dispatcher, repeat_every)
 	LastDeliveryForRoute(ctx context.Context, arg LastDeliveryForRouteParams) (Delivery, error)
 	LastObservation(ctx context.Context, arg LastObservationParams) (Observation, error)
+	LastSentForChannel(ctx context.Context, arg LastSentForChannelParams) (int64, error)
 	ListAPIKeys(ctx context.Context, projectID string) ([]ApiKey, error)
 	// tenancy: root (bearer lookup establishes the scope)
 	ListAPIKeysByPrefix(ctx context.Context, prefix string) ([]ApiKey, error)
@@ -101,7 +106,8 @@ type Querier interface {
 	// tenancy: root (the user's memberships are the scope)
 	ListProjectsForUser(ctx context.Context, userID string) ([]ListProjectsForUserRow, error)
 	ListRecentDeliveries(ctx context.Context, arg ListRecentDeliveriesParams) ([]ListRecentDeliveriesRow, error)
-	ListRoutes(ctx context.Context, projectID string) ([]ListRoutesRow, error)
+	ListRouteChannels(ctx context.Context, projectID string) ([]ListRouteChannelsRow, error)
+	ListRoutes(ctx context.Context, projectID string) ([]Route, error)
 	// tenancy: root (scheduler, max_runtime)
 	ListRunningMonitors(ctx context.Context, runStartedAt *int64) ([]Monitor, error)
 	ListUsers(ctx context.Context) ([]User, error)

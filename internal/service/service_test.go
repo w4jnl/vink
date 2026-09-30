@@ -93,9 +93,12 @@ func (f *fixture) channelAndRoute(t *testing.T, on []domain.State, tags ...strin
 		t.Fatal(err)
 	}
 	rt, err := f.svc.DB().Write().CreateRoute(ctx, db.CreateRouteParams{
-		ID: domain.NewID(), ProjectID: f.project.ID, MatchTags: tagsJSON(tags), ChannelID: ch.ID, OnStates: statesJSON(on), RepeatEveryS: 0, Priority: 0, CreatedAt: now, UpdatedAt: now,
+		ID: domain.NewID(), ProjectID: f.project.ID, MatchTags: tagsJSON(tags), OnStates: statesJSON(on), RepeatEveryS: 0, Priority: 0, CreatedAt: now, UpdatedAt: now,
 	})
 	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.svc.DB().Write().InsertRouteChannel(ctx, db.InsertRouteChannelParams{RouteID: rt.ID, ChannelID: ch.ID, ProjectID: f.project.ID}); err != nil {
 		t.Fatal(err)
 	}
 	return ch.ID, rt.ID

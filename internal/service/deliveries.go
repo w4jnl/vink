@@ -114,7 +114,7 @@ func (s *Service) BuildNotification(ctx context.Context, d domain.Delivery) (*no
 	project.OrgSlug = org.Slug
 	n := &notify.Notification{Event: *eventFromRow(evRow), Monitor: *m, Project: *project, Repeat: d.Repeat}
 	if inc, err := q.GetOpenIncidentForMonitor(ctx, db.GetOpenIncidentForMonitorParams{ProjectID: d.ProjectID, MonitorID: d.MonitorID}); err == nil {
-		n.Incident = incidentFromListRow(inc.ID, inc.MonitorID, inc.ProjectID, inc.OpenedAt, inc.ResolvedAt, inc.AckedBy, inc.AckedAt, inc.OpenEventID, inc.CloseEventID, m.Slug, m.Name)
+		n.Incident = incidentFrom(incidentRow{inc.ID, inc.MonitorID, inc.ProjectID, inc.OpenedAt, inc.ResolvedAt, inc.AckedBy, inc.AckedAt, inc.OpenEventID, inc.CloseEventID, m.Slug, m.Name, m.TagsJSON(), n.Event.Reason})
 	} else if !db.IsNotFound(err) {
 		return nil, err
 	}
@@ -156,13 +156,12 @@ func (s *Service) EnqueueRepeats(ctx context.Context, now time.Time) (int, error
 		if err != nil || m.State != domain.StateDown {
 			continue
 		}
-		routes, err := s.db.Read().ListRoutes(ctx, inc.ProjectID)
+		routes, err := s.listRoutes(ctx, s.db.Read(), inc.ProjectID)
 		if err != nil {
 			return added, err
 		}
-		for _, r := range routes {
-			rt := routeFromListRow(r)
-			if rt.RepeatEvery <= 0 || !r.ChannelEnabled || !rt.Fires(domain.StateDown) || !m.HasAllTags(rt.MatchTags) {
+		for _, rt := range routes {
+			if rt.RepeatEvery <= 0 || !rt.Fires(domain.StateDown) || !m.HasAllTags(rt.MatchTags) {
 				continue
 			}
 			last, err := s.db.Read().LastDeliveryForRoute(ctx, db.LastDeliveryForRouteParams{MonitorID: m.ID, RouteID: &rt.ID})
@@ -175,13 +174,18 @@ func (s *Service) EnqueueRepeats(ctx context.Context, now time.Time) (int, error
 			if err == nil && last.DeliveredAt == nil && last.FailedAt == nil {
 				continue // the previous one is still in flight
 			}
-			if err := s.db.Write().InsertDelivery(ctx, db.InsertDeliveryParams{
-				ID: domain.NewID(), EventID: inc.OpenEventID, ChannelID: rt.ChannelID, ProjectID: inc.ProjectID, MonitorID: m.ID, RouteID: &rt.ID,
-				Kind: string(domain.StateDown), Repeat: true, Attempt: 0, NextAttemptAt: domain.Millis(now), CreatedAt: domain.Millis(now),
-			}); err != nil {
-				return added, err
+			for _, ch := range rt.Channels {
+				if !ch.Enabled {
+					continue
+				}
+				if err := s.db.Write().InsertDelivery(ctx, db.InsertDeliveryParams{
+					ID: domain.NewID(), EventID: inc.OpenEventID, ChannelID: ch.ID, ProjectID: inc.ProjectID, MonitorID: m.ID, RouteID: &rt.ID,
+					Kind: string(domain.StateDown), Repeat: true, Attempt: 0, NextAttemptAt: domain.Millis(now), CreatedAt: domain.Millis(now),
+				}); err != nil {
+					return added, err
+				}
+				added++
 			}
-			added++
 		}
 	}
 	return added, nil
@@ -195,6 +199,32 @@ func (s *Service) TestChannel(ctx context.Context, sc domain.Scope, id string) e
 	}
 	ch, err := s.Channel(ctx, sc, id)
 	if err != nil {
+		return err
+	}
+	return s.TestChannelConfig(ctx, sc, ch.Kind, ch.Config)
+}
+
+// LastSentForChannel returns when a channel last delivered, or nil.
+func (s *Service) LastSentForChannel(ctx context.Context, sc domain.Scope, channelID string) (*time.Time, error) {
+	if err := requireProject(sc); err != nil {
+		return nil, err
+	}
+	ms, err := s.db.Read().LastSentForChannel(ctx, db.LastSentForChannelParams{ProjectID: sc.ProjectID, ChannelID: channelID})
+	if err != nil || ms == 0 {
+		return nil, err
+	}
+	t := domain.FromMillis(ms)
+	return &t, nil
+}
+
+// TestChannelConfig sends a synthetic notification through an unsaved
+// config, so a panel can test before saving.
+func (s *Service) TestChannelConfig(ctx context.Context, sc domain.Scope, kind domain.ChannelKind, cfg []byte) error {
+	if err := requireEdit(sc); err != nil {
+		return err
+	}
+	probe := &domain.Channel{Name: "test", Kind: kind, Config: cfg, Enabled: true}
+	if err := s.checkChannel(probe); err != nil {
 		return err
 	}
 	project, err := s.Project(ctx, sc)
@@ -215,7 +245,7 @@ func (s *Service) TestChannel(ctx context.Context, sc domain.Scope, id string) e
 		Project: *project,
 	}
 	n.Links = s.links(project, &n.Monitor, nil)
-	return s.notifier.Send(ctx, ch.Kind, ch.Config, n)
+	return s.notifier.Send(ctx, kind, cfg, n)
 }
 
 // RecentDeliveries lists the project's latest outbox rows with channel names.
