@@ -174,6 +174,7 @@ components:
         acked_by: {type: string}
         acked_at: {type: [string, "null"], format: date-time}
         open: {type: boolean}
+        reason: {type: string, description: the event reason that opened it}
     ChannelIn:
       type: object
       required: [name, kind, config]
@@ -274,6 +275,9 @@ paths:
   /monitors/{slug}/resume:
     parameters: [{$ref: "#/components/parameters/slug"}]
     post: {summary: Resume with a fresh deadline, responses: {"200": {description: The monitor.}}}
+  /monitors/{slug}/check:
+    parameters: [{$ref: "#/components/parameters/slug"}]
+    post: {summary: Run a pull monitor's check now and return it, responses: {"200": {description: The monitor after the attempt.}, "422": {description: Not a pull monitor, or paused.}}}
   /monitors/{slug}/observations:
     parameters: [{$ref: "#/components/parameters/slug"}]
     get:

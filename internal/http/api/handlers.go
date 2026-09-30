@@ -256,6 +256,22 @@ func (a *API) setPaused(w http.ResponseWriter, r *http.Request, paused bool) err
 	return nil
 }
 
+// checkMonitor runs a pull monitor now and returns it fresh.
+func (a *API) checkMonitor(w http.ResponseWriter, r *http.Request) error {
+	sc := scope(r)
+	ctx := r.Context()
+	project, err := a.svc.Project(ctx, sc)
+	if err != nil {
+		return err
+	}
+	m, err := a.svc.CheckNow(ctx, sc, r.PathValue("slug"))
+	if err != nil {
+		return err
+	}
+	writeJSON(w, http.StatusOK, monitorOut(a.svc, project, m, sc.CanSeePingKey()))
+	return nil
+}
+
 // --- observations and events ---------------------------------------------
 
 func timeParam(r *http.Request, name string) (time.Time, error) {

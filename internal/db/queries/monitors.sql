@@ -43,14 +43,26 @@ DELETE FROM monitors WHERE project_id = ? AND id = ?;
 -- name: ListDueMonitors :many
 -- tenancy: root (scheduler)
 SELECT * FROM monitors
-WHERE paused = 0 AND next_due_at IS NOT NULL AND next_due_at <= ?
+WHERE kind = 'heartbeat' AND paused = 0 AND next_due_at IS NOT NULL AND next_due_at <= ?
 ORDER BY next_due_at
 LIMIT ?;
 
 -- name: NextDueAt :one
 -- tenancy: root (scheduler)
 SELECT CAST(COALESCE(MIN(next_due_at), 0) AS INTEGER) AS next_due_at
-FROM monitors WHERE paused = 0 AND next_due_at IS NOT NULL;
+FROM monitors WHERE kind = 'heartbeat' AND paused = 0 AND next_due_at IS NOT NULL;
+
+-- name: ListDueChecks :many
+-- tenancy: root (checker pool)
+SELECT id FROM monitors
+WHERE kind <> 'heartbeat' AND paused = 0 AND next_due_at IS NOT NULL AND next_due_at <= ?
+ORDER BY next_due_at
+LIMIT ?;
+
+-- name: NextCheckDueAt :one
+-- tenancy: root (checker pool)
+SELECT CAST(COALESCE(MIN(next_due_at), 0) AS INTEGER) AS next_due_at
+FROM monitors WHERE kind <> 'heartbeat' AND paused = 0 AND next_due_at IS NOT NULL;
 
 -- name: ListRunningMonitors :many
 -- tenancy: root (scheduler, max_runtime)

@@ -202,6 +202,10 @@ func (s *PullSpec) Normalize() {
 	}
 	if s.Timeout == 0 {
 		s.Timeout = DefaultCheckTimeout
+		if s.Timeout >= s.Interval {
+			// A short interval needs a shorter default timeout.
+			s.Timeout = s.Interval / 2
+		}
 	}
 	if s.FailureThreshold == 0 {
 		s.FailureThreshold = DefaultPullThreshold

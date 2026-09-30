@@ -13,11 +13,13 @@ import (
 	"time"
 
 	"github.com/w4jnl/vink/internal/auth"
+	"github.com/w4jnl/vink/internal/checks"
 	"github.com/w4jnl/vink/internal/config"
 	"github.com/w4jnl/vink/internal/db/dbtest"
 	"github.com/w4jnl/vink/internal/domain"
 	"github.com/w4jnl/vink/internal/http/middleware"
 	"github.com/w4jnl/vink/internal/notify"
+	"github.com/w4jnl/vink/internal/outbound"
 	"github.com/w4jnl/vink/internal/service"
 )
 
@@ -402,6 +404,33 @@ func TestCreateAndEditForm(t *testing.T) {
 	if m.Name != "Nightly" || m.Heartbeat.Schedule.Cron != "0 4 * * *" {
 		t.Fatalf("edited: %+v", m)
 	}
+}
+
+func TestPullMonitorDrawer(t *testing.T) {
+	e := newEnv(t)
+	reg, err := checks.NewRegistry(checks.Options{Outbound: outbound.Options{AllowPrivateTargets: true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.svc.SetChecker(reg)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(200) }))
+	defer srv.Close()
+	ctx := context.Background()
+	if _, err := e.svc.CreateMonitor(ctx, e.scope, &domain.Monitor{Slug: "web", Name: "Web", Kind: domain.KindHTTP, Pull: &domain.PullSpec{HTTP: &domain.HTTPCheck{URL: srv.URL}}}); err != nil {
+		t.Fatal(err)
+	}
+	p := e.get(projPath+"/m/web", false)
+	p.has(t, "<h2>Target</h2>", "GET "+srv.URL, ">Check now<", "every 1 min · timeout 10 s · down after 3 failures · confirm 2×", "No attempts yet", "kind: http")
+	if strings.Contains(p.body, "Ping URL") {
+		t.Error("a pull monitor has no ping URL")
+	}
+	checked := e.post(projPath+"/m/web/check", nil, true)
+	if checked.code != 200 {
+		t.Fatalf("check now: %d %s", checked.code, checked.body)
+	}
+	checked.has(t, "vk-state--up", "200 ok", " ms<", "new → up · first ok")
+	list := e.get(projPath, false)
+	list.has(t, "next in", `class="vk-row"`)
 }
 
 func TestIncidentsPage(t *testing.T) {

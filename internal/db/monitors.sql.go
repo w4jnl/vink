@@ -251,9 +251,45 @@ func (q *Queries) GetMonitorBySlug(ctx context.Context, arg GetMonitorBySlugPara
 	return i, err
 }
 
+const listDueChecks = `-- name: ListDueChecks :many
+SELECT id FROM monitors
+WHERE kind <> 'heartbeat' AND paused = 0 AND next_due_at IS NOT NULL AND next_due_at <= ?
+ORDER BY next_due_at
+LIMIT ?
+`
+
+type ListDueChecksParams struct {
+	NextDueAt *int64
+	Limit     int64
+}
+
+// tenancy: root (checker pool)
+func (q *Queries) ListDueChecks(ctx context.Context, arg ListDueChecksParams) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, listDueChecks, arg.NextDueAt, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listDueMonitors = `-- name: ListDueMonitors :many
 SELECT id, project_id, org_id, slug, name, kind, spec, tags, state, state_since, base_at, last_obs_at, last_ok_at, next_due_at, paused, fail_streak, ok_streak, run_started_at, run_id, agent_id, created_at, updated_at FROM monitors
-WHERE paused = 0 AND next_due_at IS NOT NULL AND next_due_at <= ?
+WHERE kind = 'heartbeat' AND paused = 0 AND next_due_at IS NOT NULL AND next_due_at <= ?
 ORDER BY next_due_at
 LIMIT ?
 `
@@ -411,9 +447,22 @@ func (q *Queries) ListRunningMonitors(ctx context.Context, runStartedAt *int64) 
 	return items, nil
 }
 
+const nextCheckDueAt = `-- name: NextCheckDueAt :one
+SELECT CAST(COALESCE(MIN(next_due_at), 0) AS INTEGER) AS next_due_at
+FROM monitors WHERE kind <> 'heartbeat' AND paused = 0 AND next_due_at IS NOT NULL
+`
+
+// tenancy: root (checker pool)
+func (q *Queries) NextCheckDueAt(ctx context.Context) (int64, error) {
+	row := q.db.QueryRowContext(ctx, nextCheckDueAt)
+	var next_due_at int64
+	err := row.Scan(&next_due_at)
+	return next_due_at, err
+}
+
 const nextDueAt = `-- name: NextDueAt :one
 SELECT CAST(COALESCE(MIN(next_due_at), 0) AS INTEGER) AS next_due_at
-FROM monitors WHERE paused = 0 AND next_due_at IS NOT NULL
+FROM monitors WHERE kind = 'heartbeat' AND paused = 0 AND next_due_at IS NOT NULL
 `
 
 // tenancy: root (scheduler)

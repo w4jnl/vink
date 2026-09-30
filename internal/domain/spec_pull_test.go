@@ -20,6 +20,11 @@ func TestPullSpecNormalizeDefaults(t *testing.T) {
 	if h.URL != "https://example.com/health" || h.Method != "GET" || len(h.ExpectStatus) != 1 || h.ExpectStatus[0] != (StatusRange{200, 299}) || !h.Redirects() || !h.Verify() {
 		t.Errorf("http defaults: %+v", h)
 	}
+	short := PullSpec{Interval: MinInterval, TCP: &TCPCheck{Host: "db", Port: 1}}
+	short.Normalize()
+	if short.Timeout != Duration(5*time.Second) || short.Validate(KindTCP) != nil {
+		t.Errorf("short interval must shrink the default timeout: %s %v", short.Timeout, short.Validate(KindTCP))
+	}
 	tl := PullSpec{TLS: &TLSCheck{Host: "example.com"}}
 	tl.Normalize()
 	if tl.TLS.Port != 443 || tl.TLS.WarnDays != 14 || tl.TLS.CritDays != 3 {

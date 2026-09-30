@@ -13,10 +13,12 @@ import (
 	"time"
 
 	"github.com/w4jnl/vink/internal/auth"
+	"github.com/w4jnl/vink/internal/checks"
 	"github.com/w4jnl/vink/internal/config"
 	"github.com/w4jnl/vink/internal/db/dbtest"
 	"github.com/w4jnl/vink/internal/domain"
 	"github.com/w4jnl/vink/internal/http/middleware"
+	"github.com/w4jnl/vink/internal/outbound"
 	"github.com/w4jnl/vink/internal/service"
 )
 
@@ -395,6 +397,61 @@ func TestObservationsEventsIncidentsStatus(t *testing.T) {
 	r.json(t, &st)
 	if st.Counts[domain.StateDown] != 1 || st.Total != 1 || len(st.OpenIncidents) != 1 || len(st.Monitors) != 1 {
 		t.Fatalf("status: %+v", st)
+	}
+}
+
+func TestPullMonitorAPI(t *testing.T) {
+	e := newEnv(t)
+	reg, err := checks.NewRegistry(checks.Options{Outbound: outbound.Options{AllowPrivateTargets: true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.svc.SetChecker(reg)
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte(`{"status":"ok"}`)) }))
+	defer target.Close()
+	created := e.key(e.rw, "POST", "/monitors", map[string]any{
+		"slug": "api", "name": "API", "kind": "http", "interval": "30s", "timeout": "5s",
+		"http": map[string]any{"url": target.URL, "expect_status": []any{200, "300-399"}, "expect_body": map[string]any{"jsonpath": map[string]any{"path": "$.status", "equals": "ok"}}},
+	})
+	if created.code != 201 {
+		t.Fatalf("create: %d %s", created.code, created.body)
+	}
+	var m MonitorOut
+	created.json(t, &m)
+	if m.Kind != domain.KindHTTP || m.Target != target.URL || m.Interval.String() != "30s" || m.Timeout.String() != "5s" || m.FailureThreshold != 3 || m.Confirm == nil || m.Confirm.Retries != 2 || m.HTTP == nil || len(m.HTTP.ExpectStatus) != 2 || m.NextDueAt == nil || m.PingURL != "" {
+		t.Fatalf("created monitor: %s", created.body)
+	}
+	bad := e.key(e.rw, "POST", "/monitors", map[string]any{"slug": "bad", "kind": "tcp", "tcp": map[string]any{"host": "db", "port": 99999}})
+	if bad.code != 422 || !strings.Contains(string(bad.body), "tcp.port") {
+		t.Fatalf("validation: %d %s", bad.code, bad.body)
+	}
+	checked := e.key(e.rw, "POST", "/monitors/api/check", nil)
+	if checked.code != 200 {
+		t.Fatalf("check: %d %s", checked.code, checked.body)
+	}
+	checked.json(t, &m)
+	if m.State != domain.StateUp || m.LastOkAt == nil {
+		t.Fatalf("after check: %s", checked.body)
+	}
+	if r := e.key(e.ro, "POST", "/monitors/api/check", nil); r.code != 403 {
+		t.Fatalf("ro key: %d", r.code)
+	}
+	e.createMonitor("job")
+	if r := e.key(e.rw, "POST", "/monitors/job/check", nil); r.code != 422 {
+		t.Fatalf("heartbeat check: %d %s", r.code, r.body)
+	}
+	obs := e.session("GET", "/monitors/api/observations", nil, false)
+	if obs.code != 200 || !strings.Contains(string(obs.body), `"latency_ms":`) || !strings.Contains(string(obs.body), `"matched":true`) {
+		t.Fatalf("observations: %d %s", obs.code, obs.body)
+	}
+	// the edit keeps the kind and re-validates the block
+	upd := e.key(e.rw, "PUT", "/monitors/api", map[string]any{"slug": "api", "kind": "http", "interval": "45s", "http": map[string]any{"url": target.URL + "/v2"}})
+	if upd.code != 200 {
+		t.Fatalf("update: %d %s", upd.code, upd.body)
+	}
+	upd.json(t, &m)
+	if m.Target != target.URL+"/v2" || m.Interval.String() != "45s" {
+		t.Fatalf("updated: %s", upd.body)
 	}
 }
 

@@ -101,7 +101,7 @@ func (HTTP) Check(ctx context.Context, spec *domain.PullSpec, env Env) Result {
 		statusOK = statusOK || r.Contains(resp.StatusCode)
 	}
 	if !statusOK {
-		res.Reason = "status " + strconv.Itoa(resp.StatusCode)
+		res.Reason = strconv.Itoa(resp.StatusCode) + " " + http.StatusText(resp.StatusCode)
 		if want := statusWant(h.ExpectStatus); want != "" {
 			res.Reason += ", want " + want
 		}

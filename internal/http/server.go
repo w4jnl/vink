@@ -32,6 +32,7 @@ type Deps struct {
 	Auth  *auth.Authenticator
 	Log   *slog.Logger
 	Sched *engine.Scheduler
+	Pool  *engine.Pool
 	// Mount lets later packages (api, web) register on the main mux.
 	Mount []func(mux *http.ServeMux)
 }
@@ -147,6 +148,12 @@ func Ready(ctx context.Context, d Deps) error {
 		last := d.Sched.LastTick()
 		if last.IsZero() || time.Since(last) > 30*time.Second {
 			return errors.New("scheduler has not ticked in the last 30s")
+		}
+	}
+	if d.Pool != nil {
+		last := d.Pool.LastTick()
+		if last.IsZero() || time.Since(last) > 60*time.Second {
+			return errors.New("checker pool has not run in the last 60s")
 		}
 	}
 	return nil

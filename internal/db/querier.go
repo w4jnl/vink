@@ -85,6 +85,8 @@ type Querier interface {
 	ListAllProjects(ctx context.Context) ([]ListAllProjectsRow, error)
 	ListChannels(ctx context.Context, projectID string) ([]Channel, error)
 	ListDeliveriesForEvent(ctx context.Context, arg ListDeliveriesForEventParams) ([]Delivery, error)
+	// tenancy: root (checker pool)
+	ListDueChecks(ctx context.Context, arg ListDueChecksParams) ([]string, error)
 	// tenancy: root (dispatcher)
 	ListDueDeliveries(ctx context.Context, arg ListDueDeliveriesParams) ([]Delivery, error)
 	// tenancy: root (scheduler)
@@ -115,6 +117,8 @@ type Querier interface {
 	MarkDeliveryDelivered(ctx context.Context, arg MarkDeliveryDeliveredParams) error
 	// tenancy: root (dispatcher)
 	MarkDeliveryFailed(ctx context.Context, arg MarkDeliveryFailedParams) error
+	// tenancy: root (checker pool)
+	NextCheckDueAt(ctx context.Context) (int64, error)
 	// tenancy: root (scheduler)
 	NextDueAt(ctx context.Context) (int64, error)
 	OpenIncident(ctx context.Context, arg OpenIncidentParams) (Incident, error)

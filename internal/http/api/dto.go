@@ -137,7 +137,7 @@ func monitorOut(svc *service.Service, p *domain.Project, m *domain.Monitor, show
 		out.FailureThreshold, out.RecoveryThreshold = s.FailureThreshold, s.RecoveryThreshold
 		out.HTTP, out.TCP, out.DNS, out.TLS, out.ICMP = s.HTTP, s.TCP, s.DNS, s.TLS, s.ICMP
 	}
-	if showPingURL {
+	if showPingURL && m.Kind == domain.KindHeartbeat {
 		out.PingURL = svc.PingURL(p, m.Slug)
 	}
 	return out
@@ -191,10 +191,12 @@ type IncidentOut struct {
 	AckedBy     string     `json:"acked_by,omitempty"`
 	AckedAt     *time.Time `json:"acked_at"`
 	Open        bool       `json:"open"`
+	// Reason is the event reason that opened the incident.
+	Reason string `json:"reason,omitempty"`
 }
 
 func incidentOut(i *domain.Incident) IncidentOut {
-	return IncidentOut{ID: i.ID, Monitor: i.MonitorSlug, MonitorName: i.MonitorName, OpenedAt: i.OpenedAt, ResolvedAt: i.ResolvedAt, AckedBy: i.AckedBy, AckedAt: i.AckedAt, Open: i.Open()}
+	return IncidentOut{ID: i.ID, Monitor: i.MonitorSlug, MonitorName: i.MonitorName, OpenedAt: i.OpenedAt, ResolvedAt: i.ResolvedAt, AckedBy: i.AckedBy, AckedAt: i.AckedAt, Open: i.Open(), Reason: i.Reason}
 }
 
 // ChannelIn creates or replaces a channel.

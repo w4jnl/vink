@@ -48,6 +48,7 @@ func (a *API) Mount(mux *http.ServeMux) {
 	a.register(mux, "PATCH", "/monitors/{slug}", a.patchMonitor, false)
 	a.register(mux, "DELETE", "/monitors/{slug}", a.deleteMonitor, false)
 	a.register(mux, "POST", "/monitors/{slug}/pause", a.pauseMonitor, false)
+	a.register(mux, "POST", "/monitors/{slug}/check", a.checkMonitor, false)
 	a.register(mux, "POST", "/monitors/{slug}/resume", a.resumeMonitor, false)
 	a.register(mux, "GET", "/monitors/{slug}/observations", a.listObservations, false)
 	a.register(mux, "GET", "/monitors/{slug}/observations/{id}", a.getObservation, false)

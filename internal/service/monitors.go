@@ -57,6 +57,9 @@ func (s *Service) CreateMonitor(ctx context.Context, sc domain.Scope, m *domain.
 	if err := m.Validate(); err != nil {
 		return nil, err
 	}
+	if err := s.checkPull(m); err != nil {
+		return nil, err
+	}
 	project, err := s.Project(ctx, sc)
 	if err != nil {
 		return nil, err
@@ -69,7 +72,7 @@ func (s *Service) CreateMonitor(ctx context.Context, sc domain.Scope, m *domain.
 	m.ProjectID, m.OrgID = project.ID, project.OrgID
 	m.State, m.StateSince, m.BaseAt = domain.StateNew, now, now
 	m.Paused = false
-	_, next, err := s.plan(m, project.Timezone)
+	_, next, err := s.plan(m, project.Timezone, now)
 	if err != nil {
 		return nil, err
 	}
@@ -208,7 +211,10 @@ func (s *Service) UpdateMonitor(ctx context.Context, sc domain.Scope, slug strin
 		if err := next.Validate(); err != nil {
 			return err
 		}
-		_, due, err := s.plan(&next, project.Timezone)
+		if err := s.checkPull(&next); err != nil {
+			return err
+		}
+		_, due, err := s.plan(&next, project.Timezone, s.now())
 		if err != nil {
 			return err
 		}
@@ -301,7 +307,7 @@ func (s *Service) setPaused(ctx context.Context, sc domain.Scope, slug string, p
 			next.BaseAt = now
 			reason = "resumed"
 		}
-		_, due, err := s.plan(&next, project.Timezone)
+		_, due, err := s.plan(&next, project.Timezone, now)
 		if err != nil {
 			return err
 		}
@@ -331,11 +337,14 @@ func (s *Service) setPaused(ctx context.Context, sc domain.Scope, slug string, p
 }
 
 // plan computes the expected and next due times. Heartbeats take their
-// deadline from the schedule; pull kinds get no wake-up until the checker
-// pool (next task) owns their cadence.
-func (s *Service) plan(m *domain.Monitor, projectTZ string) (expected, due *time.Time, err error) {
+// deadline from the schedule; a pull monitor is due at once and the pool
+// sets its cadence from the first attempt.
+func (s *Service) plan(m *domain.Monitor, projectTZ string, now time.Time) (expected, due *time.Time, err error) {
 	if m.Kind != domain.KindHeartbeat {
-		return nil, nil, nil
+		if m.Paused {
+			return nil, nil, nil
+		}
+		return &now, &now, nil
 	}
 	loc, err := m.Heartbeat.Location(projectTZ)
 	if err != nil {

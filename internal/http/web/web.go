@@ -69,6 +69,7 @@ func (h *Web) Mount(mux *http.ServeMux) {
 	mux.Handle("POST "+p+"/m/{slug}/preview", h.project(h.previewMonitor))
 	mux.Handle("POST "+p+"/m/{slug}/pause", h.project(h.pauseMonitor))
 	mux.Handle("POST "+p+"/m/{slug}/resume", h.project(h.resumeMonitor))
+	mux.Handle("POST "+p+"/m/{slug}/check", h.project(h.checkMonitor))
 	mux.Handle("POST "+p+"/m/{slug}/delete", h.project(h.deleteMonitor))
 	mux.Handle("GET "+p+"/incidents", h.project(h.incidents))
 	mux.Handle("POST "+p+"/incidents/{id}/ack", h.project(h.ackIncident))

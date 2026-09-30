@@ -158,6 +158,9 @@ func (h *Web) row(c *reqCtx, m *domain.Monitor, current bool) ui.MonitorRowProps
 	}
 	if m.LastObsAt == nil {
 		row.Last = "no pings yet"
+		if m.Pull != nil {
+			row.Last = "no checks yet"
+		}
 	} else {
 		row.Last = view.Ago(*m.LastObsAt, c.now)
 		row.LastAbs = view.Abs(*m.LastObsAt, loc)
@@ -166,6 +169,10 @@ func (h *Web) row(c *reqCtx, m *domain.Monitor, current bool) ui.MonitorRowProps
 		}
 	}
 	expected := h.svc.ExpectedAt(m, c.project.Timezone)
+	word := "due"
+	if m.Pull != nil {
+		expected, word = m.NextDueAt, "next"
+	}
 	switch m.State {
 	case domain.StatePaused:
 		row.Next = "paused " + view.Ago(m.StateSince, c.now)
@@ -173,7 +180,7 @@ func (h *Web) row(c *reqCtx, m *domain.Monitor, current bool) ui.MonitorRowProps
 		row.Next = "down " + view.For(m.StateSince, c.now)
 	default:
 		if expected != nil {
-			row.Next = "due " + view.In(*expected, c.now)
+			row.Next = word + " " + view.In(*expected, c.now)
 		}
 	}
 	return row
@@ -182,6 +189,8 @@ func (h *Web) row(c *reqCtx, m *domain.Monitor, current bool) ui.MonitorRowProps
 // lastDatum is the one datum that matters about the last observation.
 func lastDatum(o *domain.Observation) string {
 	switch {
+	case o.LatencyMs != nil:
+		return " · " + view.RunDuration(*o.LatencyMs)
 	case o.DurationMs != nil:
 		return " · " + view.RunDuration(*o.DurationMs)
 	case o.Signal == domain.SignalExit && o.ExitCode != nil && *o.ExitCode != 0:
@@ -221,6 +230,8 @@ type drawerData struct {
 	Paused                  bool
 	PingBase, PingKey       string
 	Summary                 string
+	Pull                    bool
+	Target                  string
 	Cells, Legend           []string
 	Observations            []obsRow
 	Events                  []eventRow
@@ -241,6 +252,21 @@ func (h *Web) drawerData(c *reqCtx, m *domain.Monitor) (*drawerData, error) {
 	}
 	if m.State != domain.StateNew {
 		d.Badge.Since = view.For(m.StateSince, c.now)
+	}
+	if s := m.Pull; s != nil {
+		d.Pull = true
+		d.Target = s.Target()
+		if s.HTTP != nil {
+			d.Target = s.HTTP.Method + " " + s.HTTP.URL
+		}
+		parts := []string{"every " + view.Span(s.Interval.Std()), "timeout " + view.Span(s.Timeout.Std()), "down after " + strconv.Itoa(s.FailureThreshold) + " failures"}
+		if s.Confirm.Retries > 0 {
+			parts = append(parts, "confirm "+strconv.Itoa(s.Confirm.Retries)+"×")
+		}
+		if m.NextDueAt != nil && !m.Paused {
+			parts = append(parts, "next "+view.In(*m.NextDueAt, c.now))
+		}
+		d.Summary = strings.Join(parts, " · ")
 	}
 	if s := m.Heartbeat; s != nil {
 		parts := []string{s.Schedule.String()}
@@ -288,6 +314,9 @@ func (h *Web) drawerData(c *reqCtx, m *domain.Monitor) (*drawerData, error) {
 
 func obsRowFor(o *domain.Observation, loc *time.Location) obsRow {
 	row := obsRow{Clock: view.Clock(o.At, loc), Abs: view.Abs(o.At, loc)}
+	if o.LatencyMs != nil {
+		return checkRow(o, row)
+	}
 	switch {
 	case o.Signal == domain.SignalStart:
 		row.State, row.Text = "new", "start"
@@ -315,6 +344,41 @@ func obsRowFor(o *domain.Observation, loc *time.Location) obsRow {
 		row.Right = "body"
 	}
 	return row
+}
+
+// checkRow renders one pull attempt: the reason or the status, and the
+// latency; an attempt inside a confirm sequence shows as confirming.
+func checkRow(o *domain.Observation, row obsRow) obsRow {
+	row.Right = view.RunDuration(*o.LatencyMs)
+	reason, _ := o.Detail["reason"].(string)
+	switch {
+	case o.OK && o.Detail["warn"] == true:
+		row.State, row.Text = "late", reason
+	case o.OK:
+		row.State, row.Text = "up", "ok"
+		if st, ok := o.Detail["status"].(float64); ok {
+			row.Text = strconv.Itoa(int(st)) + " ok"
+		}
+	default:
+		row.State, row.Text = "down", reason
+		if row.Text == "" {
+			row.Text = "fail"
+		}
+		if n, ok := o.Detail["attempt"].(float64); ok {
+			if total, ok := o.Detail["attempts"].(float64); ok && int(n) < int(total) {
+				row.State = "late"
+				row.Text += " · confirming (" + strconv.Itoa(int(n)) + " of " + strconv.Itoa(int(total)) + ")"
+			}
+		}
+	}
+	return row
+}
+
+func (h *Web) checkMonitor(c *reqCtx) error {
+	if _, err := h.svc.CheckNow(c.r.Context(), c.scope, c.r.PathValue("slug")); err != nil {
+		return err
+	}
+	return h.afterAction(c)
 }
 
 func (h *Web) monitor(c *reqCtx) error {

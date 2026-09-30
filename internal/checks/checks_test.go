@@ -89,9 +89,9 @@ func TestHTTPChecks(t *testing.T) {
 		detail map[string]any
 	}{
 		{"status ok", domain.HTTPCheck{URL: srv.URL + "/ok"}, true, "", map[string]any{"status": 200}},
-		{"503", domain.HTTPCheck{URL: srv.URL + "/503"}, false, "status 503", nil},
+		{"503", domain.HTTPCheck{URL: srv.URL + "/503"}, false, "503 Service Unavailable", nil},
 		{"expect 503", domain.HTTPCheck{URL: srv.URL + "/503", ExpectStatus: []domain.StatusRange{{Lo: 503, Hi: 503}}}, true, "", nil},
-		{"want range", domain.HTTPCheck{URL: srv.URL + "/ok", ExpectStatus: []domain.StatusRange{{Lo: 300, Hi: 399}}}, false, "status 200, want 300-399", nil},
+		{"want range", domain.HTTPCheck{URL: srv.URL + "/ok", ExpectStatus: []domain.StatusRange{{Lo: 300, Hi: 399}}}, false, "200 OK, want 300-399", nil},
 		{"contains", domain.HTTPCheck{URL: srv.URL + "/ok", ExpectBody: &domain.ExpectBody{Contains: "ok"}}, true, "", map[string]any{"matched": true}},
 		{"lacks", domain.HTTPCheck{URL: srv.URL + "/ok", ExpectBody: &domain.ExpectBody{Contains: "nope"}}, false, `body lacks "nope"`, nil},
 		{"not contains", domain.HTTPCheck{URL: srv.URL + "/ok", ExpectBody: &domain.ExpectBody{NotContains: "ok"}}, false, `body contains "ok"`, nil},
@@ -103,7 +103,7 @@ func TestHTTPChecks(t *testing.T) {
 		{"jsonpath missing", domain.HTTPCheck{URL: srv.URL + "/json", ExpectBody: &domain.ExpectBody{JSONPath: &domain.JSONPathExpect{Path: "$.missing", Equals: "x"}}}, false, "$.missing not found", nil},
 		{"jsonpath not json", domain.HTTPCheck{URL: srv.URL + "/ok", ExpectBody: &domain.ExpectBody{JSONPath: &domain.JSONPathExpect{Path: "$.a", Equals: "x"}}}, false, "body is not JSON", nil},
 		{"redirect followed", domain.HTTPCheck{URL: srv.URL + "/redirect"}, true, "", map[string]any{"status": 200, "final_url": srv.URL + "/ok"}},
-		{"redirect kept", domain.HTTPCheck{URL: srv.URL + "/redirect", FollowRedirects: &f}, false, "status 302", nil},
+		{"redirect kept", domain.HTTPCheck{URL: srv.URL + "/redirect", FollowRedirects: &f}, false, "302 Found", nil},
 		{"echo", domain.HTTPCheck{URL: srv.URL + "/echo", Method: "POST", Headers: map[string]string{"X-Test": "1"}, Body: "payload", ExpectBody: &domain.ExpectBody{Contains: "POST 1 ua=vink-test body=payload"}}, true, "", nil},
 	}
 	for _, c := range cases {

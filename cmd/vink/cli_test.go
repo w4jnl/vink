@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"net"
+	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
@@ -14,11 +15,13 @@ import (
 	"time"
 
 	"github.com/w4jnl/vink/internal/auth"
+	"github.com/w4jnl/vink/internal/checks"
 	"github.com/w4jnl/vink/internal/config"
 	"github.com/w4jnl/vink/internal/db/dbtest"
 	"github.com/w4jnl/vink/internal/domain"
 	"github.com/w4jnl/vink/internal/engine"
 	vhttp "github.com/w4jnl/vink/internal/http"
+	"github.com/w4jnl/vink/internal/outbound"
 	"github.com/w4jnl/vink/internal/service"
 )
 
@@ -241,5 +244,31 @@ func TestCLIPingRunLogsStatusAck(t *testing.T) {
 	obs, _ = e.svc.ListObservations(context.Background(), e.scope, "job", service.ObservationPage{Limit: 1})
 	if obs[0].DurationMs == nil || !obs[0].HasBody || !obs[0].OK {
 		t.Fatalf("paired ping: %+v", obs[0])
+	}
+}
+
+func TestCheckCommand(t *testing.T) {
+	e := newCLIEnv(t)
+	reg, err := checks.NewRegistry(checks.Options{Outbound: outbound.Options{AllowPrivateTargets: true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.svc.SetChecker(reg)
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(200) }))
+	defer target.Close()
+	if _, err := e.svc.CreateMonitor(context.Background(), e.scope, &domain.Monitor{Slug: "web", Kind: domain.KindHTTP, Pull: &domain.PullSpec{HTTP: &domain.HTTPCheck{URL: target.URL}}}); err != nil {
+		t.Fatal(err)
+	}
+	out, errs, code := e.run("", "check", "web")
+	if code != 0 || !strings.Contains(out, "checked web: up") {
+		t.Fatalf("check: %d %s %s", code, out, errs)
+	}
+	out, _, code = e.run("", "get", "web")
+	if code != 0 || !strings.Contains(out, target.URL) || !strings.Contains(out, "interval") || !strings.Contains(out, "next check") {
+		t.Fatalf("get pull monitor: %d %s", code, out)
+	}
+	t.Setenv("VINK_KEY", e.roKey)
+	if _, errs, code := e.run("", "check", "web"); code != 1 || !strings.Contains(errs, "Forbidden") {
+		t.Fatalf("ro check: %d %s", code, errs)
 	}
 }

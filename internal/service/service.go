@@ -5,6 +5,7 @@
 package service
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/base32"
 	"errors"
@@ -13,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/w4jnl/vink/internal/checks"
 	"github.com/w4jnl/vink/internal/db"
 	"github.com/w4jnl/vink/internal/domain"
 	"github.com/w4jnl/vink/internal/engine"
@@ -33,6 +35,8 @@ type Config struct {
 	AutoCreateGrace  domain.Duration
 	// PingKeyGrace is how long a rotated ping key keeps working.
 	PingKeyGrace time.Duration
+	// MinInterval is the instance floor for pull check intervals.
+	MinInterval domain.Duration
 	// Keyring encrypts channel configs. nil means an ephemeral key, which
 	// is only acceptable in tests.
 	Keyring *secrets.Keyring
@@ -47,6 +51,7 @@ func DefaultConfig() Config {
 		AutoCreatePeriod: domain.MustDuration("1d"),
 		AutoCreateGrace:  domain.MustDuration("1h"),
 		PingKeyGrace:     24 * time.Hour,
+		MinInterval:      domain.MinInterval,
 	}
 }
 
@@ -63,6 +68,8 @@ type Service struct {
 	// JSON object.
 	validateChannel func(kind domain.ChannelKind, cfg []byte) error
 	notifier        *notify.Registry
+	checker         *checks.Registry
+	checkNow        func(ctx context.Context, monitorID string) error
 }
 
 // New wires a service. The clock is time.Now unless SetClock is called.

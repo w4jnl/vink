@@ -105,6 +105,14 @@ func newGetCmd(g *globals) *cobra.Command {
 				{"last ping", fmtTime(m.LastObsAt, now, timefmt.Ago)}, {"next due", fmtTime(m.ExpectedAt, now, timefmt.In)},
 				{"tags", strings.Join(m.Tags, ", ")}, {"ping url", m.PingURL},
 			}
+			if m.Kind != "heartbeat" {
+				pairs = [][2]string{
+					{"slug", m.Slug}, {"name", m.Name}, {"kind", m.Kind}, {"state", p.State(m.State) + " for " + since},
+					{"target", m.Target}, {"interval", m.Interval}, {"timeout", m.Timeout},
+					{"last check", fmtTime(m.LastObsAt, now, timefmt.Ago)}, {"next check", fmtTime(m.NextDueAt, now, timefmt.In)},
+					{"tags", strings.Join(m.Tags, ", ")},
+				}
+			}
 			p.KV(pairs)
 			var events pageOf[event]
 			if err := c.Do(cmd.Context(), "GET", "/monitors/"+url.PathEscape(args[0])+"/events?limit=10", nil, &events); err != nil {
@@ -252,7 +260,7 @@ func newActionCmd(g *globals, use, short, verb string) *cobra.Command {
 				return err
 			}
 			if !f.quiet {
-				fmt.Fprintf(cmd.OutOrStdout(), "%s %s: %s\n", verb+"d", m.Slug, m.State)
+				fmt.Fprintf(cmd.OutOrStdout(), "%s %s: %s\n", map[string]string{"pause": "paused", "resume": "resumed", "check": "checked"}[verb], m.Slug, m.State)
 			}
 			return nil
 		},
