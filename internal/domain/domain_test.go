@@ -120,7 +120,7 @@ func TestMonitorValidate(t *testing.T) {
 		{"name empty", func(m *Monitor) { m.Name = "" }, "name"},
 		{"name too long", func(m *Monitor) { m.Name = strings.Repeat("n", 121) }, "name"},
 		{"kind unknown", func(m *Monitor) { m.Kind = "ping" }, "kind"},
-		{"kind http not yet", func(m *Monitor) { m.Kind = KindHTTP }, "kind"},
+		{"kind http without block", func(m *Monitor) { m.Kind = KindHTTP }, "http"},
 		{"tag with hash", func(m *Monitor) { m.Tags = []string{"#prod"} }, "tags"},
 		{"tag uppercase", func(m *Monitor) { m.Tags = []string{"Prod"} }, "tags"},
 		{"too many tags", func(m *Monitor) { m.Tags = strings.Split(strings.Repeat("t,", 21), ",")[:21] }, "tags"},

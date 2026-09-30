@@ -23,12 +23,33 @@ type MonitorIn struct {
 	RecoveryThreshold int              `json:"recovery_threshold"`
 	Methods           []string         `json:"methods"`
 	BodyLimit         int64            `json:"body_limit"`
+	// Pull kinds: http, tcp, dns, tls, icmp.
+	Interval domain.Duration   `json:"interval"`
+	Timeout  domain.Duration   `json:"timeout"`
+	Confirm  *domain.Confirm   `json:"confirm"`
+	Location string            `json:"location"`
+	HTTP     *domain.HTTPCheck `json:"http"`
+	TCP      *domain.TCPCheck  `json:"tcp"`
+	DNS      *domain.DNSCheck  `json:"dns"`
+	TLS      *domain.TLSCheck  `json:"tls"`
+	ICMP     *domain.ICMPCheck `json:"icmp"`
 }
 
 func (in MonitorIn) toDomain() *domain.Monitor {
 	m := &domain.Monitor{Slug: in.Slug, Name: in.Name, Kind: in.Kind, Tags: in.Tags}
 	if m.Kind == "" {
 		m.Kind = domain.KindHeartbeat
+	}
+	if m.Kind.IsPull() {
+		spec := &domain.PullSpec{
+			Interval: in.Interval, Timeout: in.Timeout, FailureThreshold: in.FailureThreshold, RecoveryThreshold: in.RecoveryThreshold,
+			Location: in.Location, HTTP: in.HTTP, TCP: in.TCP, DNS: in.DNS, TLS: in.TLS, ICMP: in.ICMP,
+		}
+		if in.Confirm != nil {
+			spec.Confirm = *in.Confirm
+		}
+		m.Pull = spec
+		return m
 	}
 	spec := &domain.HeartbeatSpec{
 		Timezone: in.Timezone, Grace: in.Grace, MaxRuntime: in.MaxRuntime, FailureThreshold: in.FailureThreshold,
@@ -49,34 +70,50 @@ func monitorInFrom(m *domain.Monitor) MonitorIn {
 		in.Timezone, in.Grace, in.MaxRuntime = s.Timezone, s.Grace, s.MaxRuntime
 		in.FailureThreshold, in.RecoveryThreshold, in.Methods, in.BodyLimit = s.FailureThreshold, s.RecoveryThreshold, s.Methods, s.BodyLimit
 	}
+	if s := m.Pull; s != nil {
+		confirm := s.Confirm
+		in.Interval, in.Timeout, in.Confirm, in.Location = s.Interval, s.Timeout, &confirm, s.Location
+		in.FailureThreshold, in.RecoveryThreshold = s.FailureThreshold, s.RecoveryThreshold
+		in.HTTP, in.TCP, in.DNS, in.TLS, in.ICMP = s.HTTP, s.TCP, s.DNS, s.TLS, s.ICMP
+	}
 	return in
 }
 
 // MonitorOut is the full monitor with state.
 type MonitorOut struct {
-	ID                string           `json:"id"`
-	Slug              string           `json:"slug"`
-	Name              string           `json:"name"`
-	Kind              domain.Kind      `json:"kind"`
-	Tags              []string         `json:"tags"`
-	Schedule          *domain.Schedule `json:"schedule,omitempty"`
-	Timezone          string           `json:"timezone,omitempty"`
-	Grace             domain.Duration  `json:"grace,omitempty"`
-	MaxRuntime        domain.Duration  `json:"max_runtime,omitempty"`
-	FailureThreshold  int              `json:"failure_threshold,omitempty"`
-	RecoveryThreshold int              `json:"recovery_threshold,omitempty"`
-	Methods           []string         `json:"methods,omitempty"`
-	BodyLimit         int64            `json:"body_limit,omitempty"`
-	State             domain.State     `json:"state"`
-	StateSince        time.Time        `json:"state_since"`
-	LastObsAt         *time.Time       `json:"last_obs_at"`
-	LastOkAt          *time.Time       `json:"last_ok_at"`
-	NextDueAt         *time.Time       `json:"next_due_at"`
-	ExpectedAt        *time.Time       `json:"expected_at"`
-	Paused            bool             `json:"paused"`
-	PingURL           string           `json:"ping_url,omitempty"`
-	CreatedAt         time.Time        `json:"created_at"`
-	UpdatedAt         time.Time        `json:"updated_at"`
+	ID                string            `json:"id"`
+	Slug              string            `json:"slug"`
+	Name              string            `json:"name"`
+	Kind              domain.Kind       `json:"kind"`
+	Tags              []string          `json:"tags"`
+	Schedule          *domain.Schedule  `json:"schedule,omitempty"`
+	Timezone          string            `json:"timezone,omitempty"`
+	Grace             domain.Duration   `json:"grace,omitempty"`
+	MaxRuntime        domain.Duration   `json:"max_runtime,omitempty"`
+	FailureThreshold  int               `json:"failure_threshold,omitempty"`
+	RecoveryThreshold int               `json:"recovery_threshold,omitempty"`
+	Methods           []string          `json:"methods,omitempty"`
+	BodyLimit         int64             `json:"body_limit,omitempty"`
+	Interval          domain.Duration   `json:"interval,omitempty"`
+	Timeout           domain.Duration   `json:"timeout,omitempty"`
+	Confirm           *domain.Confirm   `json:"confirm,omitempty"`
+	Location          string            `json:"location,omitempty"`
+	HTTP              *domain.HTTPCheck `json:"http,omitempty"`
+	TCP               *domain.TCPCheck  `json:"tcp,omitempty"`
+	DNS               *domain.DNSCheck  `json:"dns,omitempty"`
+	TLS               *domain.TLSCheck  `json:"tls,omitempty"`
+	ICMP              *domain.ICMPCheck `json:"icmp,omitempty"`
+	Target            string            `json:"target,omitempty"`
+	State             domain.State      `json:"state"`
+	StateSince        time.Time         `json:"state_since"`
+	LastObsAt         *time.Time        `json:"last_obs_at"`
+	LastOkAt          *time.Time        `json:"last_ok_at"`
+	NextDueAt         *time.Time        `json:"next_due_at"`
+	ExpectedAt        *time.Time        `json:"expected_at"`
+	Paused            bool              `json:"paused"`
+	PingURL           string            `json:"ping_url,omitempty"`
+	CreatedAt         time.Time         `json:"created_at"`
+	UpdatedAt         time.Time         `json:"updated_at"`
 }
 
 func monitorOut(svc *service.Service, p *domain.Project, m *domain.Monitor, showPingURL bool) MonitorOut {
@@ -93,6 +130,12 @@ func monitorOut(svc *service.Service, p *domain.Project, m *domain.Monitor, show
 		out.Timezone, out.Grace, out.MaxRuntime = s.Timezone, s.Grace, s.MaxRuntime
 		out.FailureThreshold, out.RecoveryThreshold, out.Methods, out.BodyLimit = s.FailureThreshold, s.RecoveryThreshold, s.Methods, s.BodyLimit
 		out.ExpectedAt = svc.ExpectedAt(m, p.Timezone)
+	}
+	if s := m.Pull; s != nil {
+		confirm := s.Confirm
+		out.Interval, out.Timeout, out.Confirm, out.Location, out.Target = s.Interval, s.Timeout, &confirm, s.Location, s.Target()
+		out.FailureThreshold, out.RecoveryThreshold = s.FailureThreshold, s.RecoveryThreshold
+		out.HTTP, out.TCP, out.DNS, out.TLS, out.ICMP = s.HTTP, s.TCP, s.DNS, s.TLS, s.ICMP
 	}
 	if showPingURL {
 		out.PingURL = svc.PingURL(p, m.Slug)

@@ -39,7 +39,7 @@ func (s *Service) ResolvePing(ctx context.Context, key, slug, monitorID string, 
 		if err != nil {
 			return nil, err
 		}
-		return &PingTarget{Project: project, Monitor: m}, nil
+		return pingTarget(project, m)
 	}
 	project, err := s.ProjectByPingKey(ctx, key)
 	if err != nil {
@@ -51,7 +51,7 @@ func (s *Service) ResolvePing(ctx context.Context, key, slug, monitorID string, 
 		if err != nil {
 			return nil, err
 		}
-		return &PingTarget{Project: project, Monitor: m}, nil
+		return pingTarget(project, m)
 	}
 	if !db.IsNotFound(err) {
 		return nil, err
@@ -72,6 +72,15 @@ func (s *Service) ResolvePing(ctx context.Context, key, slug, monitorID string, 
 		return nil, err
 	}
 	return &PingTarget{Project: project, Monitor: m, Created: true}, nil
+}
+
+// pingTarget refuses pull monitors: only heartbeats take pings, and a
+// foreign kind looks like a missing slug from the outside.
+func pingTarget(project *domain.Project, m *domain.Monitor) (*PingTarget, error) {
+	if m.Kind != domain.KindHeartbeat {
+		return nil, domain.NotFound("monitor")
+	}
+	return &PingTarget{Project: project, Monitor: m}, nil
 }
 
 // PingObservation is what the ingress hands to RecordPing.
@@ -166,6 +175,9 @@ func (s *Service) Tick(ctx context.Context, monitorID string, now time.Time) err
 		m, err := monitorFromRow(row)
 		if err != nil {
 			return err
+		}
+		if m.Kind != domain.KindHeartbeat {
+			return nil // pull monitors are driven by the checker pool
 		}
 		project = m.ProjectID
 		p, err := q.GetProjectByID(ctx, m.ProjectID)

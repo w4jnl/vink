@@ -34,28 +34,100 @@ components:
       properties:
         period: {type: string, example: 1h}
         cron: {type: string, example: "0 3 * * *"}
+    Confirm:
+      type: object
+      description: Retry a failed attempt before it counts.
+      properties:
+        retries: {type: integer, default: 2}
+        delay: {type: string, default: 5s}
+    ExpectBody:
+      type: object
+      properties:
+        contains: {type: string}
+        not_contains: {type: string}
+        jsonpath:
+          type: object
+          properties:
+            path: {type: string, example: $.status}
+            equals: {}
+    HTTPCheck:
+      type: object
+      required: [url]
+      properties:
+        url: {type: string}
+        method: {type: string, default: GET, enum: [GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS]}
+        headers: {type: object, additionalProperties: {type: string}}
+        body: {type: string}
+        expect_status: {type: array, items: {oneOf: [{type: integer}, {type: string, example: 200-299}]}, default: [200-299]}
+        expect_body: {$ref: "#/components/schemas/ExpectBody"}
+        follow_redirects: {type: boolean, default: true}
+        verify_tls: {type: boolean, default: true}
+        ca_pem: {type: string, description: PEM certificates of a private CA}
+    TCPCheck:
+      type: object
+      required: [host, port]
+      properties:
+        host: {type: string}
+        port: {type: integer}
+        send: {type: string}
+        expect: {type: string, description: text the banner must contain}
+    DNSCheck:
+      type: object
+      required: [name]
+      properties:
+        name: {type: string}
+        type: {type: string, default: A, enum: [A, AAAA, CNAME, MX, NS, TXT, PTR, SRV]}
+        resolver: {type: string, description: host or host:port; empty uses the system resolver}
+        expect: {type: array, items: {type: string}}
+    TLSCheck:
+      type: object
+      required: [host]
+      properties:
+        host: {type: string}
+        port: {type: integer, default: 443}
+        servername: {type: string}
+        warn_days: {type: integer, default: 14, description: late inside this many days}
+        crit_days: {type: integer, default: 3, description: down inside this many days}
+    ICMPCheck:
+      type: object
+      required: [host]
+      properties:
+        host: {type: string}
+        count: {type: integer, default: 3}
+        loss_threshold: {type: number, default: 0.67}
     MonitorIn:
       type: object
-      required: [slug, schedule]
+      description: Heartbeats take schedule, grace and the ping options; pull kinds take interval, timeout, confirm and their block.
+      required: [slug]
       properties:
         slug: {type: string}
         name: {type: string}
-        kind: {type: string, enum: [heartbeat]}
+        kind: {type: string, default: heartbeat, enum: [heartbeat, http, tcp, dns, tls, icmp]}
         tags: {type: array, items: {type: string}}
         schedule: {$ref: "#/components/schemas/Schedule"}
         timezone: {type: string}
         grace: {type: string, default: 5m}
         max_runtime: {type: string}
-        failure_threshold: {type: integer, default: 1}
+        failure_threshold: {type: integer, description: 1 for heartbeats, 3 for pull kinds}
         recovery_threshold: {type: integer, default: 1}
         methods: {type: array, items: {type: string, enum: [GET, POST, HEAD, PUT]}}
         body_limit: {type: integer}
+        interval: {type: string, default: 60s}
+        timeout: {type: string, default: 10s}
+        confirm: {$ref: "#/components/schemas/Confirm"}
+        location: {type: string, description: empty for a local check; agents arrive in phase 2}
+        http: {$ref: "#/components/schemas/HTTPCheck"}
+        tcp: {$ref: "#/components/schemas/TCPCheck"}
+        dns: {$ref: "#/components/schemas/DNSCheck"}
+        tls: {$ref: "#/components/schemas/TLSCheck"}
+        icmp: {$ref: "#/components/schemas/ICMPCheck"}
     Monitor:
       allOf:
         - $ref: "#/components/schemas/MonitorIn"
         - type: object
           properties:
             id: {type: string}
+            target: {type: string, description: what a pull monitor checks}
             state: {type: string, enum: [new, up, late, down, paused]}
             state_since: {type: string, format: date-time}
             last_obs_at: {type: [string, "null"], format: date-time}

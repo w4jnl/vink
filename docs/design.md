@@ -507,14 +507,13 @@ type Notification struct {
 
 ```go
 type Checker interface {
-    Kind() string
-    Validate(spec json.RawMessage) error
-    Check(ctx context.Context, spec json.RawMessage, env CheckEnv) Result   // one attempt
+    Kind() domain.Kind
+    Check(ctx context.Context, spec *domain.PullSpec, env Env) Result   // one attempt
 }
-type Result struct { OK bool; LatencyMs int64; Reason string; Detail map[string]any }
+type Result struct { OK, Warn bool; LatencyMs int64; Reason string; Detail map[string]any }
 ```
 
-`CheckEnv` carries the shared `http.Transport`, resolver, CA pool and outbound proxy. The checker pool is `checks.workers` goroutines (default 32) pulling due monitors from the scheduler; a per-monitor mutex prevents overlapping attempts.
+Specs are decoded and validated once, in `domain` (`PullSpec.Validate(kind)`), so checkers take the typed spec; `Registry.Validate(kind, json)` is the entry point for stored or posted JSON. `Warn` is a passing attempt that should show as `late` (a certificate inside `warn_days`). `Env` carries the shared outbound environment (`internal/outbound`: dialer with the private-target guard, transport with proxy and CA pool, resolver) and the user agent. The checker pool is `checks.workers` goroutines (default 32) pulling due monitors from the scheduler; a per-monitor mutex prevents overlapping attempts.
 
 **Probe agents (phase 2)**
 

@@ -15,8 +15,9 @@ type Monitor struct {
 	Name      string
 	Kind      Kind
 	Tags      []string
-	// Heartbeat is set when Kind is heartbeat.
+	// Heartbeat is set when Kind is heartbeat; Pull for every other kind.
 	Heartbeat *HeartbeatSpec
+	Pull      *PullSpec
 
 	State      State
 	StateSince time.Time
@@ -49,22 +50,43 @@ func (m *Monitor) Validate() error {
 	}
 	if !m.Kind.Valid() {
 		ve.Addf("kind", "unknown kind %q", string(m.Kind))
-	} else if m.Kind != KindHeartbeat {
-		ve.Addf("kind", "%s monitors arrive in phase 1", string(m.Kind))
 	}
 	ValidateTags(ve, "tags", m.Tags)
-	if m.Kind == KindHeartbeat {
+	merge := func(err error) {
+		if err == nil {
+			return
+		}
+		if sub, ok := AsValidation(err); ok {
+			ve.Errors = append(ve.Errors, sub.Errors...)
+		} else {
+			ve.Add("spec", err.Error())
+		}
+	}
+	switch {
+	case m.Kind == KindHeartbeat:
 		if m.Heartbeat == nil {
 			ve.Add("schedule", "set period or cron")
-		} else if err := m.Heartbeat.Validate(); err != nil {
-			if sub, ok := AsValidation(err); ok {
-				ve.Errors = append(ve.Errors, sub.Errors...)
-			} else {
-				ve.Add("spec", err.Error())
-			}
+		} else {
+			merge(m.Heartbeat.Validate())
+		}
+	case m.Kind.IsPull():
+		if m.Pull == nil {
+			ve.Addf(string(m.Kind), "set the %s block", string(m.Kind))
+		} else {
+			merge(m.Pull.Validate(m.Kind))
 		}
 	}
 	return ve.OrNil()
+}
+
+// Normalize fills spec defaults for whichever spec the kind uses.
+func (m *Monitor) Normalize() {
+	if m.Heartbeat != nil {
+		m.Heartbeat.Normalize()
+	}
+	if m.Pull != nil {
+		m.Pull.Normalize()
+	}
 }
 
 // SpecJSON encodes the kind-specific spec for storage.
@@ -75,8 +97,13 @@ func (m *Monitor) SpecJSON() ([]byte, error) {
 			return nil, fmt.Errorf("heartbeat monitor %s has no spec", m.Slug)
 		}
 		return json.Marshal(m.Heartbeat)
+	case KindHTTP, KindTCP, KindDNS, KindTLS, KindICMP:
+		if m.Pull == nil {
+			return nil, fmt.Errorf("%s monitor %s has no spec", m.Kind, m.Slug)
+		}
+		return json.Marshal(m.Pull)
 	default:
-		return nil, fmt.Errorf("kind %s not supported yet", m.Kind)
+		return nil, fmt.Errorf("kind %s not supported", m.Kind)
 	}
 }
 
@@ -90,8 +117,15 @@ func (m *Monitor) SetSpecJSON(raw []byte) error {
 		}
 		m.Heartbeat = s
 		return nil
+	case KindHTTP, KindTCP, KindDNS, KindTLS, KindICMP:
+		s, err := ParsePullSpec(raw)
+		if err != nil {
+			return err
+		}
+		m.Pull = s
+		return nil
 	default:
-		return fmt.Errorf("kind %s not supported yet", m.Kind)
+		return fmt.Errorf("kind %s not supported", m.Kind)
 	}
 }
 

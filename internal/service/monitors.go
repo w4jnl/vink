@@ -53,9 +53,7 @@ func (s *Service) CreateMonitor(ctx context.Context, sc domain.Scope, m *domain.
 		m.Kind = domain.KindHeartbeat
 	}
 	m.Tags = domain.NormalizeTags(m.Tags)
-	if m.Heartbeat != nil {
-		m.Heartbeat.Normalize()
-	}
+	m.Normalize()
 	if err := m.Validate(); err != nil {
 		return nil, err
 	}
@@ -66,16 +64,12 @@ func (s *Service) CreateMonitor(ctx context.Context, sc domain.Scope, m *domain.
 	if err := s.checkQuota(ctx, project.OrgID); err != nil {
 		return nil, err
 	}
-	loc, err := m.Heartbeat.Location(project.Timezone)
-	if err != nil {
-		return nil, err
-	}
 	now := s.now()
 	m.ID = domain.NewID()
 	m.ProjectID, m.OrgID = project.ID, project.OrgID
 	m.State, m.StateSince, m.BaseAt = domain.StateNew, now, now
 	m.Paused = false
-	_, next, err := engine.Plan(m, loc)
+	_, next, err := s.plan(m, project.Timezone)
 	if err != nil {
 		return nil, err
 	}
@@ -206,14 +200,15 @@ func (s *Service) UpdateMonitor(ctx context.Context, sc domain.Scope, slug strin
 			spec.Normalize()
 			next.Heartbeat = &spec
 		}
+		if upd.Pull != nil {
+			spec := *upd.Pull
+			spec.Normalize()
+			next.Pull = &spec
+		}
 		if err := next.Validate(); err != nil {
 			return err
 		}
-		loc, err := next.Heartbeat.Location(project.Timezone)
-		if err != nil {
-			return err
-		}
-		_, due, err := engine.Plan(&next, loc)
+		_, due, err := s.plan(&next, project.Timezone)
 		if err != nil {
 			return err
 		}
@@ -306,11 +301,7 @@ func (s *Service) setPaused(ctx context.Context, sc domain.Scope, slug string, p
 			next.BaseAt = now
 			reason = "resumed"
 		}
-		loc, err := next.Heartbeat.Location(project.Timezone)
-		if err != nil {
-			return err
-		}
-		_, due, err := engine.Plan(&next, loc)
+		_, due, err := s.plan(&next, project.Timezone)
 		if err != nil {
 			return err
 		}
@@ -337,6 +328,20 @@ func (s *Service) setPaused(ctx context.Context, sc domain.Scope, slug string, p
 	s.bus.Publish(engine.MonitorChanged{ProjectID: sc.ProjectID, MonitorID: out.ID})
 	s.log.Info("monitor "+map[bool]string{true: "paused", false: "resumed"}[paused], "project_id", sc.ProjectID, "monitor", slug, "actor", sc.Actor)
 	return out, nil
+}
+
+// plan computes the expected and next due times. Heartbeats take their
+// deadline from the schedule; pull kinds get no wake-up until the checker
+// pool (next task) owns their cadence.
+func (s *Service) plan(m *domain.Monitor, projectTZ string) (expected, due *time.Time, err error) {
+	if m.Kind != domain.KindHeartbeat {
+		return nil, nil, nil
+	}
+	loc, err := m.Heartbeat.Location(projectTZ)
+	if err != nil {
+		return nil, nil, err
+	}
+	return engine.Plan(m, loc)
 }
 
 // ExpectedAt returns the next expected ping for display, or nil.
