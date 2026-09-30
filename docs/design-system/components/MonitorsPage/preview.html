@@ -23,10 +23,7 @@
     ['down', '14:07:31', '503 Service Unavailable', '1204 ms'], ['down', '14:07:26', '503 Service Unavailable', '1198 ms'],
     ['late', '14:07:01', '503 \u00b7 confirming (1 of 3)', '980 ms'], ['up', '14:06:31', '200 OK \u00b7 $.status = ok', '84 ms'], ['up', '14:06:01', '200 OK \u00b7 $.status = ok', '81 ms']];
   document.getElementById('root').innerHTML =
-    '<header class="vk-top"><span class="vk-top__mark">' + V.Mark({ size: 22 }) + '<span>vink</span></span>' +
-    '<span class="vk-top__crumb">w4j / <b>homelab</b></span>' +
-    '<input class="vk-input vk-top__search" placeholder="Search monitors  /" aria-label="Search monitors">' +
-    '<span class="vk-top__user">J</span></header>' +
+    V.TopBar({ org: 'w4j', project: 'homelab', section: 'monitors', incidents: 1, user: 'j' }) +
     '<div class="vk-page"><main class="vk-main">' +
       '<div class="vk-main__head"><h1>Monitors</h1><span class="vk-muted vk-mono">7</span><span style="margin-left:auto">' + V.Button({ label: 'Create monitor', variant: 'primary' }) + '</span></div>' +
       '<div class="vk-chips">' + V.Chip({ label: 'up', state: 'up', count: 3 }) + V.Chip({ label: 'late', state: 'late', count: 1 }) + V.Chip({ label: 'down', state: 'down', count: 1 }) +

@@ -6,15 +6,46 @@ export type Kind = 'heartbeat' | 'http' | 'tcp' | 'dns' | 'tls' | 'icmp';
 /** Shape + colour + word for one monitor state. `pill` adds the soft fill; `since` appends a relative time in mono. */
 export declare function StateBadge(props: { state: State; pill?: boolean; label?: string; since?: string }): string;
 /** 32px button. `quiet` (default) for most actions, `primary` once per view, `danger` for destructive ones; `confirm` arms a two-step confirm with that text. */
-export declare function Button(props: { label: string; variant?: 'quiet' | 'primary' | 'danger'; confirm?: string; disabled?: boolean }): string;
+export declare function Button(props: { label: string; variant?: 'quiet' | 'primary' | 'danger'; confirm?: string; disabled?: boolean; href?: string; type?: 'button' | 'submit'; block?: boolean }): string;
 /** Filter chip with an optional state glyph and a count; `pressed` = filter active. */
 export declare function Chip(props: { label: string; count?: number; pressed?: boolean; state?: State }): string;
 /** A monitor tag, mono, no hash sign. */
 export declare function Tag(props: { label: string }): string;
 /** 16px monoline glyph for a monitor kind. */
 export declare function KindIcon(props: { kind: Kind }): string;
-/** Label + input + hint or inline error. `mono` for URLs, cron expressions, slugs. */
-export declare function Field(props: { id: string; label: string; value?: string; placeholder?: string; hint?: string; error?: string; mono?: boolean }): string;
+export type Option = string | { value: string; label: string };
+/** Label + control + hint or inline error. `mono` for URLs, cron expressions, slugs. `html` replaces the control; `before`/`after` sit beside it (trusted HTML). */
+export declare function Field(props: { id?: string; name?: string; label: string; value?: string; placeholder?: string; hint?: string; error?: string; mono?: boolean;
+  control?: 'input' | 'select' | 'textarea'; options?: Option[]; rows?: number; type?: 'text' | 'password' | 'url' | 'email'; prefix?: string; suffix?: string;
+  disabled?: boolean; autocomplete?: string; html?: string; before?: string; after?: string }): string;
+/** Two to four rendered Fields side by side; `lead` makes the first column 112px. */
+export declare function FieldRow(props: { fields: string[]; lead?: boolean }): string;
+/** Native checkbox with label and optional hint. */
+export declare function Checkbox(props: { label?: string; labelHtml?: string; name?: string; id?: string; value?: string; checked?: boolean; disabled?: boolean; hint?: string }): string;
+/** Immediate on/off with the word beside the track; `label` is the accessible name. */
+export declare function Switch(props: { checked?: boolean; label?: string }): string;
+/** Radio (or `multi` checkbox) group drawn as one control. */
+export declare function Segmented(props: { name?: string; label: string; options: Option[]; value?: string | string[]; multi?: boolean; mono?: boolean }): string;
+/** The six monitor kinds as radio cards; `locked` on edit. */
+export declare function KindPicker(props?: { value?: Kind; locked?: boolean }): string;
+/** <details> with a mono summary of its current values. `body` is trusted HTML. */
+export declare function Disclosure(props: { title?: string; summary?: string; body?: string; open?: boolean }): string;
+/** Inline result beside what caused it. `html` is trusted extra content. */
+export declare function Notice(props: { tone?: 'ok' | 'error' | 'warn' | 'info'; title?: string; text?: string; html?: string }): string;
+/** Read-only code with optional Copy; `yaml` dims keys. */
+export declare function Code(props: { text: string; copy?: boolean; copyLabel?: string; yaml?: boolean }): string;
+/** Inline add/edit form on surface. `body`/`actions` are trusted HTML. */
+export declare function Panel(props: { title?: string; note?: string; body?: string; actions?: string; id?: string }): string;
+/** Signed-in header: mark, project switcher + Monitors / Incidents / Settings, search, user. */
+export declare function TopBar(props: { org?: string; project?: string; section?: 'monitors' | 'incidents' | 'settings'; incidents?: number; user?: string;
+  hrefs?: Partial<Record<'home' | 'monitors' | 'incidents' | 'settings', string>> }): string;
+/** Page sections as links (settings tabs). */
+export declare function Tabs(props: { tabs: Array<{ id: string; label: string; count?: number; href?: string }>; current?: string; label?: string }): string;
+/** One incident row: open (Ack), acked, or resolved. */
+export declare function IncidentRow(props: { state?: 'open' | 'acked' | 'resolved'; name: string; slug: string; href?: string; reason: string; opened: string; openedAbs?: string; duration: string; ackedBy?: string; resolved?: string }): string;
+/** One settings list row; `lead`, `titleHtml`, `actions`, cell `html` are trusted HTML. */
+export declare function SettingsRow(props: { title?: string; titleHtml?: string; sub?: string; lead?: string; muted?: boolean;
+  cells?: Array<{ text?: string; html?: string; size?: 's' | 'm' | 'l'; mono?: boolean; ink?: boolean }>; actions?: string }): string;
 /** The project ping URL with the monitor slug highlighted and a Copy button (`data-copy`). */
 export declare function PingUrl(props: { base?: string; key?: string; slug?: string }): string;
 /** 96x20 latency trend; the last point is marked. Colour follows state. */
@@ -29,6 +60,8 @@ export declare function StatusBanner(props: { state: 'up' | 'late' | 'down' | 'm
 export declare function EmptyState(props: { base?: string; key?: string }): string;
 /** The vink mark as inline SVG in currentColor. */
 export declare function Mark(props?: { size?: number }): string;
-/** Wires data-copy and data-confirm inside `root`; call on load and on htmx:afterSettle. */
+/** Wires data-copy, data-confirm and local switches inside `root`; call on load and on htmx:afterSettle. */
 export declare function wire(root?: ParentNode): void;
-declare global { interface Window { Vink: { StateBadge: typeof StateBadge; Button: typeof Button; Chip: typeof Chip; Tag: typeof Tag; KindIcon: typeof KindIcon; Field: typeof Field; PingUrl: typeof PingUrl; Sparkline: typeof Sparkline; MonitorRow: typeof MonitorRow; UptimeBar: typeof UptimeBar; StatusBanner: typeof StatusBanner; EmptyState: typeof EmptyState; Mark: typeof Mark; wire: typeof wire } } }
+declare global { interface Window { Vink: { StateBadge: typeof StateBadge; Button: typeof Button; Chip: typeof Chip; Tag: typeof Tag; KindIcon: typeof KindIcon; Field: typeof Field; PingUrl: typeof PingUrl; Sparkline: typeof Sparkline; MonitorRow: typeof MonitorRow; UptimeBar: typeof UptimeBar; StatusBanner: typeof StatusBanner; EmptyState: typeof EmptyState; Mark: typeof Mark;
+  TopBar: typeof TopBar; Tabs: typeof Tabs; FieldRow: typeof FieldRow; Checkbox: typeof Checkbox; Switch: typeof Switch; Segmented: typeof Segmented; KindPicker: typeof KindPicker;
+  Disclosure: typeof Disclosure; Notice: typeof Notice; Code: typeof Code; Panel: typeof Panel; IncidentRow: typeof IncidentRow; SettingsRow: typeof SettingsRow; wire: typeof wire } } }

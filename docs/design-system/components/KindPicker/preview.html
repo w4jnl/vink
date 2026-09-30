@@ -1,0 +1,13 @@
+<!-- @dsCard group="Forms" height=184 -->
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>vink</title></head>
+<body>
+<div id="root" class="vk-stack"></div>
+<script>
+  var V = window.Vink;
+  document.getElementById('root').innerHTML = V.KindPicker({ value: 'http' });
+  V.wire(document);
+</script>
+</body>
+</html>

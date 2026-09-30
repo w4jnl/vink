@@ -1,0 +1,15 @@
+<!-- @dsCard group="Forms" height=176 -->
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>vink</title></head>
+<body>
+<div id="root" class="vk-stack"></div>
+<script>
+  var V = window.Vink;
+  document.getElementById('root').innerHTML = '<div class="vk-form">' +
+    V.FieldRow({ fields: [V.Field({ id: 'interval', label: 'Interval', value: '30s', mono: true, hint: '10s or more.' }), V.Field({ id: 'timeout', label: 'Timeout', value: '45s', mono: true, error: 'Must be shorter than the interval (30s).' })] }) +
+    V.FieldRow({ fields: [V.Field({ id: 'tz', label: 'Timezone', control: 'select', value: 'Europe/Amsterdam', options: ['Europe/Amsterdam', 'UTC'] }), V.Field({ id: 'down', label: 'Down after', value: '3', mono: true, suffix: 'failures' })] }) + '</div>';
+  V.wire(document);
+</script>
+</body>
+</html>

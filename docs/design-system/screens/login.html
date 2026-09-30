@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sign in · vink</title>
+<link rel="stylesheet" href="../tokens.css">
+<link rel="stylesheet" href="../components/bundle.css">
+</head>
+<body class="vk-app vk-app--fill">
+<main class="vk-auth">
+<div class="vk-auth__brand"><svg viewBox="0 0 24 24" width="28" height="28" aria-hidden="true"><g stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" fill="none"><path d="M8 3.2 H6 a2.2 2.2 0 0 0 -2.2 2.2 V18.6 a2.2 2.2 0 0 0 2.2 2.2 H8"/><path d="M16 3.2 H18 a2.2 2.2 0 0 1 2.2 2.2 V18.6 a2.2 2.2 0 0 1 -2.2 2.2 H16"/></g><path d="M7.5 10.1 L10.5 12.9 L16.5 7.1" stroke="currentColor" stroke-width="2.9" stroke-linecap="round" stroke-linejoin="round" fill="none"/><rect x="9.6" y="16.2" width="4.8" height="2.2" rx="1.1" fill="currentColor"/></svg><span>vink</span></div>
+<form class="vk-auth__card" action="monitors.html" method="post">
+<h1>Sign in</h1>
+<div class="vk-notice vk-notice--error" role="alert"><i class="vk-glyph vk-glyph--down" aria-hidden="true"></i><div class="vk-notice__text"><p>Wrong username or password.</p></div></div>
+<div class="vk-field"><label class="vk-field__label" for="username">Username</label><input class="vk-input" id="username" name="username" type="text" value="j" placeholder="" autocomplete="username"></div>
+<div class="vk-field"><label class="vk-field__label" for="password">Password</label><input class="vk-input" id="password" name="password" type="password" value="correct-horse" placeholder="" autocomplete="current-password"></div>
+<button type="submit" class="vk-btn vk-btn--primary vk-btn--block">Sign in</button>
+<p>Local accounts only. With single sign-on, the proxy signs you in and this page does not appear.</p>
+</form>
+<p class="vk-auth__foot">vink 0.1.0 · w4j.nl</p>
+</main>
+<script src="../components/bundle.js"></script>
+<script>Vink.wire(document);</script>
+</body>
+</html>

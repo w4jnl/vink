@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>No identity from the proxy · vink</title>
+<link rel="stylesheet" href="../tokens.css">
+<link rel="stylesheet" href="../components/bundle.css">
+</head>
+<body class="vk-app vk-app--fill">
+<main class="vk-auth">
+<div class="vk-auth__brand"><svg viewBox="0 0 24 24" width="28" height="28" aria-hidden="true"><g stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" fill="none"><path d="M8 3.2 H6 a2.2 2.2 0 0 0 -2.2 2.2 V18.6 a2.2 2.2 0 0 0 2.2 2.2 H8"/><path d="M16 3.2 H18 a2.2 2.2 0 0 1 2.2 2.2 V18.6 a2.2 2.2 0 0 1 -2.2 2.2 H16"/></g><path d="M7.5 10.1 L10.5 12.9 L16.5 7.1" stroke="currentColor" stroke-width="2.9" stroke-linecap="round" stroke-linejoin="round" fill="none"/><rect x="9.6" y="16.2" width="4.8" height="2.2" rx="1.1" fill="currentColor"/></svg><span>vink</span></div>
+<div class="vk-auth__card vk-auth__card--wide">
+<h1>No identity from the proxy</h1>
+<p>This vink signs people in through an authenticating proxy, and this request arrived without a user. Open vink through the proxy’s address. If you did, ask your admin to check the proxy settings.</p>
+<dl class="vk-kv"><dt>status</dt><dd>403</dd><dt>request</dt><dd>01J8ZK4Q6XW2T9R3M5N7B1C0DE</dd><dt>time</dt><dd>2026-09-28 14:11:02 CEST</dd></dl>
+<p>Give your admin the request id; the server log has the reason.</p>
+<div class="vk-actions"><a class="vk-btn vk-btn--primary" href="monitors.html">Try again</a><button type="button" class="vk-btn vk-copy" data-copy="403 01J8ZK4Q6XW2T9R3M5N7B1C0DE 2026-09-28T14:11:02+02:00">Copy details</button></div>
+</div>
+</main>
+<script src="../components/bundle.js"></script>
+<script>Vink.wire(document);</script>
+</body>
+</html>

@@ -1,0 +1,14 @@
+<!-- @dsCard group="Forms" height=240 -->
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>vink</title></head>
+<body>
+<div id="root" class="vk-stack"></div>
+<script>
+  var V = window.Vink;
+  document.getElementById('root').innerHTML = V.Disclosure({ title: 'Advanced', summary: 'max runtime none \u00b7 down after 1 \u00b7 methods any \u00b7 body 64 KB' }) +
+    V.Disclosure({ title: 'As YAML', summary: 'for vink.yaml and vink apply', open: true, body: V.Code({ text: 'slug: nightly-backup\nkind: heartbeat\ngrace: 30m', yaml: true, copy: true, copyLabel: 'Copy YAML' }) });
+  V.wire(document);
+</script>
+</body>
+</html>

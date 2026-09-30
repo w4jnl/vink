@@ -1,0 +1,13 @@
+<!-- @dsCard group="Navigation" height=72 width=1120 -->
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>vink</title></head>
+<body>
+<div id="root" class=""></div>
+<script>
+  var V = window.Vink;
+  document.getElementById('root').innerHTML = V.TopBar({ org: 'w4j', project: 'homelab', section: 'incidents', incidents: 2, user: 'j' });
+  V.wire(document);
+</script>
+</body>
+</html>

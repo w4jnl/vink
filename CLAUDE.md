@@ -4,7 +4,7 @@ Self-hosted heartbeat and uptime monitor: jobs ping it (push), and it probes ser
 
 ## Read first
 - `docs/design.md` is the spec: architecture, data model, state machine, ping ingress, API, CLI, auth, notifiers, config, security, and the phase task lists, with diagrams in `docs/diagrams/`. It is the source of truth; ask before deviating from it.
-- `docs/design-system/README.md` is the brand and UI rules. `tokens.css` holds every colour, space and radius. `components/<Name>/README.md` says how each UI part behaves. `components/bundle.js` returns the exact HTML each part must render, and `components/bundle.css` styles it. `screens/*.png` and `screens/*.html` show the target screens.
+- `docs/design-system/README.md` is the brand and UI rules. `tokens.css` holds every colour, space and radius. `components/<Name>/README.md` says how each UI part behaves. `components/bundle.js` returns the exact HTML each part must render, and `components/bundle.css` styles it. `screens/README.md` lists every designed screen with its route and the behaviour the pictures can't show; `screens/*.html` hold the exact markup and `screens/*-dark.png` / `*-light.png` the look.
 - `assets/brand/` holds logos, favicons and the state/kind icons.
 
 ## House conventions

@@ -1,0 +1,16 @@
+<!-- @dsCard group="Incidents" height=150 width=1120 -->
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>vink</title></head>
+<body>
+<div id="root" class=""></div>
+<script>
+  var V = window.Vink;
+  document.getElementById('root').innerHTML = '<div class="vk-irows">' +
+    V.IncidentRow({ state: 'open', name: 'Public API', slug: 'api-health', reason: '503 \u00b7 3 of 3 checks failed', opened: '14:07 \u00b7 4 min ago', duration: 'open 4 min' }) +
+    V.IncidentRow({ state: 'acked', name: 'Postgres', slug: 'postgres', reason: 'connection refused', opened: '13:51 \u00b7 20 min ago', duration: 'open 20 min', ackedBy: 'j \u00b7 13:55' }) +
+    V.IncidentRow({ state: 'resolved', name: 'Nightly backup', slug: 'nightly-backup', reason: 'no ping by 03:30', opened: 'today 03:30', duration: 'lasted 1 h 12 min', resolved: '04:42' }) + '</div>';
+  V.wire(document);
+</script>
+</body>
+</html>

@@ -6,6 +6,8 @@ A 32px action: `quiet` by default, `primary` for the one main action in a view, 
 
 **Use** at most one primary per view (Create monitor, Save). Destructive actions never open a modal: the first click arms the button (`data-armed`, filled `down`, label becomes the confirm text), a second click within 4 s performs it, otherwise it disarms.
 
+With `href` it renders an `<a class="vk-btn">` (Create monitor, Cancel, Open); `type: 'submit'` for form buttons; `block` fills the width (the sign-in card).
+
 **Don't** use icons without words, or `primary` for Delete.
 
 ```html

@@ -1,4 +1,4 @@
-/* @ds-bundle: {"format":4,"namespace":"Vink","components":[{"name":"StateBadge"},{"name":"Button"},{"name":"Chip"},{"name":"Tag"},{"name":"KindIcon"},{"name":"Field"},{"name":"PingUrl"},{"name":"Sparkline"},{"name":"MonitorRow"},{"name":"UptimeBar"},{"name":"StatusBanner"},{"name":"EmptyState"}]} */
+/* @ds-bundle: {"format":4,"namespace":"Vink","components":[{"name":"StateBadge"},{"name":"Button"},{"name":"Chip"},{"name":"Tag"},{"name":"KindIcon"},{"name":"Field"},{"name":"PingUrl"},{"name":"Sparkline"},{"name":"MonitorRow"},{"name":"UptimeBar"},{"name":"StatusBanner"},{"name":"EmptyState"},{"name":"TopBar"},{"name":"Tabs"},{"name":"FieldRow"},{"name":"Checkbox"},{"name":"Switch"},{"name":"Segmented"},{"name":"KindPicker"},{"name":"Disclosure"},{"name":"Notice"},{"name":"Code"},{"name":"Panel"},{"name":"IncidentRow"},{"name":"SettingsRow"}]} */
 /* vink components as canonical HTML. Each function returns the markup a Go html/template
    partial must produce; no framework. Helpers wire the two behaviours the UI has beyond htmx:
    copy-to-clipboard and the two-step destructive confirm. */
@@ -30,7 +30,9 @@
 
   function Button(p) {
     p = p || {}; var v = p.variant || 'quiet';
-    return '<button type="button" class="vk-btn' + (v !== 'quiet' ? ' vk-btn--' + esc(v) : '') + '"' +
+    var cls = 'vk-btn' + (v !== 'quiet' ? ' vk-btn--' + esc(v) : '') + (p.block ? ' vk-btn--block' : '');
+    if (p.href) return '<a class="' + cls + '" href="' + esc(p.href) + '">' + esc(p.label) + '</a>';
+    return '<button type="' + (p.type === 'submit' ? 'submit' : 'button') + '" class="' + cls + '"' +
       (p.confirm ? ' data-confirm="' + esc(p.confirm) + '"' : '') + (p.disabled ? ' disabled' : '') + '>' + esc(p.label) + '</button>';
   }
 
@@ -47,14 +49,105 @@
     return '<span class="vk-kind" title="' + k + '"><svg viewBox="0 0 16 16" role="img" aria-label="' + k + '">' + KINDS[k] + '</svg></span>';
   }
 
+  function opts(list, value) {
+    return (list || []).map(function (o) {
+      var v = typeof o === 'object' ? o.value : o, l = typeof o === 'object' ? o.label : o;
+      return '<option value="' + esc(v) + '"' + (String(v) === String(value) ? ' selected' : '') + '>' + esc(l) + '</option>';
+    }).join('');
+  }
+
+  /* control: 'input' (default) | 'select' | 'textarea'; `html` replaces the control (a Segmented, a code field);
+     `before`/`after` sit beside it on one line. All three are trusted HTML. */
   function Field(p) {
-    p = p || {}; var id = esc(p.id || 'f'); var hid = id + '-msg';
+    p = p || {}; var id = esc(p.id || 'f'), hid = p.id ? id + '-msg' : '', ctl = p.control || 'input';
+    var attrs = ' id="' + id + '" name="' + esc(p.name || p.id || 'f') + '"' + ((p.error || p.hint) && hid ? ' aria-describedby="' + hid + '"' : '') +
+      (p.error ? ' aria-invalid="true"' : '') + (p.disabled ? ' disabled' : '');
+    var cls = 'vk-input' + (p.mono ? ' vk-input--mono' : '');
+    var el;
+    if (ctl === 'select') el = '<span class="vk-select"><select class="' + cls + '"' + attrs + '>' + opts(p.options, p.value) + '</select></span>';
+    else if (ctl === 'textarea') el = '<textarea class="' + cls + ' vk-input--area"' + attrs + ' rows="' + (p.rows || 3) + '" placeholder="' + esc(p.placeholder) + '">' + esc(p.value) + '</textarea>';
+    else {
+      el = '<input class="' + cls + '"' + attrs + ' type="' + esc(p.type || 'text') + '" value="' + esc(p.value) + '" placeholder="' + esc(p.placeholder) + '"' + (p.autocomplete ? ' autocomplete="' + esc(p.autocomplete) + '"' : '') + '>';
+      if (p.prefix || p.suffix) el = '<span class="vk-affix">' + (p.prefix ? '<span class="vk-affix__text">' + esc(p.prefix) + '</span>' : '') + el +
+        (p.suffix ? '<span class="vk-affix__text">' + esc(p.suffix) + '</span>' : '') + '</span>';
+    }
+    if (p.html) el = p.html;
+    if (p.before || p.after) el = '<div class="vk-field__row">' + (p.before || '') + el + (p.after || '') + '</div>';
     return '<div class="vk-field' + (p.error ? ' vk-field--error' : '') + '">' +
-      '<label class="vk-field__label" for="' + id + '">' + esc(p.label) + '</label>' +
-      '<input class="vk-input' + (p.mono ? ' vk-input--mono' : '') + '" id="' + id + '" value="' + esc(p.value) + '" placeholder="' + esc(p.placeholder) + '"' +
-      ((p.error || p.hint) ? ' aria-describedby="' + hid + '"' : '') + (p.error ? ' aria-invalid="true"' : '') + '>' +
-      (p.error ? '<span class="vk-field__error" id="' + hid + '">' + glyph('down') + esc(p.error) + '</span>'
-        : (p.hint ? '<span class="vk-field__hint" id="' + hid + '">' + esc(p.hint) + '</span>' : '')) + '</div>';
+      (p.html ? '<span class="vk-field__label">' + esc(p.label) + '</span>' : '<label class="vk-field__label" for="' + id + '">' + esc(p.label) + '</label>') + el +
+      (p.error ? '<span class="vk-field__error"' + (hid ? ' id="' + hid + '"' : '') + '>' + glyph('down') + esc(p.error) + '</span>'
+        : (p.hint ? '<span class="vk-field__hint"' + (hid ? ' id="' + hid + '"' : '') + '>' + esc(p.hint) + '</span>' : '')) + '</div>';
+  }
+
+  /* two to four fields side by side; `lead` makes the first column narrow (method + URL) */
+  function FieldRow(p) {
+    p = p || {}; var f = p.fields || [];
+    return '<div class="vk-fieldrow' + (p.lead ? ' vk-fieldrow--lead' : f.length > 2 ? ' vk-fieldrow--' + f.length : '') + '">' + f.join('') + '</div>';
+  }
+
+  function Checkbox(p) {
+    p = p || {};
+    return '<label class="vk-check"><input type="checkbox" name="' + esc(p.name || p.id || 'c') + '"' + (p.value != null ? ' value="' + esc(p.value) + '"' : '') + (p.checked ? ' checked' : '') + (p.disabled ? ' disabled' : '') + '>' +
+      '<span class="vk-check__text">' + (p.labelHtml || esc(p.label)) + (p.hint ? '<span class="vk-check__hint">' + esc(p.hint) + '</span>' : '') + '</span></label>';
+  }
+
+  function Switch(p) {
+    p = p || {}; var on = !!p.checked;
+    return '<button type="button" class="vk-switch" role="switch" aria-checked="' + on + '" aria-label="' + esc(p.label || 'Enabled') + '">' +
+      '<span class="vk-switch__track" aria-hidden="true"></span><span class="vk-switch__word">' + (on ? 'on' : 'off') + '</span></button>';
+  }
+
+  /* one choice (radio) or several (multi: checkboxes) from two to seven short options */
+  function Segmented(p) {
+    p = p || {}; var type = p.multi ? 'checkbox' : 'radio', vals = [].concat(p.value == null ? [] : p.value).map(String);
+    return '<div class="vk-seg' + (p.mono ? ' vk-seg--mono' : '') + '" role="' + (p.multi ? 'group' : 'radiogroup') + '" aria-label="' + esc(p.label) + '">' +
+      (p.options || []).map(function (o) {
+        var v = typeof o === 'object' ? o.value : o, l = typeof o === 'object' ? o.label : o;
+        return '<label class="vk-seg__opt"><input type="' + type + '" name="' + esc(p.name || 'seg') + '" value="' + esc(v) + '"' + (vals.indexOf(String(v)) >= 0 ? ' checked' : '') + '><span>' + esc(l) + '</span></label>';
+      }).join('') + '</div>';
+  }
+
+  var KIND_INFO = [
+    ['heartbeat', 'Heartbeat', 'jobs ping vink'], ['http', 'HTTP', 'requests a URL'], ['tcp', 'TCP', 'opens a port'],
+    ['dns', 'DNS', 'resolves a name'], ['tls', 'TLS certificate', 'checks expiry'], ['icmp', 'ICMP ping', 'pings a host']];
+
+  /* the create form's first field; on edit the kind is fixed (locked) because changing it recreates the monitor */
+  function KindPicker(p) {
+    p = p || {}; var cur = p.value || 'heartbeat';
+    return '<fieldset class="vk-kinds"><legend class="vk-field__label">Kind</legend><div class="vk-kinds__grid">' +
+      KIND_INFO.map(function (k) {
+        return '<label class="vk-kindopt"><input type="radio" name="kind" value="' + k[0] + '"' + (k[0] === cur ? ' checked' : '') + (p.locked && k[0] !== cur ? ' disabled' : '') + '>' +
+          '<span class="vk-kindopt__card">' + KindIcon({ kind: k[0] }) + '<span class="vk-kindopt__name">' + k[1] + '</span><span class="vk-kindopt__desc">' + k[2] + '</span></span></label>';
+      }).join('') + '</div></fieldset>';
+  }
+
+  /* `body` is trusted HTML built from other components */
+  function Disclosure(p) {
+    p = p || {};
+    return '<details class="vk-details"' + (p.open ? ' open' : '') + '><summary><span class="vk-details__title">' + esc(p.title || 'Advanced') + '</span>' +
+      (p.summary ? '<span class="vk-details__sum">' + esc(p.summary) + '</span>' : '') + '</summary><div class="vk-details__body">' + (p.body || '') + '</div></details>';
+  }
+
+  var TONE_GLYPH = { ok: 'up', error: 'down', warn: 'late' };
+  /* inline result next to what caused it: a channel test, a new API key, a failed sign-in. Never a toast. `html` is trusted extra content. */
+  function Notice(p) {
+    p = p || {}; var t = p.tone || 'info';
+    return '<div class="vk-notice vk-notice--' + esc(t) + '" role="' + (t === 'error' ? 'alert' : 'status') + '">' + (TONE_GLYPH[t] ? glyph(TONE_GLYPH[t]) : '') +
+      '<div class="vk-notice__text"><p>' + (p.title ? '<b class="vk-notice__title">' + esc(p.title) + '</b> ' : '') + esc(p.text || '') + '</p>' + (p.html || '') + '</div></div>';
+  }
+
+  /* read-only code with an optional Copy; yaml: true dims the keys */
+  function Code(p) {
+    p = p || {}; var body = esc(p.text || '');
+    if (p.yaml) body = body.split('\n').map(function (l) { return l.replace(/^(\s*(?:- )?)([\w.-]+:)/, '$1<i>$2</i>'); }).join('\n');
+    return '<div class="vk-codebox"><pre class="vk-code">' + body + '</pre>' + (p.copy ? '<button type="button" class="vk-btn vk-copy" data-copy="' + esc(p.text) + '">' + esc(p.copyLabel || 'Copy') + '</button>' : '') + '</div>';
+  }
+
+  /* an inline form or group on surface: settings add/edit, the login card uses the auth layout instead. `body`/`actions` are trusted HTML */
+  function Panel(p) {
+    p = p || {};
+    return '<section class="vk-panel"' + (p.id ? ' id="' + esc(p.id) + '"' : '') + '>' + (p.title ? '<div class="vk-panel__head"><h2>' + esc(p.title) + '</h2>' + (p.note ? '<p>' + esc(p.note) + '</p>' : '') + '</div>' : '') +
+      (p.body || '') + (p.actions ? '<div class="vk-actions">' + p.actions + '</div>' : '') + '</section>';
   }
 
   function PingUrl(p) {
@@ -104,6 +197,53 @@
       '<p>Or run <span class="vk-mono">vink apply -f vink.yaml</span> to declare them all at once.</p></div>';
   }
 
+  /* project header: mark, the project switcher with its three sections, search, user. `hrefs` overrides the section links */
+  function TopBar(p) {
+    p = p || {}; var org = esc(p.org || 'w4j'), proj = esc(p.project || 'homelab'), cur = p.section || 'monitors', base = '/o/' + org + '/p/' + proj, h = p.hrefs || {};
+    var n = p.incidents || 0;
+    var link = function (id, label, href, extra) {
+      return '<a class="vk-top__link" href="' + esc(h[id] || href) + '"' + (cur === id ? ' aria-current="page"' : '') + '>' + label + (extra || '') + '</a>';
+    };
+    return '<header class="vk-top"><a class="vk-top__mark" href="' + esc(h.home || '/') + '">' + Mark({ size: 22 }) + '<span>vink</span></a>' +
+      '<nav class="vk-top__nav" aria-label="Project"><button type="button" class="vk-top__crumb" aria-haspopup="menu">' + org + ' / <b>' + proj + '</b><i class="vk-caret" aria-hidden="true"></i></button>' +
+      link('monitors', 'Monitors', base) +
+      link('incidents', 'Incidents', base + '/incidents', n ? '<span class="vk-top__count" title="' + n + ' open">' + glyph('down') + n + '</span>' : '') +
+      link('settings', 'Settings', base + '/settings/channels') + '</nav>' +
+      '<input class="vk-input vk-top__search" type="search" placeholder="Search monitors  /" aria-label="Search monitors">' +
+      '<button type="button" class="vk-top__user" aria-haspopup="menu" title="' + esc(p.user || 'j') + '">' + esc((p.user || 'j').charAt(0).toUpperCase()) + '</button></header>';
+  }
+
+  function Tabs(p) {
+    p = p || {};
+    return '<nav class="vk-tabs" aria-label="' + esc(p.label || 'Sections') + '">' + (p.tabs || []).map(function (t) {
+      return '<a class="vk-tab" href="' + esc(t.href || '#') + '"' + (t.id === p.current ? ' aria-current="page"' : '') + '>' + esc(t.label) +
+        (t.count != null ? '<span class="vk-tab__n">' + esc(t.count) + '</span>' : '') + '</a>';
+    }).join('') + '</nav>';
+  }
+
+  /* one incident: open (with Ack), acked, or resolved (muted). The name links to the monitor. */
+  function IncidentRow(p) {
+    p = p || {}; var s = p.state || 'open', done = s === 'resolved';
+    var act = s === 'open' ? Button({ label: 'Ack' }) : s === 'acked' ? '<span>acked by ' + esc(p.ackedBy || 'j') + '</span>' : '<span>resolved ' + esc(p.resolved || '') + '</span>';
+    return '<div class="vk-irow vk-irow--' + esc(s) + '">' + glyph(done ? 'up' : 'down') +
+      '<a class="vk-irow__name" href="' + esc(p.href || '#') + '"><span>' + esc(p.name) + '</span><span class="vk-row__slug">' + esc(p.slug) + '</span></a>' +
+      '<span class="vk-irow__data" title="' + esc(p.reason) + '">' + esc(p.reason) + '</span>' +
+      '<span class="vk-irow__data" title="' + esc(p.openedAbs || '') + '">' + esc(p.opened) + '</span>' +
+      '<span class="vk-irow__data' + (done ? '' : ' vk-irow__data--live') + '">' + esc(p.duration) + '</span>' +
+      '<span class="vk-irow__act">' + act + '</span></div>';
+  }
+
+  /* one row of a settings list. cells: [{text | html, size: 's'|'m'|'l', mono, ink}]; `lead`, `titleHtml`, `actions` are trusted HTML.
+     Every row in one list uses the same cell sizes so the columns line up. */
+  function SettingsRow(p) {
+    p = p || {};
+    return '<div class="vk-srow' + (p.muted ? ' vk-srow--muted' : '') + '">' + (p.lead != null ? '<span class="vk-srow__lead">' + p.lead + '</span>' : '') +
+      '<div class="vk-srow__main"><span class="vk-srow__title">' + (p.titleHtml || esc(p.title)) + '</span>' + (p.sub ? '<span class="vk-srow__sub" title="' + esc(p.sub) + '">' + esc(p.sub) + '</span>' : '') + '</div>' +
+      (p.cells || []).map(function (c) {
+        return '<span class="vk-srow__cell vk-srow__cell--' + (c.size || 'm') + (c.mono ? ' vk-srow__cell--mono' : '') + (c.ink ? ' vk-srow__cell--ink' : '') + '">' + (c.html || esc(c.text)) + '</span>';
+      }).join('') + '<span class="vk-srow__actions">' + (p.actions || '') + '</span></div>';
+  }
+
   /* behaviour: call once after htmx swaps (htmx:afterSettle) or on load */
   function wire(root) {
     root = root || document;
@@ -121,10 +261,17 @@
         else { clearTimeout(timer); }
       }, true);
     });
+    root.querySelectorAll('.vk-switch').forEach(function (s) {
+      if (s.__vk) return; s.__vk = 1;
+      s.addEventListener('click', function () { if (s.hasAttribute('hx-post')) return; var on = s.getAttribute('aria-checked') !== 'true';
+        s.setAttribute('aria-checked', on); s.querySelector('.vk-switch__word').textContent = on ? 'on' : 'off'; });
+    });
   }
 
   var w = window; w.Vink = w.Vink || {};
   var api = { Mark: Mark, StateBadge: StateBadge, Button: Button, Chip: Chip, Tag: Tag, KindIcon: KindIcon, Field: Field, PingUrl: PingUrl, Sparkline: Sparkline,
-    MonitorRow: MonitorRow, UptimeBar: UptimeBar, StatusBanner: StatusBanner, EmptyState: EmptyState, wire: wire, esc: esc };
+    MonitorRow: MonitorRow, UptimeBar: UptimeBar, StatusBanner: StatusBanner, EmptyState: EmptyState,
+    TopBar: TopBar, Tabs: Tabs, FieldRow: FieldRow, Checkbox: Checkbox, Switch: Switch, Segmented: Segmented, KindPicker: KindPicker,
+    Disclosure: Disclosure, Notice: Notice, Code: Code, Panel: Panel, IncidentRow: IncidentRow, SettingsRow: SettingsRow, wire: wire, esc: esc };
   for (var k in api) w.Vink[k] = api[k];
 })();

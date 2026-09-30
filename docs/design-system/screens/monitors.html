@@ -1,46 +1,44 @@
 <!doctype html>
-<html>
-<head><link rel="stylesheet" href="../tokens.css"><link rel="stylesheet" href="../components/bundle.css"><script src="../components/bundle.js"></script><meta charset="utf-8"><title>vink</title></head>
-<body>
-<div id="root" class=""></div>
-<script>
-  var V = window.Vink;
-  var rows = [
-    { state: 'down', name: 'Public API', slug: 'api-health', kind: 'http', last: '2 min ago \u00b7 503', points: [80,82,79,85,90,400,900,1200], tags: ['api','prod'], current: true },
-    { state: 'late', name: 'Traefik certificate', slug: 'traefik-cert', kind: 'tls', last: 'expires in 9 d', next: 'crit at 3 d', tags: ['prod'] },
-    { state: 'up', name: 'Nightly backup', slug: 'nightly-backup', kind: 'heartbeat', last: '3 h ago \u00b7 4m12s', next: 'due in 21 h', tags: ['backup','prod'] },
-    { state: 'up', name: 'Postgres', slug: 'postgres', kind: 'tcp', last: '14 s ago \u00b7 3 ms', points: [3,4,3,3,5,3,4,3,3,4,3,3], tags: ['db'] },
-    { state: 'up', name: 'w4j.nl resolves', slug: 'dns-w4j', kind: 'dns', last: '41 s ago \u00b7 12 ms', points: [12,11,14,12,12,13,11,12], tags: ['dns'] },
-    { state: 'paused', name: 'NAS reachable', slug: 'nas-ping', kind: 'icmp', last: 'paused 2 d ago', next: '', tags: ['homelab'] },
-    { state: 'new', name: 'Weekly restic check', slug: 'restic-check', kind: 'heartbeat', last: 'no pings yet', next: 'due Sun 04:00', tags: ['backup'] }
-  ];
-
-  var days = []; for (var i = 0; i < 90; i++) days.push(i === 23 ? 'late' : i === 61 ? 'down' : i < 4 ? 'none' : 'up');
-  var hours = []; for (var j = 0; j < 24; j++) hours.push(j === 21 ? 'down' : j === 22 ? 'late' : 'up');
-
-  var obs = [
-    ['down', '14:07:31', '503 Service Unavailable', '1204 ms'], ['down', '14:07:26', '503 Service Unavailable', '1198 ms'],
-    ['late', '14:07:01', '503 \u00b7 confirming (1 of 3)', '980 ms'], ['up', '14:06:31', '200 OK \u00b7 $.status = ok', '84 ms'], ['up', '14:06:01', '200 OK \u00b7 $.status = ok', '81 ms']];
-  document.getElementById('root').innerHTML =
-    '<header class="vk-top"><span class="vk-top__mark">' + V.Mark({ size: 22 }) + '<span>vink</span></span>' +
-    '<span class="vk-top__crumb">w4j / <b>homelab</b></span>' +
-    '<input class="vk-input vk-top__search" placeholder="Search monitors  /" aria-label="Search monitors">' +
-    '<span class="vk-top__user">J</span></header>' +
-    '<div class="vk-page"><main class="vk-main">' +
-      '<div class="vk-main__head"><h1>Monitors</h1><span class="vk-muted vk-mono">7</span><span style="margin-left:auto">' + V.Button({ label: 'Create monitor', variant: 'primary' }) + '</span></div>' +
-      '<div class="vk-chips">' + V.Chip({ label: 'up', state: 'up', count: 3 }) + V.Chip({ label: 'late', state: 'late', count: 1 }) + V.Chip({ label: 'down', state: 'down', count: 1 }) +
-        V.Chip({ label: 'paused', state: 'paused', count: 1 }) + V.Chip({ label: 'prod', count: 3 }) + V.Chip({ label: 'backup', count: 2 }) + '</div>' +
-      '<div class="vk-list">' + rows.map(V.MonitorRow).join('') + '</div>' +
-    '</main><aside class="vk-drawer" id="drawer">' +
-      '<div class="vk-drawer__head"><h1 class="vk-drawer__title">Public API <span class="vk-row__slug">api-health</span></h1>' +
-        '<div class="vk-inline" style="padding:0">' + V.StateBadge({ state: 'down', pill: true, since: 'for 4 min' }) + V.Tag({ label: 'api' }) + V.Tag({ label: 'prod' }) + '</div>' +
-        '<div class="vk-drawer__actions">' + V.Button({ label: 'Check now' }) + V.Button({ label: 'Pause' }) + V.Button({ label: 'Edit' }) + '</div></div>' +
-      '<section><h2>Target</h2><code class="vk-ping__url" style="display:flex">GET https://api.example.com/healthz</code>' +
-        '<p class="vk-muted" style="margin:8px 0 0;font-size:12px">every 30 s \u00b7 timeout 5 s \u00b7 down after 3 failures \u00b7 confirm 2\u00d7</p></section>' +
-      '<section><h2>Last 24 hours</h2>' + V.UptimeBar({ days: hours, compact: true, label: 'last 24 hours', legend: ['24 h ago', '98.6% up', 'now'] }) + '</section>' +
-      '<section><h2>Recent observations</h2>' + obs.map(function (o) { return '<div class="vk-obs"><i class="vk-glyph vk-glyph--' + o[0] + '"></i><span>' + o[1] + '</span><span>' + o[2] + '</span><span>' + o[3] + '</span></div>'; }).join('') + '</section>' +
-    '</aside></div>';
-  V.wire(document);
-</script>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Monitors · vink</title>
+<link rel="stylesheet" href="../tokens.css">
+<link rel="stylesheet" href="../components/bundle.css">
+</head>
+<body class="vk-app">
+<header class="vk-top"><a class="vk-top__mark" href="monitors.html"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><g stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" fill="none"><path d="M8 3.2 H6 a2.2 2.2 0 0 0 -2.2 2.2 V18.6 a2.2 2.2 0 0 0 2.2 2.2 H8"/><path d="M16 3.2 H18 a2.2 2.2 0 0 1 2.2 2.2 V18.6 a2.2 2.2 0 0 1 -2.2 2.2 H16"/></g><path d="M7.5 10.1 L10.5 12.9 L16.5 7.1" stroke="currentColor" stroke-width="2.9" stroke-linecap="round" stroke-linejoin="round" fill="none"/><rect x="9.6" y="16.2" width="4.8" height="2.2" rx="1.1" fill="currentColor"/></svg><span>vink</span></a><nav class="vk-top__nav" aria-label="Project"><button type="button" class="vk-top__crumb" aria-haspopup="menu">w4j / <b>homelab</b><i class="vk-caret" aria-hidden="true"></i></button><a class="vk-top__link" href="monitors.html" aria-current="page">Monitors</a><a class="vk-top__link" href="incidents.html">Incidents<span class="vk-top__count" title="2 open"><i class="vk-glyph vk-glyph--down" aria-hidden="true"></i>2</span></a><a class="vk-top__link" href="settings-channels.html">Settings</a></nav><input class="vk-input vk-top__search" type="search" placeholder="Search monitors  /" aria-label="Search monitors"><button type="button" class="vk-top__user" aria-haspopup="menu" title="j">J</button></header>
+<div class="vk-page">
+<main class="vk-main">
+<div class="vk-main__head"><h1>Monitors</h1><span class="vk-muted vk-mono">7</span><span class="vk-main__actions"><a class="vk-btn vk-btn--primary" href="monitor-new-heartbeat.html">Create monitor</a></span></div>
+<div class="vk-chips"><button type="button" class="vk-chip" aria-pressed="false"><i class="vk-glyph vk-glyph--up" aria-hidden="true"></i>up<span class="vk-chip__n">2</span></button><button type="button" class="vk-chip" aria-pressed="false"><i class="vk-glyph vk-glyph--late" aria-hidden="true"></i>late<span class="vk-chip__n">1</span></button><button type="button" class="vk-chip" aria-pressed="false"><i class="vk-glyph vk-glyph--down" aria-hidden="true"></i>down<span class="vk-chip__n">2</span></button><button type="button" class="vk-chip" aria-pressed="false"><i class="vk-glyph vk-glyph--paused" aria-hidden="true"></i>paused<span class="vk-chip__n">1</span></button><button type="button" class="vk-chip" aria-pressed="false">prod<span class="vk-chip__n">4</span></button><button type="button" class="vk-chip" aria-pressed="false">backup<span class="vk-chip__n">2</span></button></div>
+<div class="vk-list">
+<a class="vk-row" href="monitors.html"><i class="vk-glyph vk-glyph--down vk-row__glyph" aria-hidden="true"></i><span class="vk-row__name"><span>Postgres</span><span class="vk-row__slug">postgres</span></span><span class="vk-kind" title="tcp"><svg viewBox="0 0 16 16" role="img" aria-label="tcp"><g stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"><circle cx="3.6" cy="8" r="1.9"/><circle cx="12.4" cy="8" r="1.9"/><path d="M5.6 8 H10.4"/></g></svg></span><span class="vk-row__data vk-row__data--down" title="Mon 28 Sep 13:51:04 CEST">20 min ago · refused</span><svg class="vk-spark vk-spark--down" viewBox="0 0 96 20" preserveAspectRatio="none" aria-hidden="true"><polyline points="0.0,18.0 8.7,16.5 17.5,18.0 26.2,18.0 34.9,15.1 43.6,18.0 52.4,16.5 61.1,18.0 69.8,18.0 78.5,16.5 87.3,9.3 96.0,2.0" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/><circle cx="96.0" cy="2.0" r="2" fill="currentColor"/></svg><span class="vk-row__tags"><span class="vk-tag">db</span><span class="vk-tag">prod</span></span></a>
+<a class="vk-row" href="monitors.html" aria-current="true"><i class="vk-glyph vk-glyph--down vk-row__glyph" aria-hidden="true"></i><span class="vk-row__name"><span>Public API</span><span class="vk-row__slug">api-health</span></span><span class="vk-kind" title="http"><svg viewBox="0 0 16 16" role="img" aria-label="http"><g stroke="currentColor" stroke-width="1.5" fill="none"><circle cx="8" cy="8" r="5.75"/><ellipse cx="8" cy="8" rx="2.4" ry="5.75"/><path d="M2.4 8 H13.6" stroke-linecap="round"/></g></svg></span><span class="vk-row__data vk-row__data--down" title="Mon 28 Sep 14:07:31 CEST">2 min ago · 503</span><svg class="vk-spark vk-spark--down" viewBox="0 0 96 20" preserveAspectRatio="none" aria-hidden="true"><polyline points="0.0,18.0 13.7,18.0 27.4,18.0 41.1,17.9 54.9,17.8 68.6,13.4 82.3,6.3 96.0,2.0" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/><circle cx="96.0" cy="2.0" r="2" fill="currentColor"/></svg><span class="vk-row__tags"><span class="vk-tag">api</span><span class="vk-tag">prod</span></span></a>
+<a class="vk-row" href="monitors.html"><i class="vk-glyph vk-glyph--late vk-row__glyph" aria-hidden="true"></i><span class="vk-row__name"><span>Traefik certificate</span><span class="vk-row__slug">traefik-cert</span></span><span class="vk-kind" title="tls"><svg viewBox="0 0 16 16" role="img" aria-label="tls"><g stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"><rect x="3.4" y="7.2" width="9.2" height="6.6" rx="1.6"/><path d="M5.6 7.2 V5.2 a2.4 2.4 0 0 1 4.8 0 V7.2"/></g></svg></span><span class="vk-row__data vk-row__data--late" title="Mon 28 Sep 14:00:00 CEST">expires in 9 d</span><span class="vk-row__data">crit at 3 d</span><span class="vk-row__tags"><span class="vk-tag">prod</span></span></a>
+<a class="vk-row" href="monitors.html"><i class="vk-glyph vk-glyph--up vk-row__glyph" aria-hidden="true"></i><span class="vk-row__name"><span>Nightly backup</span><span class="vk-row__slug">nightly-backup</span></span><span class="vk-kind" title="heartbeat"><svg viewBox="0 0 16 16" role="img" aria-label="heartbeat"><path d="M1.5 9 H4.4 L6.4 4 L9.4 12.5 L11.1 8 H14.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg></span><span class="vk-row__data" title="Mon 28 Sep 04:42:10 CEST">10 h ago · 4m12s</span><span class="vk-row__data">due in 13 h</span><span class="vk-row__tags"><span class="vk-tag">backup</span><span class="vk-tag">prod</span></span></a>
+<a class="vk-row" href="monitors.html"><i class="vk-glyph vk-glyph--up vk-row__glyph" aria-hidden="true"></i><span class="vk-row__name"><span>w4j.nl resolves</span><span class="vk-row__slug">dns-w4j</span></span><span class="vk-kind" title="dns"><svg viewBox="0 0 16 16" role="img" aria-label="dns"><g stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M5 2.2 V13.8"/><path d="M5 3.6 H11.2 L13.2 5.5 L11.2 7.4 H5"/></g></svg></span><span class="vk-row__data" title="Mon 28 Sep 14:10:21 CEST">41 s ago · 12 ms</span><svg class="vk-spark" viewBox="0 0 96 20" preserveAspectRatio="none" aria-hidden="true"><polyline points="0.0,12.7 13.7,18.0 27.4,2.0 41.1,12.7 54.9,12.7 68.6,7.3 82.3,18.0 96.0,12.7" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/><circle cx="96.0" cy="12.7" r="2" fill="currentColor"/></svg><span class="vk-row__tags"><span class="vk-tag">dns</span></span></a>
+<a class="vk-row" href="monitors.html"><i class="vk-glyph vk-glyph--paused vk-row__glyph" aria-hidden="true"></i><span class="vk-row__name"><span>NAS reachable</span><span class="vk-row__slug">nas-ping</span></span><span class="vk-kind" title="icmp"><svg viewBox="0 0 16 16" role="img" aria-label="icmp"><g stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"><path d="M3.2 8.6 a4.2 4.2 0 0 1 4.2 4.2"/><path d="M3.2 4.4 a8.4 8.4 0 0 1 8.4 8.4"/></g><circle cx="3.6" cy="12.4" r="1.4" fill="currentColor"/></svg></span><span class="vk-row__data" title="Sat 26 Sep 11:20:00 CEST">paused 2 d ago</span><span class="vk-row__data"></span><span class="vk-row__tags"><span class="vk-tag">homelab</span></span></a>
+<a class="vk-row" href="monitors.html"><i class="vk-glyph vk-glyph--new vk-row__glyph" aria-hidden="true"></i><span class="vk-row__name"><span>Weekly restic check</span><span class="vk-row__slug">restic-check</span></span><span class="vk-kind" title="heartbeat"><svg viewBox="0 0 16 16" role="img" aria-label="heartbeat"><path d="M1.5 9 H4.4 L6.4 4 L9.4 12.5 L11.1 8 H14.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg></span><span class="vk-row__data" title="">no pings yet</span><span class="vk-row__data">due Sun 04:00</span><span class="vk-row__tags"><span class="vk-tag">backup</span></span></a>
+</div>
+</main>
+<aside class="vk-drawer" id="drawer">
+<div class="vk-drawer__head"><h1 class="vk-drawer__title">Public API <span class="vk-row__slug">api-health</span></h1>
+<div class="vk-inline vk-inline--flush"><span class="vk-state vk-state--down vk-state--pill"><i class="vk-glyph vk-glyph--down" aria-hidden="true"></i>down <span class="vk-state__since">for 4 min</span></span><span class="vk-tag">api</span><span class="vk-tag">prod</span></div>
+<div class="vk-drawer__actions"><button type="button" class="vk-btn">Check now</button><button type="button" class="vk-btn">Pause</button><button type="button" class="vk-btn">Edit</button></div></div>
+<section><h2>Target</h2><code class="vk-ping__url">GET https://api.example.com/healthz</code><p class="vk-field__hint vk-gap-2">every 30 s · timeout 5 s · down after 3 failures · confirm 2×</p></section>
+<section><h2>Last 24 hours</h2><div><div class="vk-uptime vk-uptime--compact" role="img" aria-label="last 24 hours"><span class="vk-uptime__cell"></span><span class="vk-uptime__cell"></span><span class="vk-uptime__cell"></span><span class="vk-uptime__cell"></span><span class="vk-uptime__cell"></span><span class="vk-uptime__cell"></span><span class="vk-uptime__cell"></span><span class="vk-uptime__cell"></span><span class="vk-uptime__cell"></span><span class="vk-uptime__cell"></span><span class="vk-uptime__cell"></span><span class="vk-uptime__cell"></span><span class="vk-uptime__cell"></span><span class="vk-uptime__cell"></span><span class="vk-uptime__cell"></span><span class="vk-uptime__cell"></span><span class="vk-uptime__cell"></span><span class="vk-uptime__cell"></span><span class="vk-uptime__cell"></span><span class="vk-uptime__cell"></span><span class="vk-uptime__cell"></span><span class="vk-uptime__cell vk-uptime__cell--down"></span><span class="vk-uptime__cell vk-uptime__cell--late"></span><span class="vk-uptime__cell vk-uptime__cell--down"></span></div><div class="vk-uptime__legend"><span>24 h ago</span><span>97.9% up</span><span>now</span></div></div></section>
+<section><h2>Recent observations</h2>
+<div class="vk-obs"><i class="vk-glyph vk-glyph--down" aria-hidden="true"></i><span>14:07:31</span><span>503 Service Unavailable</span><span>1204 ms</span></div>
+<div class="vk-obs"><i class="vk-glyph vk-glyph--down" aria-hidden="true"></i><span>14:07:26</span><span>503 Service Unavailable</span><span>1198 ms</span></div>
+<div class="vk-obs"><i class="vk-glyph vk-glyph--late" aria-hidden="true"></i><span>14:07:01</span><span>503 · confirming (1 of 3)</span><span>980 ms</span></div>
+<div class="vk-obs"><i class="vk-glyph vk-glyph--up" aria-hidden="true"></i><span>14:06:31</span><span>200 OK · $.status = ok</span><span>84 ms</span></div>
+<div class="vk-obs"><i class="vk-glyph vk-glyph--up" aria-hidden="true"></i><span>14:06:01</span><span>200 OK · $.status = ok</span><span>81 ms</span></div>
+</section>
+</aside>
+</div>
+<script src="../components/bundle.js"></script>
+<script>Vink.wire(document);</script>
 </body>
 </html>

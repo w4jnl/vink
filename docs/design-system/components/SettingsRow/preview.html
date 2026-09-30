@@ -1,0 +1,15 @@
+<!-- @dsCard group="Settings" height=128 -->
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>vink</title></head>
+<body>
+<div id="root" class=""></div>
+<script>
+  var V = window.Vink;
+  document.getElementById('root').innerHTML = '<div class="vk-srows">' +
+    V.SettingsRow({ title: 'ops mail', sub: 'smtp \u00b7 ops@example.com', cells: [{ html: V.Switch({ checked: true, label: 'ops mail enabled' }), size: 's' }, { text: '2 routes' }, { text: 'sent 3 h ago', mono: true }], actions: V.Button({ label: 'Test' }) + V.Button({ label: 'Edit' }) }) +
+    V.SettingsRow({ title: 'alertmanager', muted: true, sub: 'alertmanager \u00b7 http://am.lan:9093', cells: [{ html: V.Switch({ checked: false, label: 'alertmanager enabled' }), size: 's' }, { text: 'no routes' }, { text: 'never sent', mono: true }], actions: V.Button({ label: 'Test' }) + V.Button({ label: 'Edit' }) }) + '</div>';
+  V.wire(document);
+</script>
+</body>
+</html>

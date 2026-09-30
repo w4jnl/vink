@@ -1,0 +1,15 @@
+<!-- @dsCard group="Forms" height=104 -->
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>vink</title></head>
+<body>
+<div id="root" class="vk-stack"></div>
+<script>
+  var V = window.Vink;
+  document.getElementById('root').innerHTML =
+    V.Segmented({ name: 's', label: 'Schedule type', options: [{ value: 'period', label: 'Period' }, { value: 'cron', label: 'Cron' }, { value: 'oncalendar', label: 'OnCalendar' }], value: 'cron' }) +
+    V.Segmented({ name: 'd', label: 'Days', multi: true, mono: true, options: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'], value: ['Sat', 'Sun'] });
+  V.wire(document);
+</script>
+</body>
+</html>

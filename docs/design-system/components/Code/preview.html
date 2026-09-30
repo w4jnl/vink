@@ -1,0 +1,13 @@
+<!-- @dsCard group="Feedback" height=152 -->
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>vink</title></head>
+<body>
+<div id="root" class="vk-stack"></div>
+<script>
+  var V = window.Vink;
+  document.getElementById('root').innerHTML = V.Code({ text: 'slug: api-health\nkind: http\ninterval: 30s\nhttp:\n  url: https://api.example.com/healthz', yaml: true, copy: true, copyLabel: 'Copy YAML' });
+  V.wire(document);
+</script>
+</body>
+</html>

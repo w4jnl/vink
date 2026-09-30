@@ -44,8 +44,10 @@ Every w4jnl tool uses the same system: the bracket frame, one glyph inside it, J
 
 ## Layout and components
 
-- The UI is server-rendered HTML with htmx. The component functions in `components/bundle.js` return the exact markup each Go template partial must produce, and `bundle.css` styles it. There is no framework.
-- Simplicity budget: the top bar holds four things (mark, org/project switcher, search, user). A page has at most one filter bar, one list and one drawer. A form shows at most eight fields before one `Advanced` disclosure. Anything that does not fit belongs in the API or the YAML `apply` file.
+- The UI is server-rendered HTML with htmx. The component functions in `components/bundle.js` return the exact markup each Go template partial must produce, and `bundle.css` styles it. There is no framework. The UI sends no inline styles (the CSP forbids them), so layout comes from `vk-*` classes only.
+- Simplicity budget: the top bar holds four things: the mark, the project switcher with its three sections (Monitors, Incidents with the open count, Settings), search, and the user menu. A page has at most one filter bar, one list and one drawer. A form shows at most eight fields before one `Advanced` disclosure. Anything that does not fit belongs in the API or the YAML `apply` file.
+- Forms: create and edit a monitor in the drawer (`…/m/new`, `…/m/{slug}/edit`), kind first, then only that kind's fields, then `Advanced`, then `As YAML`. Settings add and edit inline in a `Panel` that replaces the row; Save is the one primary. Validation errors sit under their field; results of an action (a test, a new key) are a `Notice` under the thing they are about.
+- Sign-in, the proxy's 403 and "no org yet" are one card on `ground` with the mark above it and no top bar. They say what happened and what to do next, and show a request id instead of the reason, which goes to the log.
 - The monitor list is 44px rows (`row-h`) with hairlines and no cards or zebra stripes. Sort by down, late, then name. The drawer (`drawer-w`, `surface`, `shadow-drawer`) is the only thing that casts a shadow.
 - No modals. Destructive actions arm in place (`data-confirm`), and forms show errors inline.
 - Live parts poll only while the tab is visible: list 15 s, drawer 10 s, status page 60 s. Use `ETag` so unchanged content costs nothing.
@@ -83,3 +85,9 @@ Every w4jnl tool uses the same system: the bracket frame, one glyph inside it, J
 - Tiles: favicon, favicon-down, avatar (460px) and app icon (512px) on the `brand` tile at `radius-tile`.
 - Banners: the README hero (1280×320) and social card (1280×640), in flok's layouts on `ground` with the 6px `accent` bar.
 - Icons: state and kind glyphs.
+
+## Consuming this system
+
+- Files: `tokens.css` (every token as a CSS variable; light by default, dark by `prefers-color-scheme`, and `data-theme="light"` or `"dark"` forces a theme on `<html>` or on any element), `components/bundle.css` (every `vk-*` class), `components/bundle.js` (namespace `Vink`: functions that return HTML strings, plus `Vink.wire()` for Copy, two-step confirm and local switches). Load `tokens.css`, then `bundle.css`, then `bundle.js`.
+- The functions are not React components and cannot be mounted with `x-import`. On a design canvas, write the `vk-*` markup they return (the screens in the handoff kit's `docs/design-system/screens/` are that markup) and link `tokens.css` and `components/bundle.css`. Put `class="vk-app"` and `data-theme` on the root element, and give JetBrains Mono its `@font-face` from uploaded font files.
+- In the Go app, each function becomes an `html/template` partial with the same markup; `bundle.css`, `tokens.css`, the fonts and a small `wire` script ship in `static/`.

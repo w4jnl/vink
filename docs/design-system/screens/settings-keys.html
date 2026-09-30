@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Settings: keys · vink</title>
+<link rel="stylesheet" href="../tokens.css">
+<link rel="stylesheet" href="../components/bundle.css">
+</head>
+<body class="vk-app">
+<header class="vk-top"><a class="vk-top__mark" href="monitors.html"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><g stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" fill="none"><path d="M8 3.2 H6 a2.2 2.2 0 0 0 -2.2 2.2 V18.6 a2.2 2.2 0 0 0 2.2 2.2 H8"/><path d="M16 3.2 H18 a2.2 2.2 0 0 1 2.2 2.2 V18.6 a2.2 2.2 0 0 1 -2.2 2.2 H16"/></g><path d="M7.5 10.1 L10.5 12.9 L16.5 7.1" stroke="currentColor" stroke-width="2.9" stroke-linecap="round" stroke-linejoin="round" fill="none"/><rect x="9.6" y="16.2" width="4.8" height="2.2" rx="1.1" fill="currentColor"/></svg><span>vink</span></a><nav class="vk-top__nav" aria-label="Project"><button type="button" class="vk-top__crumb" aria-haspopup="menu">w4j / <b>homelab</b><i class="vk-caret" aria-hidden="true"></i></button><a class="vk-top__link" href="monitors.html">Monitors</a><a class="vk-top__link" href="incidents.html">Incidents<span class="vk-top__count" title="2 open"><i class="vk-glyph vk-glyph--down" aria-hidden="true"></i>2</span></a><a class="vk-top__link" href="settings-channels.html" aria-current="page">Settings</a></nav><input class="vk-input vk-top__search" type="search" placeholder="Search monitors  /" aria-label="Search monitors"><button type="button" class="vk-top__user" aria-haspopup="menu" title="j">J</button></header>
+<div class="vk-page vk-page--full">
+<main class="vk-main">
+<div class="vk-main__head"><h1>Settings</h1></div>
+<nav class="vk-tabs" aria-label="Settings"><a class="vk-tab" href="settings-channels.html">Channels<span class="vk-tab__n">3</span></a><a class="vk-tab" href="settings-routes.html">Routes<span class="vk-tab__n">3</span></a><a class="vk-tab" href="settings-maintenance.html">Maintenance<span class="vk-tab__n">3</span></a><a class="vk-tab" href="settings-pages.html">Status pages<span class="vk-tab__n">2</span></a><a class="vk-tab" href="settings-keys.html" aria-current="page">Keys</a></nav>
+<section class="vk-section"><h2>Ping key</h2><p class="vk-lede">Every ping URL in homelab contains this key. It lets anyone who has it ping these monitors, and nothing else.</p><div class="vk-field"><span class="vk-field__label">Ping key</span><div class="vk-field__row"><code class="vk-ping__url">k7f3q9x2mzr4p8w6a2c5vt</code><button type="button" class="vk-btn vk-copy" data-copy="k7f3q9x2mzr4p8w6a2c5vt">Copy</button><button type="button" class="vk-btn vk-btn--danger" data-confirm="Really rotate?">Rotate key</button></div><span class="vk-field__hint">After a rotate, the old key keeps working for 24 h. Only admins can rotate.</span></div></section>
+<section class="vk-section"><h2>API keys <span>3</span></h2><p class="vk-lede">Keys act as this project in the API and the CLI (<span class="vk-mono">vink ctx add</span>). ro keys read; rw keys can change monitors, channels and routes.</p>
+<div class="vk-notice vk-notice--ok" role="status"><i class="vk-glyph vk-glyph--up" aria-hidden="true"></i><div class="vk-notice__text"><p><b class="vk-notice__title">Key created.</b> Copy it now: vink stores only a hash and cannot show it again.</p><div class="vk-field__row"><code class="vk-ping__url">vk_9Tq2x7Lm4RbW8cZ1nE5sK3hV6yU0dP</code><button type="button" class="vk-btn vk-copy" data-copy="vk_9Tq2x7Lm4RbW8cZ1nE5sK3hV6yU0dP">Copy</button></div></div></div>
+<form class="vk-inlineform" action="#" method="post"><div class="vk-field"><label class="vk-field__label" for="key_name">Name</label><input class="vk-input" id="key_name" name="key_name" type="text" value="" placeholder="what uses this key"></div><div class="vk-field"><span class="vk-field__label">Access</span><div class="vk-seg vk-seg--mono" role="radiogroup" aria-label="Access"><label class="vk-seg__opt"><input type="radio" name="key_access" value="ro" checked><span>ro</span></label><label class="vk-seg__opt"><input type="radio" name="key_access" value="rw"><span>rw</span></label></div></div><button type="submit" class="vk-btn vk-btn--primary">Create key</button></form>
+<div class="vk-srows">
+<div class="vk-srow"><div class="vk-srow__main"><span class="vk-srow__title">ci deploy</span><span class="vk-srow__sub" title="vk_9Tq2x7Lm…">vk_9Tq2x7Lm…</span></div><span class="vk-srow__cell vk-srow__cell--s"><span class="vk-tag">rw</span></span><span class="vk-srow__cell vk-srow__cell--m">j · today</span><span class="vk-srow__cell vk-srow__cell--m vk-srow__cell--mono">never used</span><span class="vk-srow__actions"><button type="button" class="vk-btn vk-btn--danger" data-confirm="Really revoke?">Revoke</button></span></div>
+<div class="vk-srow"><div class="vk-srow__main"><span class="vk-srow__title">grafana</span><span class="vk-srow__sub" title="vk_3hPq0aZe…">vk_3hPq0aZe…</span></div><span class="vk-srow__cell vk-srow__cell--s"><span class="vk-tag">ro</span></span><span class="vk-srow__cell vk-srow__cell--m">j · 12 Aug</span><span class="vk-srow__cell vk-srow__cell--m vk-srow__cell--mono">used 2 min ago</span><span class="vk-srow__actions"><button type="button" class="vk-btn vk-btn--danger" data-confirm="Really revoke?">Revoke</button></span></div>
+<div class="vk-srow"><div class="vk-srow__main"><span class="vk-srow__title">laptop cli</span><span class="vk-srow__sub" title="vk_Wm81cK4t…">vk_Wm81cK4t…</span></div><span class="vk-srow__cell vk-srow__cell--s"><span class="vk-tag">rw</span></span><span class="vk-srow__cell vk-srow__cell--m">j · 3 Jul</span><span class="vk-srow__cell vk-srow__cell--m vk-srow__cell--mono">used 5 d ago</span><span class="vk-srow__actions"><button type="button" class="vk-btn vk-btn--danger" data-confirm="Really revoke?">Revoke</button></span></div>
+</div>
+</section>
+</main>
+</div>
+<script src="../components/bundle.js"></script>
+<script>Vink.wire(document);</script>
+</body>
+</html>
