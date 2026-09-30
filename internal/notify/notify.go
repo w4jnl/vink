@@ -156,7 +156,8 @@ type Registry struct {
 	notifiers map[domain.ChannelKind]Notifier
 }
 
-// NewRegistry registers the phase 0 notifiers: smtp, webhook and ntfy.
+// NewRegistry registers every notifier: smtp, webhook, ntfy, gotify,
+// matrix, slackhook and alertmanager.
 func NewRegistry(o Options) (*Registry, error) {
 	client, err := newHTTPClient(o)
 	if err != nil {
@@ -166,6 +167,10 @@ func NewRegistry(o Options) (*Registry, error) {
 	r.Register(&SMTP{cfg: o.SMTP, dial: dialSMTP})
 	r.Register(&Webhook{client: client})
 	r.Register(&Ntfy{client: client})
+	r.Register(&Gotify{client: client})
+	r.Register(&Matrix{client: client})
+	r.Register(&Slackhook{client: client})
+	r.Register(&Alertmanager{client: client})
 	return r, nil
 }
 

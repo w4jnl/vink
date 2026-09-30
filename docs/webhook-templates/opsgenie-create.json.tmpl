@@ -1,0 +1,15 @@
+{
+  "message": {{json .Title}},
+  "alias": "vink-{{.Project.Slug}}-{{.Monitor.Slug}}",
+  "description": {{json .Text}},
+  "priority": "{{if eq .Event "down"}}P1{{else if eq .Event "late"}}P3{{else}}P5{{end}}",
+  "source": "vink",
+  "entity": {{json .Monitor.Slug}},
+  "tags": {{json .Monitor.Tags}},
+  "details": {
+    "project": {{json .Project.Slug}},
+    "monitor": {{json .Monitor.Name}},
+    "reason": {{json .Reason}},
+    "url": {{json .Links.Monitor}}
+  }
+}

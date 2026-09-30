@@ -1,0 +1,14 @@
+{
+  "username": "vink",
+  "content": {{json .Title}},
+  "embeds": [
+    {
+      "title": {{json .Monitor.Name}},
+      "url": {{json .Links.Monitor}},
+      "description": {{json .Text}},
+      "color": {{if eq .Event "down"}}14704964{{else if eq .Event "late"}}14660375{{else if eq .Event "up"}}4508689{{else}}10461087{{end}},
+      "footer": {"text": {{json (print "vink · " .Project.Slug)}}},
+      "timestamp": {{json .At}}
+    }
+  ]
+}

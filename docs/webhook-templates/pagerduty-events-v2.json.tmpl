@@ -1,0 +1,24 @@
+{
+  "routing_key": "YOUR_ROUTING_KEY",
+  "event_action": "{{if eq .Event "up"}}resolve{{else}}trigger{{end}}",
+  "dedup_key": "vink-{{.Project.Slug}}-{{.Monitor.Slug}}",
+  "client": "vink",
+  "client_url": {{json .Links.Monitor}},
+  "payload": {
+    "summary": {{json .Title}},
+    "source": {{json .Project.Slug}},
+    "severity": "{{if eq .Event "down"}}critical{{else if eq .Event "late"}}warning{{else}}info{{end}}",
+    "timestamp": {{json .At}},
+    "component": {{json .Monitor.Slug}},
+    "group": {{json .Project.Slug}},
+    "class": "vink",
+    "custom_details": {
+      "monitor": {{json .Monitor.Name}},
+      "kind": {{json .Monitor.Kind}},
+      "tags": {{json .Monitor.Tags}},
+      "reason": {{json .Reason}},
+      "text": {{json .Text}}
+    }
+  },
+  "links": [{"href": {{json .Links.Monitor}}, "text": "Open in vink"}]
+}

@@ -3,8 +3,10 @@ package web
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -96,10 +98,10 @@ type settingsOpts struct {
 
 var settingsTabs = []ui.Tab{{ID: "channels", Label: "Channels"}, {ID: "routes", Label: "Routes"}, {ID: "maintenance", Label: "Maintenance"}, {ID: "pages", Label: "Status pages"}, {ID: "keys", Label: "Keys"}}
 
-var channelKinds = ui.Opts("webhook", "webhook", "ntfy", "ntfy", "smtp", "smtp")
+var channelKinds = ui.Opts("webhook", "webhook", "ntfy", "ntfy", "smtp", "smtp", "gotify", "gotify", "matrix", "matrix", "slackhook", "slackhook", "alertmanager", "alertmanager")
 
 // channelFields are the form names a channel panel can post, all kinds together.
-var channelFields = []string{"name", "url", "topic", "token", "priority", "method", "headers", "body_template", "to", "from"}
+var channelFields = []string{"name", "url", "topic", "token", "priority", "method", "headers", "body_template", "to", "from", "homeserver", "access_token", "room_id", "labels"}
 
 func (h *Web) settingsRedirect(c *reqCtx) error {
 	http.Redirect(c.w, c.r, c.projectPath()+"/settings/channels", http.StatusSeeOther)
@@ -286,6 +288,16 @@ func channelSummary(ch *domain.Channel) string {
 		u, _ := m["url"].(string)
 		t, _ := m["topic"].(string)
 		return strings.TrimRight(u, "/") + "/" + t
+	case domain.ChannelGotify, domain.ChannelAlertmanager:
+		if u, ok := m["url"].(string); ok {
+			return u
+		}
+	case domain.ChannelMatrix:
+		if r, ok := m["room_id"].(string); ok {
+			return r
+		}
+	case domain.ChannelSlackhook:
+		return "incoming webhook"
 	case domain.ChannelSMTP:
 		if to, ok := m["to"].([]any); ok {
 			parts := make([]string, 0, len(to))
@@ -465,6 +477,37 @@ func fillChannelValues(v map[string]string, ch *domain.Channel) {
 		if hs, ok := m["headers"].(map[string]any); ok && len(hs) > 0 {
 			v["headers"] = "***"
 		}
+	case domain.ChannelGotify:
+		v["url"] = str("url")
+		if str("token") != "" {
+			v["token"] = "***"
+		}
+		if n, ok := m["priority"].(float64); ok && n > 0 {
+			v["priority"] = strconv.Itoa(int(n))
+		}
+	case domain.ChannelMatrix:
+		v["homeserver"], v["room_id"] = str("homeserver"), str("room_id")
+		if str("access_token") != "" {
+			v["access_token"] = "***"
+		}
+	case domain.ChannelSlackhook:
+		if str("url") != "" {
+			v["url"] = "***"
+		}
+	case domain.ChannelAlertmanager:
+		v["url"] = str("url")
+		if ls, ok := m["labels"].(map[string]any); ok && len(ls) > 0 {
+			keys := make([]string, 0, len(ls))
+			for k := range ls {
+				keys = append(keys, k)
+			}
+			sort.Strings(keys)
+			lines := make([]string, 0, len(keys))
+			for _, k := range keys {
+				lines = append(lines, k+": "+fmt.Sprint(ls[k]))
+			}
+			v["labels"] = strings.Join(lines, "\n")
+		}
 	case domain.ChannelSMTP:
 		v["from"] = str("from")
 		if to, ok := m["to"].([]any); ok {
@@ -522,6 +565,38 @@ func channelConfig(kind string, v map[string]string, errs map[string]string) jso
 		}
 		if v["body_template"] != "" {
 			cfg["body_template"] = v["body_template"]
+		}
+	case "gotify":
+		cfg["url"], cfg["token"] = v["url"], v["token"]
+		if v["priority"] != "" {
+			if n, err := strconv.Atoi(v["priority"]); err != nil {
+				errs["priority"] = "A number from 0 to 10."
+			} else {
+				cfg["priority"] = n
+			}
+		}
+	case "matrix":
+		cfg["homeserver"], cfg["access_token"], cfg["room_id"] = v["homeserver"], v["access_token"], v["room_id"]
+	case "slackhook":
+		cfg["url"] = v["url"]
+	case "alertmanager":
+		cfg["url"] = v["url"]
+		if ls := v["labels"]; ls != "" {
+			m := map[string]string{}
+			for _, line := range strings.Split(ls, "\n") {
+				if line = strings.TrimSpace(line); line == "" {
+					continue
+				}
+				name, val, ok := strings.Cut(line, ":")
+				if !ok || strings.TrimSpace(name) == "" {
+					errs["labels"] = "One name: value per line."
+					break
+				}
+				m[strings.TrimSpace(name)] = strings.TrimSpace(val)
+			}
+			if len(m) > 0 {
+				cfg["labels"] = m
+			}
 		}
 	case "smtp":
 		to := []string{}

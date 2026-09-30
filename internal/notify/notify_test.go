@@ -2,6 +2,7 @@ package notify
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"io"
@@ -9,9 +10,12 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/smtp"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
+	"text/template"
 	"time"
 
 	"github.com/w4jnl/vink/internal/domain"
@@ -59,7 +63,7 @@ func TestRegistry(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if kinds := r.Kinds(); len(kinds) != 3 || kinds[0] != domain.ChannelNtfy {
+	if kinds := r.Kinds(); len(kinds) != 7 || kinds[0] != domain.ChannelAlertmanager {
 		t.Errorf("kinds: %v", kinds)
 	}
 	if err := r.Validate("gotify", []byte(`{}`)); err == nil {
@@ -334,4 +338,119 @@ func TestSMTPErrors(t *testing.T) {
 		t.Errorf("starttls required: %v", err)
 	}
 	_ = smtp.PlainAuth
+}
+
+// capture records the one request a notifier sends.
+type capture struct {
+	mu     sync.Mutex
+	method string
+	path   string
+	hdr    http.Header
+	body   string
+}
+
+func captureServer(t *testing.T, status int) (*httptest.Server, *capture) {
+	t.Helper()
+	c := &capture{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		c.mu.Lock()
+		c.method, c.path, c.hdr, c.body = r.Method, r.URL.Path, r.Header.Clone(), string(b)
+		c.mu.Unlock()
+		w.WriteHeader(status)
+	}))
+	t.Cleanup(srv.Close)
+	return srv, c
+}
+
+func TestGotifyMatrixSlackAlertmanager(t *testing.T) {
+	r, _ := NewRegistry(Options{AllowPrivateTargets: true})
+	ctx := context.Background()
+
+	srv, c := captureServer(t, 200)
+	cfg := []byte(`{"url":"` + srv.URL + `/","token":"app-token"}`)
+	if err := r.Send(ctx, domain.ChannelGotify, cfg, sample()); err != nil {
+		t.Fatal(err)
+	}
+	if c.path != "/message" || c.hdr.Get("X-Gotify-Key") != "app-token" || !strings.Contains(c.body, `"priority":8`) || !strings.Contains(c.body, `"title":"[vink] DOWN nightly-backup (homelab)"`) || !strings.Contains(c.body, "client::notification") {
+		t.Errorf("gotify: %s %v %s", c.path, c.hdr, c.body)
+	}
+	if err := r.Validate(domain.ChannelGotify, []byte(`{"url":"https://x"}`)); err == nil {
+		t.Error("gotify needs a token")
+	}
+
+	srv, c = captureServer(t, 200)
+	cfg = []byte(`{"homeserver":"` + srv.URL + `","access_token":"syt_abc","room_id":"!room:example.com"}`)
+	if err := r.Send(ctx, domain.ChannelMatrix, cfg, sample()); err != nil {
+		t.Fatal(err)
+	}
+	if c.method != "PUT" || !strings.HasPrefix(c.path, "/_matrix/client/v3/rooms/!room:example.com/send/m.room.message/vink-") || c.hdr.Get("Authorization") != "Bearer syt_abc" || !strings.Contains(c.body, `"msgtype":"m.text"`) || !strings.Contains(c.body, "formatted_body") {
+		t.Errorf("matrix: %s %s %v %s", c.method, c.path, c.hdr, c.body)
+	}
+	if err := r.Validate(domain.ChannelMatrix, []byte(`{"homeserver":"https://x","access_token":"t","room_id":"#alias:x"}`)); err == nil {
+		t.Error("matrix wants a room id, not an alias")
+	}
+
+	srv, c = captureServer(t, 200)
+	cfg = []byte(`{"url":"` + srv.URL + `/services/T/B/secret"}`)
+	if err := r.Send(ctx, domain.ChannelSlackhook, cfg, sample()); err != nil {
+		t.Fatal(err)
+	}
+	if c.path != "/services/T/B/secret" || !strings.Contains(c.body, `"color":"#e05d44"`) || !strings.Contains(c.body, `"title_link":"https://vink.example.com/o/w4j/p/homelab/m/nightly-backup"`) || !strings.Contains(c.body, `"text":"[vink] DOWN nightly-backup (homelab)"`) {
+		t.Errorf("slackhook: %s %s", c.path, c.body)
+	}
+
+	srv, c = captureServer(t, 200)
+	cfg = []byte(`{"url":"` + srv.URL + `","labels":{"team":"ops"}}`)
+	if err := r.Send(ctx, domain.ChannelAlertmanager, cfg, sample()); err != nil {
+		t.Fatal(err)
+	}
+	if c.path != "/api/v2/alerts" || !strings.Contains(c.body, `"alertname":"MonitorDown"`) || !strings.Contains(c.body, `"tag_backup":"true"`) || !strings.Contains(c.body, `"team":"ops"`) || !strings.Contains(c.body, `"severity":"critical"`) || strings.Contains(c.body, "endsAt") {
+		t.Errorf("alertmanager down: %s %s", c.path, c.body)
+	}
+	up := sample()
+	up.Event.From, up.Event.To = domain.StateDown, domain.StateUp
+	if err := r.Send(ctx, domain.ChannelAlertmanager, cfg, up); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(c.body, `"endsAt":"2026-09-27T14:07:31Z"`) || !strings.Contains(c.body, `"alertname":"MonitorDown"`) {
+		t.Errorf("alertmanager resolve: %s", c.body)
+	}
+	if err := r.Validate(domain.ChannelAlertmanager, []byte(`{"url":"https://am","labels":{"bad label":"x"}}`)); err == nil {
+		t.Error("label names are checked")
+	}
+	failing, _ := captureServer(t, 500)
+	if err := r.Send(ctx, domain.ChannelGotify, []byte(`{"url":"`+failing.URL+`","token":"t"}`), sample()); err == nil || !strings.Contains(err.Error(), "gotify returned 500") {
+		t.Errorf("error reporting: %v", err)
+	}
+	kinds := r.Kinds()
+	if len(kinds) != 7 {
+		t.Errorf("kinds: %v", kinds)
+	}
+}
+
+func TestWebhookTemplatesInDocsRenderJSON(t *testing.T) {
+	files, err := filepath.Glob("../../docs/webhook-templates/*.tmpl")
+	if err != nil || len(files) < 5 {
+		t.Skipf("templates not found: %v %v", files, err)
+	}
+	for _, path := range files {
+		text, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		tmpl, err := template.New(filepath.Base(path)).Funcs(templateFuncs).Parse(string(text))
+		if err != nil {
+			t.Fatalf("%s: %v", path, err)
+		}
+		for _, n := range []Notification{sample(), func() Notification { u := sample(); u.Event.To = domain.StateUp; return u }(), func() Notification { x := sample(); x.Test = true; x.Incident = nil; return x }()} {
+			var buf bytes.Buffer
+			if err := tmpl.Execute(&buf, n.Payload()); err != nil {
+				t.Fatalf("%s: %v", path, err)
+			}
+			if !json.Valid(buf.Bytes()) {
+				t.Errorf("%s renders invalid JSON for %s:\n%s", path, n.Kind(), buf.String())
+			}
+		}
+	}
 }

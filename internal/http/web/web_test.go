@@ -680,6 +680,45 @@ func TestSettingsTabs(t *testing.T) {
 	}
 }
 
+func TestSettingsChannelKinds(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	for _, kind := range []string{"gotify", "matrix", "slackhook", "alertmanager"} {
+		p := e.get(projPath+"/settings/channels?add=1&kind="+kind, true)
+		p.has(t, `<option value="`+kind+`" selected>`)
+	}
+	e.get(projPath+"/settings/channels?add=1&kind=matrix", true).has(t, `for="homeserver"`, `for="room_id"`, `for="access_token"`)
+	e.get(projPath+"/settings/channels?add=1&kind=alertmanager", true).has(t, `for="labels"`, "resolves on up")
+	if p := e.post(projPath+"/settings/channels", url.Values{"name": {"push"}, "kind": {"gotify"}, "url": {"https://gotify.example.com"}, "token": {"app-token"}, "priority": {"9"}}, false); p.code != 303 {
+		t.Fatalf("gotify: %d %s", p.code, p.body)
+	}
+	if p := e.post(projPath+"/settings/channels", url.Values{"name": {"am"}, "kind": {"alertmanager"}, "url": {"http://am:9093"}, "labels": {"team: ops\nenv: prod"}}, false); p.code != 303 {
+		t.Fatalf("alertmanager: %d %s", p.code, p.body)
+	}
+	if p := e.post(projPath+"/settings/channels", url.Values{"name": {"chat"}, "kind": {"slackhook"}, "url": {"https://hooks.slack.com/services/T/B/x"}}, false); p.code != 303 {
+		t.Fatalf("slackhook: %d %s", p.code, p.body)
+	}
+	if p := e.post(projPath+"/settings/channels", url.Values{"name": {"room"}, "kind": {"matrix"}, "homeserver": {"https://matrix.example.com"}, "room_id": {"#alias:x"}, "access_token": {"t"}}, false); p.code != 422 || !strings.Contains(p.body, "vk-field--error") {
+		t.Fatalf("matrix validation: %d", p.code)
+	}
+	channels, _ := e.svc.ListChannels(ctx, e.scope)
+	byName := map[string]string{}
+	for _, c := range channels {
+		byName[c.Name] = string(c.Config)
+	}
+	if !strings.Contains(byName["push"], `"priority":9`) || !strings.Contains(byName["am"], `"labels":{"env":"prod","team":"ops"}`) {
+		t.Fatalf("configs: %v", byName)
+	}
+	tab := e.get(projPath+"/settings/channels", false)
+	tab.has(t, "gotify · https://gotify.example.com", "slackhook · incoming webhook", "alertmanager · http://am:9093")
+	for _, c := range channels {
+		if c.Name == "chat" {
+			edit := e.get(projPath+"/settings/channels?edit="+c.ID, false)
+			edit.has(t, `value="***"`)
+		}
+	}
+}
+
 func TestSettingsMaintenance(t *testing.T) {
 	e := newEnv(t)
 	tab := e.get(projPath+"/settings/maintenance", false)
