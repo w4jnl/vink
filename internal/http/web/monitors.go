@@ -150,20 +150,37 @@ func (h *Web) location(c *reqCtx, m *domain.Monitor) *time.Location {
 	return time.UTC
 }
 
-// sparkPoints folds a day of latency samples into hourly means, oldest
-// first, so a row's sparkline stays at most 24 points.
+// sparkPoints turns a day of latency samples into the row's trend: the
+// samples themselves while there are few, otherwise means over 96
+// equal slices of the day (15 minutes each), oldest first, so a monitor
+// shows a line within minutes of its first checks.
 func sparkPoints(samples []service.LatencyPoint, now time.Time) []float64 {
-	if len(samples) == 0 {
+	const slices = 96
+	window := 24 * time.Hour
+	start := now.Add(-window)
+	var recent []service.LatencyPoint
+	for _, p := range samples {
+		if !p.At.Before(start) && !p.At.After(now) {
+			recent = append(recent, p)
+		}
+	}
+	if len(recent) == 0 {
 		return nil
 	}
-	var sums [24]float64
-	var counts [24]int
-	for _, p := range samples {
-		age := now.Sub(p.At)
-		if age < 0 || age >= 24*time.Hour {
-			continue
+	if len(recent) <= slices {
+		out := make([]float64, 0, len(recent))
+		for _, p := range recent {
+			out = append(out, float64(p.Ms))
 		}
-		i := 23 - int(age/time.Hour)
+		return out
+	}
+	var sums [slices]float64
+	var counts [slices]int
+	for _, p := range recent {
+		i := int(p.At.Sub(start) * slices / window)
+		if i >= slices {
+			i = slices - 1
+		}
 		sums[i] += float64(p.Ms)
 		counts[i]++
 	}
