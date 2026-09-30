@@ -604,3 +604,80 @@ func (a *API) status(w http.ResponseWriter, r *http.Request) error {
 	writeJSON(w, http.StatusOK, statusOut(s))
 	return nil
 }
+
+// --- maintenance windows ------------------------------------------------
+
+func (a *API) listMaintenance(w http.ResponseWriter, r *http.Request) error {
+	list, err := a.svc.ListMaintenance(r.Context(), scope(r))
+	if err != nil {
+		return err
+	}
+	now := a.svc.Now()
+	out := make([]MaintenanceOut, 0, len(list))
+	for _, m := range list {
+		out = append(out, maintenanceOut(m, now))
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": out})
+	return nil
+}
+
+func (a *API) createMaintenance(w http.ResponseWriter, r *http.Request) error {
+	var in MaintenanceIn
+	if err := decodeJSON(r, &in); err != nil {
+		return err
+	}
+	win, err := in.toDomain()
+	if err != nil {
+		return err
+	}
+	created, err := a.svc.CreateMaintenance(r.Context(), scope(r), win)
+	if err != nil {
+		return err
+	}
+	w.Header().Set("Location", locationFor(r, "/maintenance/"+created.ID))
+	writeJSON(w, http.StatusCreated, maintenanceOut(created, a.svc.Now()))
+	return nil
+}
+
+func (a *API) getMaintenance(w http.ResponseWriter, r *http.Request) error {
+	win, err := a.svc.Maintenance(r.Context(), scope(r), r.PathValue("id"))
+	if err != nil {
+		return err
+	}
+	writeJSON(w, http.StatusOK, maintenanceOut(win, a.svc.Now()))
+	return nil
+}
+
+func (a *API) putMaintenance(w http.ResponseWriter, r *http.Request) error {
+	var in MaintenanceIn
+	if err := decodeJSON(r, &in); err != nil {
+		return err
+	}
+	win, err := in.toDomain()
+	if err != nil {
+		return err
+	}
+	updated, err := a.svc.UpdateMaintenance(r.Context(), scope(r), r.PathValue("id"), win)
+	if err != nil {
+		return err
+	}
+	writeJSON(w, http.StatusOK, maintenanceOut(updated, a.svc.Now()))
+	return nil
+}
+
+func (a *API) deleteMaintenance(w http.ResponseWriter, r *http.Request) error {
+	if err := a.svc.DeleteMaintenance(r.Context(), scope(r), r.PathValue("id")); err != nil {
+		return err
+	}
+	w.WriteHeader(http.StatusNoContent)
+	return nil
+}
+
+func (a *API) endMaintenance(w http.ResponseWriter, r *http.Request) error {
+	win, err := a.svc.EndMaintenance(r.Context(), scope(r), r.PathValue("id"))
+	if err != nil {
+		return err
+	}
+	writeJSON(w, http.StatusOK, maintenanceOut(win, a.svc.Now()))
+	return nil
+}

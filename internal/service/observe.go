@@ -264,6 +264,25 @@ func (s *Service) persistDecision(ctx context.Context, q *db.Queries, m *domain.
 	if q == nil {
 		return errNoTx
 	}
+	// A monitor inside a maintenance window records but never goes down
+	// and never alerts; a heartbeat held back is looked at again when the
+	// window ends.
+	until, covered, err := s.coverage(ctx, q, m, now)
+	if err != nil {
+		return err
+	}
+	if covered && d.To == domain.StateDown {
+		switch d.From {
+		case domain.StateLate, domain.StateDown:
+			d.To, d.Changed, d.Reason = d.From, false, ""
+		default:
+			d.To, d.Reason = domain.StateLate, d.Reason+" (maintenance)"
+		}
+		if m.Kind == domain.KindHeartbeat {
+			d.NextDueAt = &until
+		}
+		s.log.Debug("maintenance holds monitor", "project_id", m.ProjectID, "monitor", m.Slug, "until", until)
+	}
 	stateSince := m.StateSince
 	if d.Changed {
 		stateSince = now
@@ -321,7 +340,7 @@ func (s *Service) persistDecision(ctx context.Context, q *db.Queries, m *domain.
 	case domain.StateLate:
 		notify = true
 	}
-	if !notify {
+	if !notify || covered {
 		return nil
 	}
 	return s.enqueueDeliveries(ctx, q, m, eventID, d.To, now)

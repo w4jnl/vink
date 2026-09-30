@@ -675,11 +675,51 @@ func TestSettingsTabs(t *testing.T) {
 	if p := e.post(projPath+"/settings/ping-key/rotate", nil, false); p.code != 303 {
 		t.Fatalf("rotate: %d", p.code)
 	}
-	if p := e.get(projPath+"/settings/maintenance", false); p.code != 200 || !strings.Contains(p.body, "Not yet") {
-		t.Fatalf("maintenance placeholder: %d", p.code)
+	if p := e.get(projPath+"/settings/pages", false); p.code != 200 || !strings.Contains(p.body, "Not yet") {
+		t.Fatalf("pages placeholder: %d", p.code)
 	}
 	if p := e.get(projPath+"/settings/nope", false); p.code != 404 {
 		t.Fatalf("unknown tab: %d", p.code)
+	}
+}
+
+func TestSettingsMaintenance(t *testing.T) {
+	e := newEnv(t)
+	tab := e.get(projPath+"/settings/maintenance", false)
+	tab.has(t, `aria-current="page">Maintenance<span class="vk-tab__n">0</span>`, "No maintenance windows", "do not alert or go down")
+	add := e.get(projPath+"/settings/maintenance?add=1", false)
+	add.has(t, `id="window-panel"`, `name="repeat" value="weekly" checked`, `name="days" value="Sat"`, `for="from"`, `placeholder="02:00"`, "Europe/Amsterdam (project)", `id="window-msg"`, ">Save window<")
+	once := e.get(projPath+"/settings/maintenance?add=1&repeat=once&name=NAS", true)
+	once.has(t, `name="repeat" value="once" checked`, `value="NAS"`)
+	if strings.Contains(once.body, `name="days"`) {
+		t.Error("a one-off window has no day toggles")
+	}
+	// the clock is Sunday 14:00 in Amsterdam: this weekly window is active now
+	weekly := e.post(projPath+"/settings/maintenance", url.Values{"name": {"weekly patching"}, "match_tags": {"prod"}, "repeat": {"weekly"}, "days": {"Sun"}, "from": {"13:00"}, "to": {"17:00"}, "timezone": {"Europe/Amsterdam"}}, false)
+	if weekly.code != 303 {
+		t.Fatalf("create weekly: %d %s", weekly.code, weekly.body)
+	}
+	tab = e.get(projPath+"/settings/maintenance", false)
+	tab.has(t, "weekly patching", "weekly · Sun 13:00–17:00 Europe/Amsterdam", `<span class="vk-tag">prod</span>`, `class="vk-pill"`, "active · 3 h left", ">End now<", `?edit=`)
+	bad := e.post(projPath+"/settings/maintenance", url.Values{"name": {"swap"}, "repeat": {"once"}, "from": {"2026-09-29 21:00"}, "to": {"2026-09-29 19:00"}, "timezone": {"Europe/Amsterdam"}}, false)
+	if bad.code != 422 || !strings.Contains(bad.body, "Must be after the start.") {
+		t.Fatalf("bad once: %d %s", bad.code, bad.body)
+	}
+	onceOK := e.post(projPath+"/settings/maintenance", url.Values{"name": {"NAS disk swap"}, "match_tags": {"homelab"}, "repeat": {"once"}, "from": {"2026-09-29 19:00"}, "to": {"2026-09-29 21:00"}, "timezone": {"Europe/Amsterdam"}}, false)
+	if onceOK.code != 303 {
+		t.Fatalf("create once: %d %s", onceOK.code, onceOK.body)
+	}
+	tab = e.get(projPath+"/settings/maintenance", false)
+	tab.has(t, "once · Tue 29 Sep 19:00–21:00 Europe/Amsterdam", "starts Tue 29 Sep 19:00", `Maintenance<span class="vk-tab__n">2</span>`)
+	windows, _ := e.svc.ListMaintenance(context.Background(), e.scope)
+	edit := e.get(projPath+"/settings/maintenance?edit="+windows[0].ID, false)
+	edit.has(t, `value="weekly patching"`, `name="days" value="Sun" checked`, `value="13:00"`, "Delete window", "Active until")
+	ended := e.post(projPath+"/settings/maintenance/"+windows[0].ID+"/end", nil, true)
+	if ended.code != 200 || strings.Contains(ended.body, `class="vk-pill"`) || !strings.Contains(ended.body, "next Sun 4 Oct 13:00") {
+		t.Fatalf("end now: %d %s", ended.code, ended.body)
+	}
+	if p := e.post(projPath+"/settings/maintenance/"+windows[1].ID+"/delete", nil, false); p.code != 303 {
+		t.Fatalf("delete: %d", p.code)
 	}
 }
 

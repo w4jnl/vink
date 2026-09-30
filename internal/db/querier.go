@@ -22,6 +22,7 @@ type Querier interface {
 	CountUsers(ctx context.Context) (int64, error)
 	CreateAPIKey(ctx context.Context, arg CreateAPIKeyParams) (ApiKey, error)
 	CreateChannel(ctx context.Context, arg CreateChannelParams) (Channel, error)
+	CreateMaintenance(ctx context.Context, arg CreateMaintenanceParams) (Maintenance, error)
 	CreateMonitor(ctx context.Context, arg CreateMonitorParams) (Monitor, error)
 	CreateOrg(ctx context.Context, arg CreateOrgParams) (Org, error)
 	CreateProject(ctx context.Context, arg CreateProjectParams) (Project, error)
@@ -33,6 +34,7 @@ type Querier interface {
 	DeleteChannel(ctx context.Context, arg DeleteChannelParams) (int64, error)
 	DeleteExpiredSessions(ctx context.Context, expiresAt int64) (int64, error)
 	DeleteHeaderMembershipsForUser(ctx context.Context, userID string) error
+	DeleteMaintenance(ctx context.Context, arg DeleteMaintenanceParams) (int64, error)
 	DeleteMembership(ctx context.Context, arg DeleteMembershipParams) (int64, error)
 	DeleteMonitor(ctx context.Context, arg DeleteMonitorParams) (int64, error)
 	// tenancy: root (retention job)
@@ -50,6 +52,7 @@ type Querier interface {
 	GetChannelByName(ctx context.Context, arg GetChannelByNameParams) (Channel, error)
 	GetEvent(ctx context.Context, arg GetEventParams) (Event, error)
 	GetIncident(ctx context.Context, arg GetIncidentParams) (GetIncidentRow, error)
+	GetMaintenance(ctx context.Context, arg GetMaintenanceParams) (Maintenance, error)
 	GetMembership(ctx context.Context, arg GetMembershipParams) (Membership, error)
 	GetMonitor(ctx context.Context, arg GetMonitorParams) (Monitor, error)
 	// tenancy: root (scheduler reload after a bus event)
@@ -95,6 +98,7 @@ type Querier interface {
 	ListEventsSince(ctx context.Context, arg ListEventsSinceParams) ([]Event, error)
 	ListIncidents(ctx context.Context, arg ListIncidentsParams) ([]ListIncidentsRow, error)
 	ListLatenciesSince(ctx context.Context, arg ListLatenciesSinceParams) ([]ListLatenciesSinceRow, error)
+	ListMaintenance(ctx context.Context, projectID string) ([]Maintenance, error)
 	ListMembershipsForOrg(ctx context.Context, orgID string) ([]ListMembershipsForOrgRow, error)
 	ListMembershipsForUser(ctx context.Context, userID string) ([]ListMembershipsForUserRow, error)
 	ListMonitors(ctx context.Context, projectID string) ([]Monitor, error)
@@ -137,6 +141,7 @@ type Querier interface {
 	TouchAPIKey(ctx context.Context, arg TouchAPIKeyParams) error
 	TouchSession(ctx context.Context, arg TouchSessionParams) error
 	UpdateChannel(ctx context.Context, arg UpdateChannelParams) (Channel, error)
+	UpdateMaintenance(ctx context.Context, arg UpdateMaintenanceParams) (Maintenance, error)
 	UpdateMonitor(ctx context.Context, arg UpdateMonitorParams) (Monitor, error)
 	UpdateMonitorState(ctx context.Context, arg UpdateMonitorStateParams) error
 	UpdateProject(ctx context.Context, arg UpdateProjectParams) error

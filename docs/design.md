@@ -112,7 +112,7 @@ Sixteen tables; every row below `projects` carries `project_id`, every row below
 | `routes` | `id`, `project_id`, `match_tags` (JSON, all-of), `on` (`down`,`up`,`late` set), `repeat_every_s` (0 = never), `priority` | empty `match_tags` matches all monitors; the first channel of a project gets a default route that sends every down and up |
 | `route_channels` | `route_id`, `channel_id`, `project_id` | a route fans out to one or more channels; deleting a channel deletes routes left without one |
 | `deliveries` | `id`, `event_id`, `channel_id`, `project_id`, `attempt`, `next_attempt_at`, `delivered_at`, `error` | the outbox; dispatcher polls it, exponential backoff to 6 attempts |
-| `maintenance` | `id`, `project_id`, `name`, `match_tags`, `starts_at`, `ends_at`, `rrule` (optional weekly), `timezone` | while active, matching monitors observe but do not alert or flip to `down` |
+| `maintenance` | `id`, `project_id`, `name`, `match_tags`, `starts_at`, `ends_at` (one-off), `rrule` (`FREQ=WEEKLY;BYDAY=…`), `from_time`, `to_time` (weekly, `HH:MM`), `timezone`, `ended_until` (set by End now on a weekly window) | while active, matching monitors observe but do not alert or flip to `down`; a heartbeat held at `late` is looked at again when the window ends |
 | `status_pages` | `id`, `project_id`, `slug` (unique per instance), `title`, `match_tags`, `public` (bool), `password_hash` (optional), `custom_domain` | renders monitors whose tags match |
 | `agents` | `id`, `org_id`, `name`, `token_hash`, `last_seen_at`, `version`, `labels` (JSON) | phase 2 |
 | `sessions` | `id`, `user_id`, `expires_at`, `csrf` | local-auth browser sessions only |

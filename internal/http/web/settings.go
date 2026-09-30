@@ -53,6 +53,12 @@ type panelData struct {
 	Note                                                                              *noteData
 	ChannelChecks                                                                     []ui.CheckboxProps
 	OnChecks                                                                          []ui.CheckboxProps
+	// Maintenance windows: repeat once or weekly, the day toggles, the zones.
+	Repeat     string
+	DayOptions []ui.Option
+	Days       []string
+	Timezones  []ui.Option
+	NextHint   string
 }
 
 type keyForm struct{ Values, Errors map[string]string }
@@ -64,6 +70,7 @@ type settingsData struct {
 	Lede, ComingSoon string
 	Channels         []channelRow
 	Routes           []routeRow
+	Windows          []windowRow
 	Panel            *panelData
 	Keys             []keyRow
 	KeysPath         string
@@ -165,7 +172,11 @@ func (h *Web) settingsData(c *reqCtx, tabName string, o settingsOpts) (settingsD
 			return d, err
 		}
 	}
-	counts := map[string]int{"channels": len(channels), "routes": len(routes), "maintenance": 0, "pages": 0}
+	windows, err := h.svc.ListMaintenance(ctx, c.scope)
+	if err != nil {
+		return d, err
+	}
+	counts := map[string]int{"channels": len(channels), "routes": len(routes), "maintenance": len(windows), "pages": 0}
 	for _, t := range settingsTabs {
 		tab := ui.Tab{ID: t.ID, Label: t.Label, Href: root + t.ID}
 		if n, ok := counts[t.ID]; ok {
@@ -246,8 +257,9 @@ func (h *Web) settingsData(c *reqCtx, tabName string, o settingsOpts) (settingsD
 			d.Keys = append(d.Keys, row)
 		}
 	case "maintenance":
-		d.Lede = "A maintenance window silences alerts for the monitors that carry its tags."
-		d.ComingSoon = "Maintenance windows arrive later in phase 1."
+		for _, w := range windows {
+			d.Windows = append(d.Windows, h.windowRow(c, w, root+"maintenance"))
+		}
 	case "pages":
 		d.Lede = "A status page shows a set of monitors to people without an account."
 		d.ComingSoon = "Status pages arrive later in phase 1."
@@ -334,6 +346,22 @@ func (h *Web) settings(c *reqCtx) error {
 		if o.panel, err = h.routePanel(c, rt); err != nil {
 			return err
 		}
+	case tabName == "maintenance" && q.Has("add"):
+		if !c.scope.CanEdit() {
+			return domain.ErrForbidden
+		}
+		o.panel = h.maintenancePanel(c, nil)
+		if q.Has("repeat") || q.Has("name") {
+			w := h.parseMaintenance(c, q, o.panel)
+			o.panel.Errors = map[string]string{}
+			h.windowHints(c, o.panel, w)
+		}
+	case tabName == "maintenance" && q.Get("edit") != "":
+		w, err := h.svc.Maintenance(ctx, c.scope, q.Get("edit"))
+		if err != nil {
+			return err
+		}
+		o.panel = h.maintenancePanel(c, w)
 	}
 	return h.renderTab(c, http.StatusOK, tabName, o)
 }
@@ -738,4 +766,279 @@ func (h *Web) rotatePingKey(c *reqCtx) error {
 		return err
 	}
 	return h.settingsFlash(c, "keys", "Ping key rotated. The old key works for one more day.")
+}
+
+// --- maintenance windows ------------------------------------------------
+
+type windowRow struct {
+	ID, Name, Sub string
+	Cells         []ui.Cell
+	Actions       ui.HTML
+}
+
+var dayCodes = []struct {
+	code string
+	day  time.Weekday
+}{{"Mon", time.Monday}, {"Tue", time.Tuesday}, {"Wed", time.Wednesday}, {"Thu", time.Thursday}, {"Fri", time.Friday}, {"Sat", time.Saturday}, {"Sun", time.Sunday}}
+
+func dayOptions() []ui.Option {
+	out := make([]ui.Option, 0, 7)
+	for _, d := range dayCodes {
+		out = append(out, ui.Option{Value: d.code, Label: d.code})
+	}
+	return out
+}
+
+func dayNames(days []time.Weekday) string {
+	names := make([]string, 0, len(days))
+	for _, d := range days {
+		for _, c := range dayCodes {
+			if c.day == d {
+				names = append(names, c.code)
+			}
+		}
+	}
+	return strings.Join(names, ", ")
+}
+
+// relDay renders "today 14:00", "tomorrow 19:00" or "Tue 29 Sep 19:00".
+func relDay(t, now time.Time, loc *time.Location) string {
+	lt, ln := t.In(loc), now.In(loc)
+	clock := lt.Format("15:04")
+	switch {
+	case lt.Year() == ln.Year() && lt.YearDay() == ln.YearDay():
+		return "today " + clock
+	case lt.Year() == ln.AddDate(0, 0, 1).Year() && lt.YearDay() == ln.AddDate(0, 0, 1).YearDay():
+		return "tomorrow " + clock
+	}
+	return lt.Format("Mon 2 Jan 15:04")
+}
+
+// describeWindow is the row's second line.
+func describeWindow(w *domain.Maintenance, now time.Time) string {
+	loc := w.Location()
+	if w.Weekly {
+		return "weekly · " + dayNames(w.Days) + " " + w.From + "–" + w.To + " " + w.Timezone
+	}
+	if w.StartsAt == nil || w.EndsAt == nil {
+		return "once"
+	}
+	end := w.EndsAt.In(loc).Format("15:04")
+	if w.EndsAt.In(loc).YearDay() != w.StartsAt.In(loc).YearDay() {
+		end = relDay(*w.EndsAt, now, loc)
+	}
+	return "once · " + relDay(*w.StartsAt, now, loc) + "–" + end + " " + w.Timezone
+}
+
+func (h *Web) windowRow(c *reqCtx, w *domain.Maintenance, root string) windowRow {
+	row := windowRow{ID: w.ID, Name: w.Name, Sub: describeWindow(w, c.now)}
+	var tags strings.Builder
+	for _, t := range w.MatchTags {
+		tags.WriteString(string(ui.Tag(t)))
+	}
+	if tags.Len() == 0 {
+		tags.WriteString("every monitor")
+	}
+	row.Cells = append(row.Cells, ui.Cell{HTML: ui.HTML(tags.String())})
+	loc := w.Location()
+	var actions ui.HTML
+	if until, active := w.ActiveAt(c.now); active {
+		row.Cells = append(row.Cells, ui.Cell{HTML: ui.HTML(`<span class="vk-pill">` + string(ui.Glyph("paused", "")) + `active · ` + view.Span(until.Sub(c.now)) + ` left</span>`), Size: "l"})
+		actions = postForm(c, root+"/"+w.ID+"/end", true, ui.Button(ui.ButtonProps{Label: "End now", Type: "submit"}))
+	} else if start, _, ok := w.Occurrence(c.now); ok {
+		word := "starts "
+		if w.Weekly {
+			word = "next "
+		}
+		row.Cells = append(row.Cells, ui.Cell{Text: word + relDay(start, c.now, loc), Size: "l", Mono: true})
+	} else {
+		row.Cells = append(row.Cells, ui.Cell{Text: "over", Size: "l", Mono: true})
+	}
+	row.Actions = actions + ui.Button(ui.ButtonProps{Label: "Edit", Href: root + "?edit=" + url.QueryEscape(w.ID)})
+	return row
+}
+
+func (h *Web) windowTimezones(c *reqCtx, current string) []ui.Option {
+	out := []ui.Option{{Value: c.project.Timezone, Label: c.project.Timezone + " (project)"}}
+	seen := map[string]bool{c.project.Timezone: true}
+	if current != "" && !seen[current] {
+		out = append(out, ui.Option{Value: current, Label: current})
+		seen[current] = true
+	}
+	for _, z := range commonZones {
+		if !seen[z] {
+			out = append(out, ui.Option{Value: z, Label: z})
+			seen[z] = true
+		}
+	}
+	return out
+}
+
+func (h *Web) maintenancePanel(c *reqCtx, w *domain.Maintenance) *panelData {
+	root := c.projectPath() + "/settings/maintenance"
+	p := &panelData{
+		Title: "Add window", Action: root, KindPath: root + "?add=1", CancelPath: root, CSRF: c.csrf(), SubmitLabel: "Save window",
+		Values: map[string]string{"name": "", "match_tags": "", "repeat": "weekly", "from": "", "to": "", "timezone": c.project.Timezone}, Errors: map[string]string{},
+		Repeat: "weekly", DayOptions: dayOptions(),
+	}
+	if w != nil {
+		p.Title, p.EditID, p.Action, p.DeletePath, p.KindPath = "Edit window", w.ID, root+"/"+w.ID, root+"/"+w.ID+"/delete", root+"?edit="+url.QueryEscape(w.ID)
+		p.Values["name"], p.Values["match_tags"], p.Values["timezone"] = w.Name, strings.Join(w.MatchTags, ", "), w.Timezone
+		if w.Weekly {
+			p.Values["from"], p.Values["to"] = w.From, w.To
+			for _, d := range w.Days {
+				for _, code := range dayCodes {
+					if code.day == d {
+						p.Days = append(p.Days, code.code)
+					}
+				}
+			}
+		} else {
+			p.Repeat, p.Values["repeat"] = "once", "once"
+			loc := w.Location()
+			if w.StartsAt != nil {
+				p.Values["from"] = w.StartsAt.In(loc).Format("2006-01-02 15:04")
+			}
+			if w.EndsAt != nil {
+				p.Values["to"] = w.EndsAt.In(loc).Format("2006-01-02 15:04")
+			}
+		}
+	}
+	p.Timezones = h.windowTimezones(c, p.Values["timezone"])
+	h.windowHints(c, p, w)
+	return p
+}
+
+// parseMaintenance reads the panel's fields into a window.
+func (h *Web) parseMaintenance(c *reqCtx, values map[string][]string, p *panelData) *domain.Maintenance {
+	get := func(k string) string {
+		v := ""
+		if vs := values[k]; len(vs) > 0 {
+			v = strings.TrimSpace(vs[0])
+		}
+		p.Values[k] = v
+		return v
+	}
+	w := &domain.Maintenance{Name: get("name"), Timezone: get("timezone")}
+	if v := get("match_tags"); v != "" {
+		w.MatchTags = domain.NormalizeTags(strings.Split(v, ","))
+	}
+	if w.Timezone == "" {
+		w.Timezone = c.project.Timezone
+		p.Values["timezone"] = w.Timezone
+	}
+	p.Repeat = get("repeat")
+	if p.Repeat != "once" {
+		p.Repeat, p.Values["repeat"] = "weekly", "weekly"
+	}
+	from, to := get("from"), get("to")
+	if p.Repeat == "weekly" {
+		w.Weekly, w.From, w.To = true, from, to
+		p.Days = values["days"]
+		for _, code := range p.Days {
+			for _, d := range dayCodes {
+				if d.code == code {
+					w.Days = append(w.Days, d.day)
+				}
+			}
+		}
+		return w
+	}
+	loc := w.Location()
+	parse := func(k, v string) *time.Time {
+		if v == "" {
+			return nil
+		}
+		t, err := time.ParseInLocation("2006-01-02 15:04", v, loc)
+		if err != nil {
+			p.Errors[k] = "Use a date and time such as 2026-09-29 19:00."
+			return nil
+		}
+		return &t
+	}
+	w.StartsAt, w.EndsAt = parse("from", from), parse("to", to)
+	return w
+}
+
+// windowHints fills the placeholders and the sentence under the panel.
+func (h *Web) windowHints(c *reqCtx, p *panelData, w *domain.Maintenance) {
+	if p.Repeat == "weekly" {
+		p.Values["from_placeholder"], p.Values["to_placeholder"] = "02:00", "04:00"
+	} else {
+		p.Values["from_placeholder"], p.Values["to_placeholder"] = c.now.In(h.location(c, nil)).Format("2006-01-02 15:04"), c.now.In(h.location(c, nil)).Add(2*time.Hour).Format("2006-01-02 15:04")
+	}
+	who := "Every monitor records"
+	if w != nil && len(w.MatchTags) > 0 {
+		who = "Monitors tagged " + strings.Join(w.MatchTags, ", ") + " record"
+	}
+	p.NextHint = "Times are in " + p.Values["timezone"] + ". " + who + " as usual but do not alert or go down."
+	if w == nil {
+		return
+	}
+	probe := *w
+	probe.Normalize()
+	loc := probe.Location()
+	if until, active := probe.ActiveAt(c.now); active {
+		p.NextHint = "Active until " + relDay(until, c.now, loc) + ". " + who + " as usual but do not alert or go down."
+	} else if start, end, ok := probe.Occurrence(c.now); ok {
+		p.NextHint = "Next: " + relDay(start, c.now, loc) + "–" + end.In(loc).Format("15:04") + ". " + who + " as usual but do not alert or go down."
+	}
+}
+
+func (h *Web) saveMaintenance(c *reqCtx) error {
+	if err := c.r.ParseForm(); err != nil {
+		return err
+	}
+	ctx := c.r.Context()
+	id := c.r.PathValue("id")
+	var cur *domain.Maintenance
+	if id != "" {
+		var err error
+		if cur, err = h.svc.Maintenance(ctx, c.scope, id); err != nil {
+			return err
+		}
+	}
+	p := h.maintenancePanel(c, cur)
+	w := h.parseMaintenance(c, c.r.PostForm, p)
+	h.windowHints(c, p, w)
+	opts := settingsOpts{panel: p}
+	if len(p.Errors) > 0 {
+		return h.renderTab(c, http.StatusUnprocessableEntity, "maintenance", opts)
+	}
+	var err error
+	if cur == nil {
+		_, err = h.svc.CreateMaintenance(ctx, c.scope, w)
+	} else {
+		_, err = h.svc.UpdateMaintenance(ctx, c.scope, id, w)
+	}
+	if err != nil {
+		if applyPanelValidation(p, err) {
+			for from, to := range map[string]string{"starts_at": "from", "ends_at": "to"} {
+				if msg, ok := p.Errors[from]; ok {
+					p.Errors[to] = msg
+					delete(p.Errors, from)
+				}
+			}
+			return h.renderTab(c, http.StatusUnprocessableEntity, "maintenance", opts)
+		}
+		return err
+	}
+	return h.redirect(c, c.projectPath()+"/settings/maintenance")
+}
+
+func (h *Web) deleteMaintenance(c *reqCtx) error {
+	if err := h.svc.DeleteMaintenance(c.r.Context(), c.scope, c.r.PathValue("id")); err != nil {
+		return err
+	}
+	return h.redirect(c, c.projectPath()+"/settings/maintenance")
+}
+
+func (h *Web) endMaintenance(c *reqCtx) error {
+	if _, err := h.svc.EndMaintenance(c.r.Context(), c.scope, c.r.PathValue("id")); err != nil {
+		return err
+	}
+	if c.htmx() {
+		return h.renderTab(c, http.StatusOK, "maintenance", settingsOpts{})
+	}
+	return h.redirect(c, c.projectPath()+"/settings/maintenance")
 }

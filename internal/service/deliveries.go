@@ -156,6 +156,11 @@ func (s *Service) EnqueueRepeats(ctx context.Context, now time.Time) (int, error
 		if err != nil || m.State != domain.StateDown {
 			continue
 		}
+		if _, covered, err := s.coverage(ctx, s.db.Read(), m, now); err != nil {
+			return added, err
+		} else if covered {
+			continue // maintenance silences repeats too
+		}
 		routes, err := s.listRoutes(ctx, s.db.Read(), inc.ProjectID)
 		if err != nil {
 			return added, err

@@ -322,3 +322,62 @@ func statusOut(s *service.StatusSummary) StatusOut {
 	}
 	return out
 }
+
+// MaintenanceIn creates or replaces a window: once with starts_at and
+// ends_at, or weekly with rrule (FREQ=WEEKLY;BYDAY=SA,SU), from and to.
+type MaintenanceIn struct {
+	Name      string     `json:"name"`
+	MatchTags []string   `json:"match_tags"`
+	StartsAt  *time.Time `json:"starts_at"`
+	EndsAt    *time.Time `json:"ends_at"`
+	RRule     string     `json:"rrule"`
+	From      string     `json:"from"`
+	To        string     `json:"to"`
+	Timezone  string     `json:"timezone"`
+}
+
+func (in MaintenanceIn) toDomain() (*domain.Maintenance, error) {
+	w := &domain.Maintenance{Name: in.Name, MatchTags: in.MatchTags, StartsAt: in.StartsAt, EndsAt: in.EndsAt, From: in.From, To: in.To, Timezone: in.Timezone}
+	if in.RRule != "" {
+		days, err := domain.ParseRRule(in.RRule)
+		if err != nil {
+			return nil, (&domain.ValidationError{Errors: []domain.FieldError{{Field: "rrule", Msg: err.Error()}}}).OrNil()
+		}
+		w.Weekly, w.Days = true, days
+	}
+	return w, nil
+}
+
+// MaintenanceOut is a window with its state at the time of the request.
+type MaintenanceOut struct {
+	ID          string     `json:"id"`
+	Name        string     `json:"name"`
+	MatchTags   []string   `json:"match_tags"`
+	StartsAt    *time.Time `json:"starts_at,omitempty"`
+	EndsAt      *time.Time `json:"ends_at,omitempty"`
+	RRule       string     `json:"rrule,omitempty"`
+	From        string     `json:"from,omitempty"`
+	To          string     `json:"to,omitempty"`
+	Timezone    string     `json:"timezone"`
+	Active      bool       `json:"active"`
+	ActiveUntil *time.Time `json:"active_until,omitempty"`
+	NextStart   *time.Time `json:"next_start,omitempty"`
+	NextEnd     *time.Time `json:"next_end,omitempty"`
+	EndedUntil  *time.Time `json:"ended_until,omitempty"`
+	CreatedAt   time.Time  `json:"created_at"`
+	UpdatedAt   time.Time  `json:"updated_at"`
+}
+
+func maintenanceOut(w *domain.Maintenance, now time.Time) MaintenanceOut {
+	out := MaintenanceOut{ID: w.ID, Name: w.Name, MatchTags: w.MatchTags, StartsAt: w.StartsAt, EndsAt: w.EndsAt, RRule: w.RRule(), From: w.From, To: w.To, Timezone: w.Timezone, EndedUntil: w.EndedUntil, CreatedAt: w.CreatedAt, UpdatedAt: w.UpdatedAt}
+	if out.MatchTags == nil {
+		out.MatchTags = []string{}
+	}
+	if until, active := w.ActiveAt(now); active {
+		out.Active, out.ActiveUntil = true, &until
+	}
+	if start, end, ok := w.Occurrence(now); ok {
+		out.NextStart, out.NextEnd = &start, &end
+	}
+	return out
+}

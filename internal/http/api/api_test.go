@@ -455,6 +455,53 @@ func TestPullMonitorAPI(t *testing.T) {
 	}
 }
 
+func TestMaintenanceAPI(t *testing.T) {
+	e := newEnv(t)
+	// Sunday 14:00 in Amsterdam: the weekly window is active
+	weekly := e.key(e.rw, "POST", "/maintenance", map[string]any{"name": "weekly patching", "match_tags": []string{"prod"}, "rrule": "FREQ=WEEKLY;BYDAY=SU", "from": "13:00", "to": "17:00"})
+	if weekly.code != 201 {
+		t.Fatalf("create weekly: %d %s", weekly.code, weekly.body)
+	}
+	var w MaintenanceOut
+	weekly.json(t, &w)
+	if !w.Active || w.ActiveUntil == nil || w.Timezone != "Europe/Amsterdam" || w.RRule != "FREQ=WEEKLY;BYDAY=SU" || w.NextStart == nil {
+		t.Fatalf("weekly: %s", weekly.body)
+	}
+	once := e.key(e.rw, "POST", "/maintenance", map[string]any{"name": "disk swap", "starts_at": e.now.Add(2 * time.Hour), "ends_at": e.now.Add(3 * time.Hour)})
+	if once.code != 201 {
+		t.Fatalf("create once: %d %s", once.code, once.body)
+	}
+	if r := e.key(e.rw, "POST", "/maintenance", map[string]any{"name": "bad", "rrule": "FREQ=DAILY"}); r.code != 422 || !strings.Contains(string(r.body), "rrule") {
+		t.Fatalf("bad rrule: %d %s", r.code, r.body)
+	}
+	if r := e.key(e.ro, "POST", "/maintenance", map[string]any{"name": "x"}); r.code != 403 {
+		t.Fatalf("ro key: %d", r.code)
+	}
+	list := e.session("GET", "/maintenance", nil, false)
+	var page struct{ Items []MaintenanceOut }
+	list.json(t, &page)
+	if len(page.Items) != 2 || page.Items[0].Name != "weekly patching" || page.Items[1].NextStart == nil {
+		t.Fatalf("list: %s", list.body)
+	}
+	upd := e.key(e.rw, "PUT", "/maintenance/"+w.ID, map[string]any{"name": "patching", "match_tags": []string{"prod", "db"}, "rrule": "FREQ=WEEKLY;BYDAY=SA,SU", "from": "13:00", "to": "17:00"})
+	if upd.code != 200 || !strings.Contains(string(upd.body), `"rrule":"FREQ=WEEKLY;BYDAY=SA,SU"`) {
+		t.Fatalf("update: %d %s", upd.code, upd.body)
+	}
+	ended := e.key(e.rw, "POST", "/maintenance/"+w.ID+"/end", nil)
+	if ended.code != 200 || !strings.Contains(string(ended.body), `"ended_until"`) || strings.Contains(string(ended.body), `"active":true`) {
+		t.Fatalf("end: %d %s", ended.code, ended.body)
+	}
+	if r := e.key(e.rw, "POST", "/maintenance/"+w.ID+"/end", nil); r.code != 422 {
+		t.Fatalf("end again: %d", r.code)
+	}
+	if r := e.key(e.rw, "DELETE", "/maintenance/"+w.ID, nil); r.code != 204 {
+		t.Fatalf("delete: %d", r.code)
+	}
+	if r := e.session("GET", "/maintenance/"+w.ID, nil, false); r.code != 404 {
+		t.Fatalf("after delete: %d", r.code)
+	}
+}
+
 func TestChannelsRoutesKeysPingKey(t *testing.T) {
 	e := newEnv(t)
 	r := e.key(e.rw, "POST", "/channels", map[string]any{"name": "ntfy", "kind": "ntfy", "config": map[string]any{"url": "https://ntfy.example.com", "topic": "vink", "token": "tk_secret"}})

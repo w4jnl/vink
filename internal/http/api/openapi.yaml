@@ -95,6 +95,32 @@ components:
         host: {type: string}
         count: {type: integer, default: 3}
         loss_threshold: {type: number, default: 0.67}
+    MaintenanceIn:
+      type: object
+      description: A one-off window has starts_at and ends_at; a weekly one has rrule (FREQ=WEEKLY;BYDAY=SA,SU), from and to as HH:MM in timezone (the project's when empty).
+      required: [name]
+      properties:
+        name: {type: string}
+        match_tags: {type: array, items: {type: string}, description: all-of; empty matches every monitor}
+        starts_at: {type: string, format: date-time}
+        ends_at: {type: string, format: date-time}
+        rrule: {type: string, example: FREQ=WEEKLY;BYDAY=SU}
+        from: {type: string, example: "02:00"}
+        to: {type: string, example: "04:00"}
+        timezone: {type: string}
+    Maintenance:
+      allOf:
+        - $ref: "#/components/schemas/MaintenanceIn"
+        - type: object
+          properties:
+            id: {type: string}
+            active: {type: boolean}
+            active_until: {type: string, format: date-time}
+            next_start: {type: string, format: date-time}
+            next_end: {type: string, format: date-time}
+            ended_until: {type: string, format: date-time, description: set by end now on a weekly window}
+            created_at: {type: string, format: date-time}
+            updated_at: {type: string, format: date-time}
     MonitorIn:
       type: object
       description: Heartbeats take schedule, grace and the ping options; pull kinds take interval, timeout, confirm and their block.
@@ -275,6 +301,23 @@ paths:
   /monitors/{slug}/resume:
     parameters: [{$ref: "#/components/parameters/slug"}]
     post: {summary: Resume with a fresh deadline, responses: {"200": {description: The monitor.}}}
+  /maintenance:
+    get: {summary: List maintenance windows, active first, responses: {"200": {description: "{items: [Maintenance]}"}}}
+    post:
+      summary: Add a window
+      requestBody: {content: {application/json: {schema: {$ref: "#/components/schemas/MaintenanceIn"}}}}
+      responses: {"201": {description: The window.}, "422": {description: Validation failed.}}
+  /maintenance/{id}:
+    parameters: [{$ref: "#/components/parameters/id"}]
+    get: {summary: One window, responses: {"200": {description: The window.}}}
+    put:
+      summary: Replace a window
+      requestBody: {content: {application/json: {schema: {$ref: "#/components/schemas/MaintenanceIn"}}}}
+      responses: {"200": {description: The window.}}
+    delete: {summary: Delete a window, responses: {"204": {description: Deleted.}}}
+  /maintenance/{id}/end:
+    parameters: [{$ref: "#/components/parameters/id"}]
+    post: {summary: End the running occurrence now, responses: {"200": {description: The window.}, "422": {description: The window is not active.}}}
   /monitors/{slug}/check:
     parameters: [{$ref: "#/components/parameters/slug"}]
     post: {summary: Run a pull monitor's check now and return it, responses: {"200": {description: The monitor after the attempt.}, "422": {description: Not a pull monitor, or paused.}}}

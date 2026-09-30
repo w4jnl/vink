@@ -90,18 +90,19 @@ type Incident struct {
 }
 
 type Maintenance struct {
-	ID        string
-	ProjectID string
-	Name      string
-	MatchTags string
-	StartsAt  *int64
-	EndsAt    *int64
-	Rrule     *string
-	FromTime  *string
-	ToTime    *string
-	Timezone  string
-	CreatedAt int64
-	UpdatedAt int64
+	ID         string
+	ProjectID  string
+	Name       string
+	MatchTags  string
+	StartsAt   *int64
+	EndsAt     *int64
+	Rrule      *string
+	FromTime   *string
+	ToTime     *string
+	Timezone   string
+	CreatedAt  int64
+	UpdatedAt  int64
+	EndedUntil *int64
 }
 
 type Membership struct {

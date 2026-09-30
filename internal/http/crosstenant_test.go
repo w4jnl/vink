@@ -30,6 +30,7 @@ type tenant struct {
 	monitor, obs, event string
 	incident, channel   string
 	route, key          string
+	window              string
 }
 
 func TestCrossTenantIsolation(t *testing.T) {
@@ -76,6 +77,12 @@ func TestCrossTenantIsolation(t *testing.T) {
 		tn.route = routes[0].ID
 		keys, _ := svc.ListAPIKeys(ctx, sc)
 		tn.key = keys[0].ID
+		later := time.Now().Add(time.Hour)
+		win, err := svc.CreateMaintenance(ctx, sc, &domain.Maintenance{Name: name + " window", StartsAt: ptrTime(time.Now()), EndsAt: &later})
+		if err != nil {
+			t.Fatal(err)
+		}
+		tn.window = win.ID
 		return tn
 	}
 	a, b := mk("alpha"), mk("beta")
@@ -96,6 +103,8 @@ func TestCrossTenantIsolation(t *testing.T) {
 			out = strings.Replace(path, "{id}", a.route, 1)
 		case strings.Contains(path, "/keys/{id}"):
 			out = strings.Replace(path, "{id}", a.key, 1)
+		case strings.Contains(path, "/maintenance/{id}"):
+			out = strings.Replace(path, "{id}", a.window, 1)
 		}
 		return out
 	}
@@ -211,3 +220,5 @@ func pingKey(t *testing.T, svc *service.Service, orgSlug string) string {
 	}
 	return p.PingKey
 }
+
+func ptrTime(t time.Time) *time.Time { return &t }

@@ -196,3 +196,9 @@ func ptrs(s string) *string {
 func ptri(v int64) *int64 { return &v }
 
 var errNoTx = errors.New("service: nil transaction")
+
+// engineChanged is the bus event for a project-wide change the loops
+// should look at, such as a maintenance window ending.
+func engineChanged(projectID string) engine.MonitorChanged {
+	return engine.MonitorChanged{ProjectID: projectID}
+}

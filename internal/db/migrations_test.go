@@ -116,7 +116,7 @@ func TestRollbackAndDump(t *testing.T) {
 		t.Errorf("dump missing the route_channels migration:\n%s", s)
 	}
 	// rolling back walks the migrations newest first, down to nothing
-	for _, want := range []string{"20260930000000", "20260927000000"} {
+	for _, want := range []string{"20261001000000", "20260930000000", "20260927000000"} {
 		v, err := Rollback(ctx, d.Writer, quiet())
 		if err != nil {
 			t.Fatal(err)

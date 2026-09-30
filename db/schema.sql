@@ -177,7 +177,7 @@ CREATE TABLE maintenance (
   timezone TEXT NOT NULL DEFAULT 'UTC',
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
-);
+, ended_until INTEGER);
 CREATE INDEX maintenance_project ON maintenance(project_id);
 CREATE TABLE status_pages (
   id TEXT PRIMARY KEY,
@@ -235,4 +235,5 @@ CREATE INDEX routes_project ON routes(project_id, priority DESC);
 -- Dbmate schema migrations
 INSERT INTO "schema_migrations" (version) VALUES
   ('20260927000000'),
-  ('20260930000000');
+  ('20260930000000'),
+  ('20261001000000');
