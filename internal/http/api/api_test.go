@@ -541,6 +541,38 @@ func TestStatusPagesAPI(t *testing.T) {
 	}
 }
 
+func TestApplyAndExportAPI(t *testing.T) {
+	e := newEnv(t)
+	file := map[string]any{"version": 1, "channels": []any{map[string]any{"name": "hook", "kind": "webhook", "url": "https://hooks.example.com/x"}}, "monitors": []any{map[string]any{"slug": "web", "kind": "http", "http": map[string]any{"url": "https://example.com/healthz"}}}}
+	dry := e.key(e.rw, "PUT", "/apply?dry_run=1", file)
+	if dry.code != 200 || !strings.Contains(string(dry.body), `"dry_run":true`) || !strings.Contains(string(dry.body), `"created":["channel hook","monitor web"]`) {
+		t.Fatalf("dry run: %d %s", dry.code, dry.body)
+	}
+	if r := e.session("GET", "/monitors/web", nil, false); r.code != 404 {
+		t.Fatal("dry run must not apply")
+	}
+	if r := e.key(e.rw, "PUT", "/apply", file); r.code != 200 || !strings.Contains(string(r.body), `"unchanged":[]`) {
+		t.Fatalf("apply: %d %s", r.code, r.body)
+	}
+	if r := e.key(e.ro, "PUT", "/apply", file); r.code != 403 {
+		t.Fatalf("ro apply: %d", r.code)
+	}
+	bad := e.key(e.rw, "PUT", "/apply", map[string]any{"version": 1, "monitors": []any{map[string]any{"slug": "x", "grace_period": "5m"}}})
+	if bad.code != 422 || !strings.Contains(string(bad.body), "grace_period") {
+		t.Fatalf("schema: %d %s", bad.code, bad.body)
+	}
+	exp := e.session("GET", "/export", nil, false)
+	if exp.code != 200 || !strings.HasPrefix(exp.hdr.Get("Content-Type"), "application/yaml") || !strings.Contains(string(exp.body), "slug: web") || !strings.Contains(string(exp.body), "version: 1") {
+		t.Fatalf("export: %d %s", exp.code, exp.body)
+	}
+	if r := e.key(e.ro, "GET", "/export?secrets=1", nil); r.code != 403 {
+		t.Fatalf("secrets with ro key: %d", r.code)
+	}
+	if r := e.key(e.rw, "GET", "/export?secrets=1", nil); r.code != 200 {
+		t.Fatalf("secrets with rw key: %d", r.code)
+	}
+}
+
 func TestChannelsRoutesKeysPingKey(t *testing.T) {
 	e := newEnv(t)
 	r := e.key(e.rw, "POST", "/channels", map[string]any{"name": "ntfy", "kind": "ntfy", "config": map[string]any{"url": "https://ntfy.example.com", "topic": "vink", "token": "tk_secret"}})

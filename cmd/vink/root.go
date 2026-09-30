@@ -46,6 +46,7 @@ func newRootCmd() *cobra.Command {
 
 	root.AddCommand(newVersionCmd(g), newMigrateCmd(), newServeCmd(g), newAdminCmd(), newCtxCmd(g),
 		newLsCmd(g), newGetCmd(g), newLogsCmd(g), newStatusCmd(g), newAckCmd(g), newPingCmd(g), newRunCmd(g),
+		newApplyCmd(g), newExportCmd(g),
 		newActionCmd(g, "pause", "Pause a monitor", "pause"), newActionCmd(g, "resume", "Resume a paused monitor", "resume"), newActionCmd(g, "check", "Run a pull monitor's check now", "check"))
 	return root
 }

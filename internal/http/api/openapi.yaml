@@ -121,6 +121,16 @@ components:
             ended_until: {type: string, format: date-time, description: set by end now on a weekly window}
             created_at: {type: string, format: date-time}
             updated_at: {type: string, format: date-time}
+    Diff:
+      type: object
+      description: One line per resource, such as "monitor api-health".
+      properties:
+        dry_run: {type: boolean}
+        created: {type: array, items: {type: string}}
+        updated: {type: array, items: {type: string}}
+        recreated: {type: array, items: {type: string}}
+        deleted: {type: array, items: {type: string}}
+        unchanged: {type: array, items: {type: string}}
     StatusPageIn:
       type: object
       required: [slug, title]
@@ -338,6 +348,20 @@ paths:
   /maintenance/{id}/end:
     parameters: [{$ref: "#/components/parameters/id"}]
     post: {summary: End the running occurrence now, responses: {"200": {description: The window.}, "422": {description: The window is not active.}}}
+  /apply:
+    put:
+      summary: Apply a declarative file to the project and return the diff
+      description: The body is the apply file as YAML or JSON (docs/apply-schema.json). Everything applies in one transaction; monitor state is never touched; a monitor whose kind changes is recreated.
+      parameters:
+        - {name: dry_run, in: query, schema: {type: string, enum: ["1"]}, description: compute the diff and roll back}
+        - {name: prune, in: query, schema: {type: string, enum: ["1"]}, description: delete monitors, channels and routes the file does not name}
+      requestBody: {content: {application/yaml: {schema: {type: string}}, application/json: {schema: {type: object}}}}
+      responses: {"200": {description: The diff.}, "422": {description: The file is not valid.}}
+  /export:
+    get:
+      summary: The project as the apply YAML
+      parameters: [{name: secrets, in: query, schema: {type: string, enum: ["1"]}, description: include channel secrets; needs edit rights}]
+      responses: {"200": {description: application/yaml.}, "403": {description: Secrets asked for without edit rights.}}
   /status-pages:
     get: {summary: List status pages, responses: {"200": {description: "{items: [StatusPage]}"}}}
     post:

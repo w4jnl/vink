@@ -68,6 +68,8 @@ func (a *API) Mount(mux *http.ServeMux) {
 	a.register(mux, "PUT", "/maintenance/{id}", a.putMaintenance, false)
 	a.register(mux, "DELETE", "/maintenance/{id}", a.deleteMaintenance, false)
 	a.register(mux, "POST", "/maintenance/{id}/end", a.endMaintenance, false)
+	a.register(mux, "PUT", "/apply", a.applyProject, false)
+	a.register(mux, "GET", "/export", a.exportProject, false)
 	a.register(mux, "GET", "/status-pages", a.listStatusPages, false)
 	a.register(mux, "POST", "/status-pages", a.createStatusPage, false)
 	a.register(mux, "GET", "/status-pages/{slug}", a.getStatusPage, false)

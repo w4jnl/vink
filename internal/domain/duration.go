@@ -87,3 +87,6 @@ func (d *Duration) UnmarshalText(b []byte) error {
 	*d = v
 	return nil
 }
+
+// MarshalYAML writes the short form, so an export reads like the apply file.
+func (d Duration) MarshalYAML() (any, error) { return d.String(), nil }

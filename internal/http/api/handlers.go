@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/w4jnl/vink/internal/apply"
 	"github.com/w4jnl/vink/internal/auth"
 	"github.com/w4jnl/vink/internal/domain"
 	"github.com/w4jnl/vink/internal/service"
@@ -680,6 +681,46 @@ func (a *API) endMaintenance(w http.ResponseWriter, r *http.Request) error {
 	}
 	writeJSON(w, http.StatusOK, maintenanceOut(win, a.svc.Now()))
 	return nil
+}
+
+// --- apply and export -------------------------------------------------------
+
+// applyProject takes the apply file as YAML or JSON and answers the diff.
+func (a *API) applyProject(w http.ResponseWriter, r *http.Request) error {
+	body, err := io.ReadAll(io.LimitReader(r.Body, 4<<20))
+	if err != nil {
+		return err
+	}
+	f, err := apply.Parse(body, true)
+	if err != nil {
+		return (&domain.ValidationError{Errors: []domain.FieldError{{Field: "file", Msg: err.Error()}}}).OrNil()
+	}
+	q := r.URL.Query()
+	opts := service.ApplyOptions{DryRun: isOn(q.Get("dry_run")), Prune: isOn(q.Get("prune"))}
+	diff, err := a.svc.Apply(r.Context(), scope(r), f, opts)
+	if err != nil {
+		return err
+	}
+	writeJSON(w, http.StatusOK, diff)
+	return nil
+}
+
+func isOn(v string) bool { return v == "1" || v == "true" || v == "yes" }
+
+// exportProject writes the project as the apply YAML.
+func (a *API) exportProject(w http.ResponseWriter, r *http.Request) error {
+	f, err := a.svc.Export(r.Context(), scope(r), isOn(r.URL.Query().Get("secrets")))
+	if err != nil {
+		return err
+	}
+	out, err := apply.Encode(f)
+	if err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/yaml; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	_, err = w.Write(out) //nolint:gosec // YAML vink generated, served as application/yaml, never as HTML
+	return err
 }
 
 // --- status pages ---------------------------------------------------------

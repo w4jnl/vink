@@ -147,10 +147,10 @@ func (e *ExpectBody) IsZero() bool {
 type HTTPCheck struct {
 	URL             string            `json:"url" yaml:"url"`
 	Method          string            `json:"method,omitempty" yaml:"method,omitempty"`
-	Headers         map[string]string `json:"headers,omitempty" yaml:"headers,omitempty"`
+	Headers         map[string]string `json:"headers,omitempty" yaml:"headers,flow,omitempty"`
 	Body            string            `json:"body,omitempty" yaml:"body,omitempty"`
-	ExpectStatus    []StatusRange     `json:"expect_status,omitempty" yaml:"expect_status,omitempty"`
-	ExpectBody      *ExpectBody       `json:"expect_body,omitempty" yaml:"expect_body,omitempty"`
+	ExpectStatus    []StatusRange     `json:"expect_status,omitempty" yaml:"expect_status,flow,omitempty"`
+	ExpectBody      *ExpectBody       `json:"expect_body,omitempty" yaml:"expect_body,flow,omitempty"`
 	FollowRedirects *bool             `json:"follow_redirects,omitempty" yaml:"follow_redirects,omitempty"`
 	VerifyTLS       *bool             `json:"verify_tls,omitempty" yaml:"verify_tls,omitempty"`
 	// CAPem holds extra CA certificates for a private CA.
@@ -176,7 +176,7 @@ type DNSCheck struct {
 	Name     string   `json:"name" yaml:"name"`
 	Type     string   `json:"type,omitempty" yaml:"type,omitempty"`
 	Resolver string   `json:"resolver,omitempty" yaml:"resolver,omitempty"`
-	Expect   []string `json:"expect,omitempty" yaml:"expect,omitempty"`
+	Expect   []string `json:"expect,omitempty" yaml:"expect,flow,omitempty"`
 }
 
 // TLSCheck handshakes and watches the certificate's expiry.
@@ -470,4 +470,12 @@ func (k Kind) IsPull() bool {
 		return true
 	}
 	return false
+}
+
+// MarshalYAML writes 200 or "200-299".
+func (r StatusRange) MarshalYAML() (any, error) {
+	if r.Lo == r.Hi {
+		return r.Lo, nil
+	}
+	return r.String(), nil
 }

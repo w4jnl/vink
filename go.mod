@@ -8,10 +8,13 @@ require (
 	github.com/fatih/color v1.19.0
 	github.com/oklog/ulid/v2 v2.1.2
 	github.com/pelletier/go-toml/v2 v2.4.3
+	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
 	github.com/spf13/cobra v1.10.2
 	golang.org/x/crypto v0.57.0
 	golang.org/x/net v0.59.0
+	golang.org/x/text v0.42.0
 	golang.org/x/time v0.16.0
+	gopkg.in/yaml.v3 v3.0.1
 	modernc.org/sqlite v1.59.0
 )
 

@@ -55,9 +55,27 @@ func DefaultConfig() Config {
 	}
 }
 
+// store is what the service reads and writes through: the database, or
+// one transaction of it while apply runs.
+type store interface {
+	Read() *db.Queries
+	Write() *db.Queries
+	Tx(ctx context.Context, fn func(q *db.Queries) error) error
+}
+
+// txStore binds every read and write to one open transaction.
+type txStore struct{ q *db.Queries }
+
+func (t txStore) Read() *db.Queries  { return t.q }
+func (t txStore) Write() *db.Queries { return t.q }
+func (t txStore) Tx(_ context.Context, fn func(q *db.Queries) error) error {
+	return fn(t.q)
+}
+
 // Service is the application core.
 type Service struct {
-	db       *db.DB
+	db       store
+	sqlDB    *db.DB
 	bus      *engine.Bus
 	log      *slog.Logger
 	cfg      Config
@@ -80,7 +98,7 @@ func New(d *db.DB, bus *engine.Bus, log *slog.Logger, cfg Config) *Service {
 	if bus == nil {
 		bus = engine.NewBus()
 	}
-	s := &Service{db: d, bus: bus, log: log, cfg: cfg, now: func() time.Time { return time.Now().UTC() }, keyring: cfg.Keyring}
+	s := &Service{db: d, sqlDB: d, bus: bus, log: log, cfg: cfg, now: func() time.Time { return time.Now().UTC() }, keyring: cfg.Keyring}
 	if s.keyring == nil {
 		var key [32]byte
 		if _, err := rand.Read(key[:]); err != nil {
@@ -112,7 +130,16 @@ func (s *Service) Config() Config { return s.cfg }
 func (s *Service) Bus() *engine.Bus { return s.bus }
 
 // DB exposes the store for the auth layer and tests.
-func (s *Service) DB() *db.DB { return s.db }
+func (s *Service) DB() *db.DB { return s.sqlDB }
+
+// inTx returns a service whose every read and write runs on q, so a
+// sequence of ordinary calls commits or rolls back together.
+func (s *Service) inTx(q *db.Queries) *Service {
+	return &Service{
+		db: txStore{q}, sqlDB: s.sqlDB, bus: s.bus, log: s.log, cfg: s.cfg, now: s.now, keyring: s.keyring,
+		validateChannel: s.validateChannel, notifier: s.notifier, checker: s.checker, checkNow: s.checkNow,
+	}
+}
 
 // PingURL renders the canonical ping URL for a monitor.
 func (s *Service) PingURL(p *domain.Project, slug string) string {

@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -270,5 +271,58 @@ func TestCheckCommand(t *testing.T) {
 	t.Setenv("VINK_KEY", e.roKey)
 	if _, errs, code := e.run("", "check", "web"); code != 1 || !strings.Contains(errs, "Forbidden") {
 		t.Fatalf("ro check: %d %s", code, errs)
+	}
+}
+
+func TestApplyAndExport(t *testing.T) {
+	e := newCLIEnv(t)
+	dir := t.TempDir()
+	path := filepath.Join(dir, "vink.yaml")
+	file := "version: 1\nchannels:\n  - {name: hook, kind: webhook, url: ${HOOK_URL}}\nmonitors:\n  - {slug: nightly, schedule: {period: 1h}, grace: 10m, tags: [backup]}\n  - {slug: web, kind: http, http: {url: https://example.com/healthz}}\n"
+	if err := os.WriteFile(path, []byte(file), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, errs, code := e.run("", "apply", "-f", path); code != 1 || !strings.Contains(errs, "HOOK_URL") {
+		t.Fatalf("unset variable: %d %s", code, errs)
+	}
+	t.Setenv("HOOK_URL", "https://hooks.example.com/x")
+	out, errs, code := e.run("", "apply", "-f", path, "--dry-run")
+	if code != 0 || !strings.Contains(out, "+ channel hook") || !strings.Contains(out, "+ monitor web") || !strings.Contains(out, "dry run, nothing applied") {
+		t.Fatalf("dry run: %d %s %s", code, out, errs)
+	}
+	if _, err := e.svc.MonitorBySlug(context.Background(), e.scope, "web"); err == nil {
+		t.Fatal("dry run applied")
+	}
+	out, _, code = e.run("", "apply", "-f", path)
+	if code != 0 || !strings.Contains(out, "3 created") {
+		t.Fatalf("apply: %d %s", code, out)
+	}
+	out, _, code = e.run("", "apply", "-f", path)
+	if code != 0 || !strings.Contains(out, "0 created, 0 updated, 0 recreated, 0 deleted, 3 unchanged") {
+		t.Fatalf("second apply: %d %s", code, out)
+	}
+	bad := filepath.Join(dir, "bad.yaml")
+	_ = os.WriteFile(bad, []byte("version: 1\nmonitors:\n  - {slug: x, grace_period: 5m}\n"), 0o600)
+	if _, errs, code := e.run("", "apply", "-f", bad); code != 1 || !strings.Contains(errs, "grace_period") {
+		t.Fatalf("schema error: %d %s", code, errs)
+	}
+	exported := filepath.Join(dir, "export.yaml")
+	if out, errs, code := e.run("", "export", "-o", exported); code != 0 || !strings.Contains(out, "wrote") {
+		t.Fatalf("export: %d %s %s", code, out, errs)
+	}
+	text, _ := os.ReadFile(exported)
+	if !strings.Contains(string(text), "version: 1") || !strings.Contains(string(text), "slug: web") || !strings.Contains(string(text), "hooks.example.com/x") {
+		t.Fatalf("exported:\n%s", text)
+	}
+	out, _, code = e.run("", "apply", "-f", exported, "--prune")
+	if code != 0 || !strings.Contains(out, "0 created, 0 updated, 0 recreated, 0 deleted") {
+		t.Fatalf("export round trip: %d %s\n%s", code, out, text)
+	}
+	t.Setenv("VINK_KEY", e.roKey)
+	if _, errs, code := e.run("", "apply", "-f", path); code != 1 || !strings.Contains(errs, "Forbidden") {
+		t.Fatalf("ro apply: %d %s", code, errs)
+	}
+	if _, errs, code := e.run("", "export", "--secrets"); code != 1 || !strings.Contains(errs, "Forbidden") {
+		t.Fatalf("ro export with secrets: %d %s", code, errs)
 	}
 }

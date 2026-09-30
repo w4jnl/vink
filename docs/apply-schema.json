@@ -1,0 +1,154 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/w4jnl/vink/blob/main/docs/apply-schema.json",
+  "title": "vink apply file",
+  "description": "Declarative configuration of one project: channels, routes, maintenance windows, monitors and status pages. Applied with `vink apply -f` or `PUT /api/v1/apply`.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version"],
+  "properties": {
+    "version": { "const": 1 },
+    "project": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "slug": { "$ref": "#/$defs/slug" },
+        "name": { "type": "string", "maxLength": 120 },
+        "timezone": { "type": "string" }
+      }
+    },
+    "channels": { "type": "array", "items": { "$ref": "#/$defs/channel" } },
+    "routes": { "type": "array", "items": { "$ref": "#/$defs/route" } },
+    "maintenance": { "type": "array", "items": { "$ref": "#/$defs/maintenance" } },
+    "monitors": { "type": "array", "items": { "$ref": "#/$defs/monitor" } },
+    "status_pages": { "type": "array", "items": { "$ref": "#/$defs/status_page" } }
+  },
+  "$defs": {
+    "slug": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,63}$" },
+    "duration": { "type": "string", "pattern": "^([0-9]+d)?([0-9]+h)?([0-9]+m)?([0-9]+(\\.[0-9]+)?(s|ms))?$", "minLength": 2 },
+    "tags": { "type": "array", "items": { "type": "string", "pattern": "^[a-z0-9][a-z0-9_.-]{0,31}$" }, "maxItems": 20 },
+    "clock": { "type": "string", "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$" },
+    "channel": {
+      "type": "object",
+      "required": ["name", "kind"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "kind": { "type": "string", "enum": ["smtp", "webhook", "ntfy", "gotify", "matrix", "slackhook", "alertmanager"] },
+        "enabled": { "type": "boolean" }
+      },
+      "description": "The kind's fields sit beside name and kind: to and from for smtp; url, method, headers and body_template for webhook; url, topic, token and priority for ntfy. A secret written as *** keeps the stored value."
+    },
+    "route": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["channels"],
+      "properties": {
+        "match_tags": { "$ref": "#/$defs/tags" },
+        "channels": { "type": "array", "items": { "type": "string" }, "minItems": 1, "description": "channel names" },
+        "on": { "type": "array", "items": { "type": "string", "enum": ["down", "up", "late"] } },
+        "repeat_every": { "$ref": "#/$defs/duration" },
+        "priority": { "type": "integer" }
+      }
+    },
+    "maintenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "match_tags": { "$ref": "#/$defs/tags" },
+        "starts_at": { "type": "string", "format": "date-time" },
+        "ends_at": { "type": "string", "format": "date-time" },
+        "rrule": { "type": "string", "pattern": "^FREQ=WEEKLY;BYDAY=(MO|TU|WE|TH|FR|SA|SU)(,(MO|TU|WE|TH|FR|SA|SU))*$" },
+        "from": { "$ref": "#/$defs/clock" },
+        "to": { "$ref": "#/$defs/clock" },
+        "timezone": { "type": "string" }
+      }
+    },
+    "status_range": { "oneOf": [ { "type": "integer", "minimum": 100, "maximum": 599 }, { "type": "string", "pattern": "^[1-5][0-9]{2}(-[1-5][0-9]{2})?$" } ] },
+    "monitor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["slug"],
+      "properties": {
+        "slug": { "$ref": "#/$defs/slug" },
+        "name": { "type": "string", "maxLength": 120 },
+        "kind": { "type": "string", "enum": ["heartbeat", "http", "tcp", "dns", "tls", "icmp"], "default": "heartbeat" },
+        "tags": { "$ref": "#/$defs/tags" },
+        "schedule": {
+          "type": "object", "additionalProperties": false,
+          "properties": { "period": { "$ref": "#/$defs/duration" }, "cron": { "type": "string" }, "oncalendar": { "type": "string" } }
+        },
+        "timezone": { "type": "string" },
+        "grace": { "$ref": "#/$defs/duration" },
+        "max_runtime": { "$ref": "#/$defs/duration" },
+        "failure_threshold": { "type": "integer", "minimum": 1, "maximum": 100 },
+        "recovery_threshold": { "type": "integer", "minimum": 1, "maximum": 100 },
+        "methods": { "type": "array", "items": { "type": "string", "enum": ["GET", "POST", "HEAD", "PUT"] } },
+        "body_limit": { "type": "integer", "minimum": 0 },
+        "interval": { "$ref": "#/$defs/duration" },
+        "timeout": { "$ref": "#/$defs/duration" },
+        "confirm": {
+          "type": "object", "additionalProperties": false,
+          "properties": { "retries": { "type": "integer", "minimum": 0, "maximum": 5 }, "delay": { "$ref": "#/$defs/duration" } }
+        },
+        "location": { "type": "string" },
+        "http": {
+          "type": "object", "additionalProperties": false, "required": ["url"],
+          "properties": {
+            "url": { "type": "string" },
+            "method": { "type": "string", "enum": ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"] },
+            "headers": { "type": "object", "additionalProperties": { "type": "string" } },
+            "body": { "type": "string" },
+            "expect_status": { "type": "array", "items": { "$ref": "#/$defs/status_range" } },
+            "expect_body": {
+              "type": "object", "additionalProperties": false,
+              "properties": {
+                "contains": { "type": "string" },
+                "not_contains": { "type": "string" },
+                "jsonpath": { "type": "object", "additionalProperties": false, "required": ["path"], "properties": { "path": { "type": "string" }, "equals": {} } }
+              }
+            },
+            "follow_redirects": { "type": "boolean" },
+            "verify_tls": { "type": "boolean" },
+            "ca_pem": { "type": "string" }
+          }
+        },
+        "tcp": {
+          "type": "object", "additionalProperties": false, "required": ["host", "port"],
+          "properties": { "host": { "type": "string" }, "port": { "type": "integer", "minimum": 1, "maximum": 65535 }, "send": { "type": "string" }, "expect": { "type": "string" } }
+        },
+        "dns": {
+          "type": "object", "additionalProperties": false, "required": ["name"],
+          "properties": {
+            "name": { "type": "string" },
+            "type": { "type": "string", "enum": ["A", "AAAA", "CNAME", "MX", "NS", "TXT", "PTR", "SRV"] },
+            "resolver": { "type": "string" },
+            "expect": { "type": "array", "items": { "type": "string" } }
+          }
+        },
+        "tls": {
+          "type": "object", "additionalProperties": false, "required": ["host"],
+          "properties": { "host": { "type": "string" }, "port": { "type": "integer", "minimum": 1, "maximum": 65535 }, "servername": { "type": "string" }, "warn_days": { "type": "integer", "minimum": 0 }, "crit_days": { "type": "integer", "minimum": 0 } }
+        },
+        "icmp": {
+          "type": "object", "additionalProperties": false, "required": ["host"],
+          "properties": { "host": { "type": "string" }, "count": { "type": "integer", "minimum": 1, "maximum": 10 }, "loss_threshold": { "type": "number", "exclusiveMinimum": 0, "maximum": 1 } }
+        }
+      }
+    },
+    "status_page": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["slug", "title"],
+      "properties": {
+        "slug": { "$ref": "#/$defs/slug" },
+        "title": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "match_tags": { "$ref": "#/$defs/tags" },
+        "public": { "type": "boolean" },
+        "password": { "type": "string" },
+        "custom_domain": { "type": "string" }
+      }
+    }
+  }
+}
