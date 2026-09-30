@@ -212,3 +212,46 @@ func (q *Queries) ListProjectEvents(ctx context.Context, arg ListProjectEventsPa
 	}
 	return items, nil
 }
+
+const listProjectEventsSince = `-- name: ListProjectEventsSince :many
+SELECT id, monitor_id, project_id, at, from_state, to_state, reason, observation_id FROM events
+WHERE project_id = ? AND at >= ?
+ORDER BY at, id
+`
+
+type ListProjectEventsSinceParams struct {
+	ProjectID string
+	At        int64
+}
+
+func (q *Queries) ListProjectEventsSince(ctx context.Context, arg ListProjectEventsSinceParams) ([]Event, error) {
+	rows, err := q.db.QueryContext(ctx, listProjectEventsSince, arg.ProjectID, arg.At)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Event
+	for rows.Next() {
+		var i Event
+		if err := rows.Scan(
+			&i.ID,
+			&i.MonitorID,
+			&i.ProjectID,
+			&i.At,
+			&i.FromState,
+			&i.ToState,
+			&i.Reason,
+			&i.ObservationID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}

@@ -22,3 +22,8 @@ FROM events e JOIN monitors m ON m.id = e.monitor_id
 WHERE e.project_id = ?
 ORDER BY e.at DESC, e.id DESC
 LIMIT ?;
+
+-- name: ListProjectEventsSince :many
+SELECT * FROM events
+WHERE project_id = ? AND at >= ?
+ORDER BY at, id;

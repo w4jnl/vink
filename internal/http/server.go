@@ -82,6 +82,7 @@ func Handler(d Deps, withPing bool) http.Handler {
 	if withPing {
 		mux.Handle("/ping/", pingMux(d))
 	}
+	var root http.Handler = mux
 	if d.Auth != nil {
 		api.New(d.Svc, d.Auth, logging.Sub(d.Log, "api")).Mount(mux)
 		ui, err := web.New(d.Svc, d.Auth, logging.Sub(d.Log, "web"))
@@ -90,12 +91,13 @@ func Handler(d Deps, withPing bool) http.Handler {
 		}
 		ui.SetSMTPFrom(d.Cfg.SMTP.From)
 		ui.Mount(mux)
+		root = ui.CustomDomains(mux)
 	}
 	mux.HandleFunc("GET /a/{token}", d.ackLink)
 	for _, m := range d.Mount {
 		m(mux)
 	}
-	return chain(d, mux)
+	return chain(d, root)
 }
 
 // ackLink acknowledges an incident from a signed one-click token and

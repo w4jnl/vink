@@ -28,6 +28,7 @@ type Querier interface {
 	CreateProject(ctx context.Context, arg CreateProjectParams) (Project, error)
 	CreateRoute(ctx context.Context, arg CreateRouteParams) (Route, error)
 	CreateSession(ctx context.Context, arg CreateSessionParams) error
+	CreateStatusPage(ctx context.Context, arg CreateStatusPageParams) (StatusPage, error)
 	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
 	// tenancy: root (retention job)
 	DeleteBodiesBefore(ctx context.Context, createdAt int64) (int64, error)
@@ -45,6 +46,7 @@ type Querier interface {
 	DeleteRoute(ctx context.Context, arg DeleteRouteParams) (int64, error)
 	DeleteRouteChannels(ctx context.Context, arg DeleteRouteChannelsParams) error
 	DeleteSession(ctx context.Context, id string) error
+	DeleteStatusPage(ctx context.Context, arg DeleteStatusPageParams) (int64, error)
 	DeleteUserSessions(ctx context.Context, userID string) error
 	GetAPIKey(ctx context.Context, arg GetAPIKeyParams) (ApiKey, error)
 	GetBody(ctx context.Context, arg GetBodyParams) (Body, error)
@@ -70,6 +72,11 @@ type Querier interface {
 	GetProjectBySlug(ctx context.Context, arg GetProjectBySlugParams) (Project, error)
 	GetRoute(ctx context.Context, arg GetRouteParams) (Route, error)
 	GetSession(ctx context.Context, arg GetSessionParams) (Session, error)
+	GetStatusPage(ctx context.Context, arg GetStatusPageParams) (StatusPage, error)
+	// tenancy: root (public page served on its custom domain)
+	GetStatusPageByDomain(ctx context.Context, customDomain *string) (StatusPage, error)
+	// tenancy: root (public page: the slug is unique per instance)
+	GetStatusPageBySlug(ctx context.Context, slug string) (StatusPage, error)
 	GetUser(ctx context.Context, id string) (User, error)
 	GetUserBySubject(ctx context.Context, subject string) (User, error)
 	InsertBody(ctx context.Context, arg InsertBodyParams) error
@@ -109,6 +116,7 @@ type Querier interface {
 	ListOpenUnackedIncidents(ctx context.Context) ([]ListOpenUnackedIncidentsRow, error)
 	ListOrgs(ctx context.Context) ([]Org, error)
 	ListProjectEvents(ctx context.Context, arg ListProjectEventsParams) ([]ListProjectEventsRow, error)
+	ListProjectEventsSince(ctx context.Context, arg ListProjectEventsSinceParams) ([]Event, error)
 	ListProjects(ctx context.Context, orgID string) ([]Project, error)
 	// tenancy: root (the user's memberships are the scope)
 	ListProjectsForUser(ctx context.Context, userID string) ([]ListProjectsForUserRow, error)
@@ -117,6 +125,7 @@ type Querier interface {
 	ListRoutes(ctx context.Context, projectID string) ([]Route, error)
 	// tenancy: root (scheduler, max_runtime)
 	ListRunningMonitors(ctx context.Context, runStartedAt *int64) ([]Monitor, error)
+	ListStatusPages(ctx context.Context, projectID string) ([]StatusPage, error)
 	ListUsers(ctx context.Context) ([]User, error)
 	// tenancy: root (dispatcher)
 	MarkDeliveryDelivered(ctx context.Context, arg MarkDeliveryDeliveredParams) error
@@ -146,6 +155,7 @@ type Querier interface {
 	UpdateMonitorState(ctx context.Context, arg UpdateMonitorStateParams) error
 	UpdateProject(ctx context.Context, arg UpdateProjectParams) error
 	UpdateRoute(ctx context.Context, arg UpdateRouteParams) (Route, error)
+	UpdateStatusPage(ctx context.Context, arg UpdateStatusPageParams) (StatusPage, error)
 	UpdateUserProfile(ctx context.Context, arg UpdateUserProfileParams) error
 	UpsertMembership(ctx context.Context, arg UpsertMembershipParams) error
 }

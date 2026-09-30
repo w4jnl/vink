@@ -31,6 +31,7 @@ type tenant struct {
 	incident, channel   string
 	route, key          string
 	window              string
+	page                string
 }
 
 func TestCrossTenantIsolation(t *testing.T) {
@@ -83,6 +84,11 @@ func TestCrossTenantIsolation(t *testing.T) {
 			t.Fatal(err)
 		}
 		tn.window = win.ID
+		page, err := svc.CreateStatusPage(ctx, sc, &domain.StatusPage{Slug: name + "-status", Title: name + " status", Public: true}, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		tn.page = page.Slug
 		return tn
 	}
 	a, b := mk("alpha"), mk("beta")
@@ -105,6 +111,8 @@ func TestCrossTenantIsolation(t *testing.T) {
 			out = strings.Replace(path, "{id}", a.key, 1)
 		case strings.Contains(path, "/maintenance/{id}"):
 			out = strings.Replace(path, "{id}", a.window, 1)
+		case strings.Contains(path, "/status-pages/{slug}"):
+			out = strings.Replace(path, "{slug}", a.page, 1)
 		}
 		return out
 	}

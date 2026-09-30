@@ -502,6 +502,45 @@ func TestMaintenanceAPI(t *testing.T) {
 	}
 }
 
+func TestStatusPagesAPI(t *testing.T) {
+	e := newEnv(t)
+	created := e.key(e.rw, "POST", "/status-pages", map[string]any{"slug": "homelab", "title": "Homelab status", "match_tags": []string{"prod"}})
+	if created.code != 201 || !strings.Contains(string(created.body), `"url":"http://localhost:8080/s/homelab"`) || !strings.Contains(string(created.body), `"public":true`) {
+		t.Fatalf("create: %d %s", created.code, created.body)
+	}
+	private := e.key(e.rw, "POST", "/status-pages", map[string]any{"slug": "office", "title": "Office", "password": "s3cret"})
+	if private.code != 201 || !strings.Contains(string(private.body), `"has_password":true`) || strings.Contains(string(private.body), "s3cret") || !strings.Contains(string(private.body), `"public":false`) {
+		t.Fatalf("private: %d %s", private.code, private.body)
+	}
+	if r := e.key(e.rw, "POST", "/status-pages", map[string]any{"slug": "Bad Slug", "title": "x"}); r.code != 422 {
+		t.Fatalf("bad slug: %d", r.code)
+	}
+	if r := e.key(e.rw, "POST", "/status-pages", map[string]any{"slug": "homelab", "title": "again"}); r.code != 409 {
+		t.Fatalf("duplicate: %d", r.code)
+	}
+	if r := e.key(e.ro, "POST", "/status-pages", map[string]any{"slug": "x", "title": "x"}); r.code != 403 {
+		t.Fatalf("ro key: %d", r.code)
+	}
+	list := e.session("GET", "/status-pages", nil, false)
+	if list.code != 200 || strings.Count(string(list.body), `"slug":`) != 2 {
+		t.Fatalf("list: %d %s", list.code, list.body)
+	}
+	upd := e.key(e.rw, "PUT", "/status-pages/homelab", map[string]any{"slug": "home", "title": "Home", "match_tags": []string{"prod", "backup"}, "custom_domain": "status.example.test"})
+	if upd.code != 200 || !strings.Contains(string(upd.body), `"url":"http://localhost:8080/s/home"`) || !strings.Contains(string(upd.body), `"custom_domain":"status.example.test"`) {
+		t.Fatalf("update: %d %s", upd.code, upd.body)
+	}
+	keep := e.key(e.rw, "PUT", "/status-pages/office", map[string]any{"slug": "office", "title": "Office", "public": false})
+	if keep.code != 200 || !strings.Contains(string(keep.body), `"has_password":true`) {
+		t.Fatalf("empty password keeps it: %d %s", keep.code, keep.body)
+	}
+	if r := e.key(e.rw, "DELETE", "/status-pages/home", nil); r.code != 204 {
+		t.Fatalf("delete: %d", r.code)
+	}
+	if r := e.session("GET", "/status-pages/home", nil, false); r.code != 404 {
+		t.Fatalf("after delete: %d", r.code)
+	}
+}
+
 func TestChannelsRoutesKeysPingKey(t *testing.T) {
 	e := newEnv(t)
 	r := e.key(e.rw, "POST", "/channels", map[string]any{"name": "ntfy", "kind": "ntfy", "config": map[string]any{"url": "https://ntfy.example.com", "topic": "vink", "token": "tk_secret"}})

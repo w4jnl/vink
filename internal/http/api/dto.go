@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"strings"
 	"time"
 
 	"github.com/w4jnl/vink/internal/domain"
@@ -380,4 +381,51 @@ func maintenanceOut(w *domain.Maintenance, now time.Time) MaintenanceOut {
 		out.NextStart, out.NextEnd = &start, &end
 	}
 	return out
+}
+
+// StatusPageIn creates or replaces a status page. A password makes the
+// page private; an empty one keeps the current password on an update.
+type StatusPageIn struct {
+	Slug         string   `json:"slug"`
+	Title        string   `json:"title"`
+	MatchTags    []string `json:"match_tags"`
+	Public       *bool    `json:"public"`
+	Password     string   `json:"password"`
+	CustomDomain string   `json:"custom_domain"`
+}
+
+func (in StatusPageIn) toDomain() *domain.StatusPage {
+	p := &domain.StatusPage{Slug: in.Slug, Title: in.Title, MatchTags: in.MatchTags, CustomDomain: in.CustomDomain, Public: true}
+	if in.Public != nil {
+		p.Public = *in.Public
+	}
+	if in.Password != "" {
+		p.Public = false
+	}
+	return p
+}
+
+// StatusPageOut is a page as the API shows it; the password never comes back.
+type StatusPageOut struct {
+	ID           string    `json:"id"`
+	Slug         string    `json:"slug"`
+	Title        string    `json:"title"`
+	MatchTags    []string  `json:"match_tags"`
+	Public       bool      `json:"public"`
+	HasPassword  bool      `json:"has_password"`
+	CustomDomain string    `json:"custom_domain,omitempty"`
+	URL          string    `json:"url"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
+}
+
+func statusPageOut(svc *service.Service, p *domain.StatusPage) StatusPageOut {
+	tags := p.MatchTags
+	if tags == nil {
+		tags = []string{}
+	}
+	return StatusPageOut{
+		ID: p.ID, Slug: p.Slug, Title: p.Title, MatchTags: tags, Public: p.Public, HasPassword: p.HasPassword(), CustomDomain: p.CustomDomain,
+		URL: strings.TrimRight(svc.Config().BaseURL, "/") + "/s/" + p.Slug, CreatedAt: p.CreatedAt, UpdatedAt: p.UpdatedAt,
+	}
 }

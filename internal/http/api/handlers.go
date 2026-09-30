@@ -681,3 +681,62 @@ func (a *API) endMaintenance(w http.ResponseWriter, r *http.Request) error {
 	writeJSON(w, http.StatusOK, maintenanceOut(win, a.svc.Now()))
 	return nil
 }
+
+// --- status pages ---------------------------------------------------------
+
+func (a *API) listStatusPages(w http.ResponseWriter, r *http.Request) error {
+	list, err := a.svc.ListStatusPages(r.Context(), scope(r))
+	if err != nil {
+		return err
+	}
+	out := make([]StatusPageOut, 0, len(list))
+	for _, p := range list {
+		out = append(out, statusPageOut(a.svc, p))
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": out})
+	return nil
+}
+
+func (a *API) createStatusPage(w http.ResponseWriter, r *http.Request) error {
+	var in StatusPageIn
+	if err := decodeJSON(r, &in); err != nil {
+		return err
+	}
+	p, err := a.svc.CreateStatusPage(r.Context(), scope(r), in.toDomain(), in.Password)
+	if err != nil {
+		return err
+	}
+	w.Header().Set("Location", locationFor(r, "/status-pages/"+p.Slug))
+	writeJSON(w, http.StatusCreated, statusPageOut(a.svc, p))
+	return nil
+}
+
+func (a *API) getStatusPage(w http.ResponseWriter, r *http.Request) error {
+	p, err := a.svc.StatusPage(r.Context(), scope(r), r.PathValue("slug"))
+	if err != nil {
+		return err
+	}
+	writeJSON(w, http.StatusOK, statusPageOut(a.svc, p))
+	return nil
+}
+
+func (a *API) putStatusPage(w http.ResponseWriter, r *http.Request) error {
+	var in StatusPageIn
+	if err := decodeJSON(r, &in); err != nil {
+		return err
+	}
+	p, err := a.svc.UpdateStatusPage(r.Context(), scope(r), r.PathValue("slug"), in.toDomain(), in.Password)
+	if err != nil {
+		return err
+	}
+	writeJSON(w, http.StatusOK, statusPageOut(a.svc, p))
+	return nil
+}
+
+func (a *API) deleteStatusPage(w http.ResponseWriter, r *http.Request) error {
+	if err := a.svc.DeleteStatusPage(r.Context(), scope(r), r.PathValue("slug")); err != nil {
+		return err
+	}
+	w.WriteHeader(http.StatusNoContent)
+	return nil
+}

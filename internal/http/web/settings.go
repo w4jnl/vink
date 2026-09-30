@@ -71,6 +71,7 @@ type settingsData struct {
 	Channels         []channelRow
 	Routes           []routeRow
 	Windows          []windowRow
+	Pages            []pageRow
 	Panel            *panelData
 	Keys             []keyRow
 	KeysPath         string
@@ -176,7 +177,11 @@ func (h *Web) settingsData(c *reqCtx, tabName string, o settingsOpts) (settingsD
 	if err != nil {
 		return d, err
 	}
-	counts := map[string]int{"channels": len(channels), "routes": len(routes), "maintenance": len(windows), "pages": 0}
+	pages, err := h.svc.ListStatusPages(ctx, c.scope)
+	if err != nil {
+		return d, err
+	}
+	counts := map[string]int{"channels": len(channels), "routes": len(routes), "maintenance": len(windows), "pages": len(pages)}
 	for _, t := range settingsTabs {
 		tab := ui.Tab{ID: t.ID, Label: t.Label, Href: root + t.ID}
 		if n, ok := counts[t.ID]; ok {
@@ -261,8 +266,9 @@ func (h *Web) settingsData(c *reqCtx, tabName string, o settingsOpts) (settingsD
 			d.Windows = append(d.Windows, h.windowRow(c, w, root+"maintenance"))
 		}
 	case "pages":
-		d.Lede = "A status page shows a set of monitors to people without an account."
-		d.ComingSoon = "Status pages arrive later in phase 1."
+		for _, p := range pages {
+			d.Pages = append(d.Pages, h.statusPageRow(c, p, root+"pages"))
+		}
 	}
 	return d, nil
 }
@@ -362,6 +368,21 @@ func (h *Web) settings(c *reqCtx) error {
 			return err
 		}
 		o.panel = h.maintenancePanel(c, w)
+	case tabName == "pages" && q.Has("add"):
+		if !c.scope.CanEdit() {
+			return domain.ErrForbidden
+		}
+		o.panel = h.statusPagePanel(c, nil)
+		if q.Has("access") || q.Has("title") {
+			h.parseStatusPage(q, o.panel)
+			o.panel.Errors = map[string]string{}
+		}
+	case tabName == "pages" && q.Get("edit") != "":
+		p, err := h.svc.StatusPage(ctx, c.scope, q.Get("edit"))
+		if err != nil {
+			return err
+		}
+		o.panel = h.statusPagePanel(c, p)
 	}
 	return h.renderTab(c, http.StatusOK, tabName, o)
 }
@@ -1041,4 +1062,141 @@ func (h *Web) endMaintenance(c *reqCtx) error {
 		return h.renderTab(c, http.StatusOK, "maintenance", settingsOpts{})
 	}
 	return h.redirect(c, c.projectPath()+"/settings/maintenance")
+}
+
+// --- status pages -----------------------------------------------------------
+
+type pageRow struct {
+	Slug, Title, Sub string
+	Cells            []ui.Cell
+	Actions          ui.HTML
+}
+
+// pageURL is the public address of a page.
+func (h *Web) pageURL(slug string) string {
+	return strings.TrimRight(h.svc.Config().BaseURL, "/") + "/s/" + slug
+}
+
+// pagePrefix is the address shown before the slug field: "vink.w4j.nl/s/".
+func (h *Web) pagePrefix() string {
+	base := strings.TrimRight(h.svc.Config().BaseURL, "/")
+	if u, err := url.Parse(base); err == nil && u.Host != "" {
+		return u.Host + "/s/"
+	}
+	return base + "/s/"
+}
+
+func (h *Web) statusPageRow(c *reqCtx, p *domain.StatusPage, root string) pageRow {
+	row := pageRow{Slug: p.Slug, Title: p.Title, Sub: h.pageURL(p.Slug)}
+	access := "public"
+	if p.HasPassword() {
+		access = "password"
+	}
+	var tags strings.Builder
+	for _, t := range p.MatchTags {
+		tags.WriteString(string(ui.Tag(t)))
+	}
+	if tags.Len() == 0 {
+		tags.WriteString("every monitor")
+	}
+	domainText := "no custom domain"
+	if p.CustomDomain != "" {
+		domainText = p.CustomDomain
+	}
+	row.Cells = []ui.Cell{{Text: access, Size: "s"}, {HTML: ui.HTML(tags.String())}, {Text: domainText, Size: "l", Mono: true}}
+	row.Actions = ui.Button(ui.ButtonProps{Label: "Open", Href: "/s/" + p.Slug}) + ui.Button(ui.ButtonProps{Label: "Edit", Href: root + "?edit=" + url.QueryEscape(p.Slug)})
+	return row
+}
+
+func (h *Web) statusPagePanel(c *reqCtx, p *domain.StatusPage) *panelData {
+	root := c.projectPath() + "/settings/pages"
+	panel := &panelData{
+		Title: "Add page", Action: root, KindPath: root + "?add=1", CancelPath: root, CSRF: c.csrf(), SubmitLabel: "Save page",
+		Values: map[string]string{"title": "", "slug": "", "match_tags": "", "access": "public", "password": "", "custom_domain": "", "password_placeholder": "only with Password", "prefix": h.pagePrefix()},
+		Errors: map[string]string{}, Repeat: "public",
+	}
+	if p != nil {
+		panel.Title, panel.EditID, panel.Action, panel.DeletePath, panel.KindPath = "Edit page", p.Slug, root+"/"+p.Slug, root+"/"+p.Slug+"/delete", root+"?edit="+url.QueryEscape(p.Slug)
+		panel.Values["title"], panel.Values["slug"], panel.Values["match_tags"], panel.Values["custom_domain"] = p.Title, p.Slug, strings.Join(p.MatchTags, ", "), p.CustomDomain
+		if p.HasPassword() {
+			panel.Values["access"], panel.Repeat = "password", "password"
+			panel.Values["password_placeholder"] = "unchanged"
+		}
+	}
+	return panel
+}
+
+// parseStatusPage reads the panel's fields; the password comes back separately.
+func (h *Web) parseStatusPage(values map[string][]string, p *panelData) (*domain.StatusPage, string) {
+	get := func(k string) string {
+		v := ""
+		if vs := values[k]; len(vs) > 0 {
+			v = strings.TrimSpace(vs[0])
+		}
+		p.Values[k] = v
+		return v
+	}
+	page := &domain.StatusPage{Title: get("title"), Slug: get("slug"), CustomDomain: get("custom_domain"), Public: true}
+	if v := get("match_tags"); v != "" {
+		page.MatchTags = domain.NormalizeTags(strings.Split(v, ","))
+	}
+	if page.Slug == "" && page.Title != "" {
+		page.Slug = domain.Slugify(page.Title)
+		p.Values["slug"] = page.Slug
+	}
+	password := get("password")
+	p.Values["password"] = ""
+	p.Repeat = get("access")
+	if p.Repeat != "password" {
+		p.Repeat, p.Values["access"] = "public", "public"
+		password = ""
+	} else {
+		page.Public = false
+	}
+	return page, password
+}
+
+func (h *Web) saveStatusPage(c *reqCtx) error {
+	if err := c.r.ParseForm(); err != nil {
+		return err
+	}
+	ctx := c.r.Context()
+	slug := c.r.PathValue("slug")
+	var cur *domain.StatusPage
+	if slug != "" {
+		var err error
+		if cur, err = h.svc.StatusPage(ctx, c.scope, slug); err != nil {
+			return err
+		}
+	}
+	p := h.statusPagePanel(c, cur)
+	page, password := h.parseStatusPage(c.r.PostForm, p)
+	if cur != nil && cur.HasPassword() {
+		p.Values["password_placeholder"] = "unchanged"
+	}
+	opts := settingsOpts{panel: p}
+	var err error
+	if cur == nil {
+		_, err = h.svc.CreateStatusPage(ctx, c.scope, page, password)
+	} else {
+		_, err = h.svc.UpdateStatusPage(ctx, c.scope, slug, page, password)
+	}
+	if err != nil {
+		if applyPanelValidation(p, err) {
+			return h.renderTab(c, http.StatusUnprocessableEntity, "pages", opts)
+		}
+		if errors.Is(err, domain.ErrConflict) {
+			p.Errors["slug"] = "This address is taken."
+			return h.renderTab(c, http.StatusUnprocessableEntity, "pages", opts)
+		}
+		return err
+	}
+	return h.redirect(c, c.projectPath()+"/settings/pages")
+}
+
+func (h *Web) deleteStatusPage(c *reqCtx) error {
+	if err := h.svc.DeleteStatusPage(c.r.Context(), c.scope, c.r.PathValue("slug")); err != nil {
+		return err
+	}
+	return h.redirect(c, c.projectPath()+"/settings/pages")
 }

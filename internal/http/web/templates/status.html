@@ -1,0 +1,43 @@
+{{define "content"}}{{end}}
+{{define "status-page"}}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{.Title}}</title>
+<link rel="stylesheet" href="{{static "tokens.css"}}">
+<link rel="stylesheet" href="{{static "bundle.css"}}">
+<link rel="icon" type="image/svg+xml" href="{{if .Down}}{{static "favicon-down.svg"}}{{else}}{{static "favicon.svg"}}{{end}}">
+<meta http-equiv="refresh" content="60">
+</head>
+<body class="vk-app">
+<div class="vk-status"><div class="vk-status__head"><span class="vk-status__mark">{{mark 28}}</span><h1>{{.Title}}</h1></div>
+{{.Banner}}
+{{range .Groups}}<div class="vk-status__group"><h2>{{.Name}}</h2>{{range .Items}}<div class="vk-status__item"><div class="vk-status__line"><span class="vk-status__name">{{.Name}}</span>{{.Badge}}</div>{{.Bar}}</div>{{end}}</div>{{end}}
+{{if .Incidents}}<div class="vk-status__group"><h2>Open incidents</h2>{{range .Incidents}}<div class="vk-status__item"><div class="vk-status__line"><span class="vk-status__name">{{.Name}}</span><span class="vk-muted vk-mono">{{.Since}}</span></div></div>{{end}}</div>{{end}}
+<div class="vk-status__foot"><span>{{.Updated}}</span><span>powered by <a href="https://github.com/w4jnl/vink">vink</a></span></div></div>
+</body>
+</html>{{end}}
+{{define "status-locked"}}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{.Title}}</title>
+<link rel="stylesheet" href="{{static "tokens.css"}}">
+<link rel="stylesheet" href="{{static "bundle.css"}}">
+<link rel="icon" type="image/svg+xml" href="{{static "favicon.svg"}}">
+</head>
+<body class="vk-app vk-app--fill">
+<main class="vk-auth">
+<div class="vk-auth__brand">{{mark 22}}<span>vink</span></div>
+<form class="vk-auth__card" method="post" action="/s/{{.Slug}}">
+<h1>{{.Title}}</h1>
+{{if .Error}}{{notice "error" "" .Error ""}}{{end}}
+{{field (dict "ID" "password" "Label" "Password" "Type" "password" "Autocomplete" "current-password" "Attrs" (attrs "required" "" "autofocus" ""))}}
+{{button (dict "Label" "Open" "Variant" "primary" "Type" "submit" "Block" true)}}
+<p>This status page asks for a password.</p>
+</form>
+</main>
+</body>
+</html>{{end}}

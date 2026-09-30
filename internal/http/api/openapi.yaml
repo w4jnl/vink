@@ -121,6 +121,26 @@ components:
             ended_until: {type: string, format: date-time, description: set by end now on a weekly window}
             created_at: {type: string, format: date-time}
             updated_at: {type: string, format: date-time}
+    StatusPageIn:
+      type: object
+      required: [slug, title]
+      properties:
+        slug: {type: string, description: unique across the instance; the page lives at /s/{slug}}
+        title: {type: string}
+        match_tags: {type: array, items: {type: string}, description: any-of; one group per tag in this order; empty shows every monitor}
+        public: {type: boolean, default: true}
+        password: {type: string, description: write-only; makes the page private; empty keeps the current one}
+        custom_domain: {type: string}
+    StatusPage:
+      allOf:
+        - $ref: "#/components/schemas/StatusPageIn"
+        - type: object
+          properties:
+            id: {type: string}
+            has_password: {type: boolean}
+            url: {type: string}
+            created_at: {type: string, format: date-time}
+            updated_at: {type: string, format: date-time}
     MonitorIn:
       type: object
       description: Heartbeats take schedule, grace and the ping options; pull kinds take interval, timeout, confirm and their block.
@@ -318,6 +338,20 @@ paths:
   /maintenance/{id}/end:
     parameters: [{$ref: "#/components/parameters/id"}]
     post: {summary: End the running occurrence now, responses: {"200": {description: The window.}, "422": {description: The window is not active.}}}
+  /status-pages:
+    get: {summary: List status pages, responses: {"200": {description: "{items: [StatusPage]}"}}}
+    post:
+      summary: Add a status page
+      requestBody: {content: {application/json: {schema: {$ref: "#/components/schemas/StatusPageIn"}}}}
+      responses: {"201": {description: The page.}, "409": {description: The address is taken.}, "422": {description: Validation failed.}}
+  /status-pages/{slug}:
+    parameters: [{$ref: "#/components/parameters/slug"}]
+    get: {summary: One status page, responses: {"200": {description: The page.}}}
+    put:
+      summary: Replace a status page
+      requestBody: {content: {application/json: {schema: {$ref: "#/components/schemas/StatusPageIn"}}}}
+      responses: {"200": {description: The page.}}
+    delete: {summary: Delete a status page, responses: {"204": {description: Deleted.}}}
   /monitors/{slug}/check:
     parameters: [{$ref: "#/components/parameters/slug"}]
     post: {summary: Run a pull monitor's check now and return it, responses: {"200": {description: The monitor after the attempt.}, "422": {description: Not a pull monitor, or paused.}}}

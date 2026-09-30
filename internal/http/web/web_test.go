@@ -74,7 +74,7 @@ func newEnv(t *testing.T) *env {
 	e.web.SetClock(func() time.Time { return e.now })
 	mux := http.NewServeMux()
 	e.web.Mount(mux)
-	e.srv = middleware.Chain(mux, middleware.RequestID)
+	e.srv = middleware.Chain(e.web.CustomDomains(mux), middleware.RequestID)
 
 	rec := httptest.NewRecorder()
 	p, err := authn.Login(rec, httptest.NewRequest("POST", "/login", nil), "j", "correct horse")
@@ -675,9 +675,6 @@ func TestSettingsTabs(t *testing.T) {
 	if p := e.post(projPath+"/settings/ping-key/rotate", nil, false); p.code != 303 {
 		t.Fatalf("rotate: %d", p.code)
 	}
-	if p := e.get(projPath+"/settings/pages", false); p.code != 200 || !strings.Contains(p.body, "Not yet") {
-		t.Fatalf("pages placeholder: %d", p.code)
-	}
 	if p := e.get(projPath+"/settings/nope", false); p.code != 404 {
 		t.Fatalf("unknown tab: %d", p.code)
 	}
@@ -719,6 +716,121 @@ func TestSettingsMaintenance(t *testing.T) {
 		t.Fatalf("end now: %d %s", ended.code, ended.body)
 	}
 	if p := e.post(projPath+"/settings/maintenance/"+windows[1].ID+"/delete", nil, false); p.code != 303 {
+		t.Fatalf("delete: %d", p.code)
+	}
+}
+
+func TestPublicStatusPage(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	e.monitor("api", "prod")
+	e.monitor("nightly", "backup")
+	e.monitor("lab-thing", "lab")
+	tgt, _ := e.svc.ResolvePing(ctx, e.project.PingKey, "api", "", false)
+	_, _, _ = e.svc.RecordPing(ctx, tgt, service.PingObservation{Signal: domain.SignalFail})
+	if _, err := e.svc.CreateStatusPage(ctx, e.scope, &domain.StatusPage{Slug: "homelab", Title: "Homelab status", MatchTags: []string{"prod", "backup"}, Public: true}, ""); err != nil {
+		t.Fatal(err)
+	}
+	p := e.do("GET", "/s/homelab", nil, false, false)
+	if p.code != 200 {
+		t.Fatalf("status page: %d %s", p.code, p.body)
+	}
+	p.has(t, "<h1>Homelab status</h1>", "vk-banner--down", "1 service down", "since 14:00", "<h2>prod</h2>", "<h2>backup</h2>", "Api", "Nightly", "vk-uptime", "up over 90 days", "Open incidents", "powered by", `http-equiv="refresh"`, "updated 14:00:00 CEST")
+	if strings.Contains(p.body, "<script") || strings.Contains(p.body, "Lab-thing") || strings.Contains(p.body, "vk-top") {
+		t.Error("a status page carries no script, no top bar and no monitors outside its tags")
+	}
+	if p.hdr.Get("Cache-Control") != "public, max-age=30" || p.hdr.Get("X-Frame-Options") != "SAMEORIGIN" || !strings.Contains(p.hdr.Get("Content-Security-Policy"), "default-src 'none'") {
+		t.Errorf("headers: %v", p.hdr)
+	}
+	if p := e.do("GET", "/s/nope", nil, false, false); p.code != 404 {
+		t.Fatalf("unknown page: %d", p.code)
+	}
+	svg := e.do("GET", "/s/homelab/badge/api.svg", nil, false, false)
+	if svg.code != 200 || !strings.HasPrefix(svg.hdr.Get("Content-Type"), "image/svg+xml") || !strings.Contains(svg.body, ">down<") || !strings.Contains(svg.body, "#e05d44") {
+		t.Fatalf("svg badge: %d %s", svg.code, svg.body)
+	}
+	js := e.do("GET", "/s/homelab/badge/api.json", nil, false, false)
+	js.has(t, `"schemaVersion":1`, `"color":"red"`, `"label":"Api"`, `"message":"down"`)
+	if p := e.do("GET", "/s/homelab/badge/lab-thing.svg", nil, false, false); p.code != 404 {
+		t.Fatalf("badge outside the page: %d", p.code)
+	}
+	// a private page asks for its password and remembers the answer in a cookie
+	if _, err := e.svc.CreateStatusPage(ctx, e.scope, &domain.StatusPage{Slug: "office", Title: "Office", Public: false}, "s3cret"); err != nil {
+		t.Fatal(err)
+	}
+	locked := e.do("GET", "/s/office", nil, false, false)
+	locked.has(t, `type="password"`, "asks for a password", "<h1>Office</h1>")
+	if strings.Contains(locked.body, "vk-uptime") || locked.hdr.Get("Cache-Control") != "no-store" {
+		t.Error("locked page must not show monitors or be cached")
+	}
+	if p := e.do("POST", "/s/office", url.Values{"password": {"nope"}}, false, false); p.code != 401 || !strings.Contains(p.body, "Wrong password.") {
+		t.Fatalf("wrong password: %d", p.code)
+	}
+	ok := e.do("POST", "/s/office", url.Values{"password": {"s3cret"}}, false, false)
+	if ok.code != 303 || ok.hdr.Get("Location") != "/s/office" || !strings.Contains(ok.hdr.Get("Set-Cookie"), "vk_status_office=") {
+		t.Fatalf("unlock: %d %v", ok.code, ok.hdr)
+	}
+	req := httptest.NewRequest("GET", "/s/office", nil)
+	req.Header.Set("Cookie", strings.Split(ok.hdr.Get("Set-Cookie"), ";")[0])
+	rec := httptest.NewRecorder()
+	e.srv.ServeHTTP(rec, req)
+	if rec.Code != 200 || !strings.Contains(rec.Body.String(), "vk-uptime") || rec.Header().Get("Cache-Control") != "private, max-age=30" {
+		t.Fatalf("unlocked page: %d %s", rec.Code, rec.Header().Get("Cache-Control"))
+	}
+	// a custom domain serves the page at its root
+	if _, err := e.svc.UpdateStatusPage(ctx, e.scope, "homelab", &domain.StatusPage{Slug: "homelab", Title: "Homelab status", MatchTags: []string{"prod"}, Public: true, CustomDomain: "status.example.test"}, ""); err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{"/", "/badge/api.svg"} {
+		req := httptest.NewRequest("GET", "http://status.example.test:8443"+path, nil)
+		rec := httptest.NewRecorder()
+		e.srv.ServeHTTP(rec, req)
+		if rec.Code != 200 {
+			t.Fatalf("custom domain %s: %d %s", path, rec.Code, rec.Body.String())
+		}
+	}
+}
+
+func TestSettingsPages(t *testing.T) {
+	e := newEnv(t)
+	tab := e.get(projPath+"/settings/pages", false)
+	tab.has(t, `Status pages<span class="vk-tab__n">0</span>`, "No status pages", "cached for 30 s")
+	add := e.get(projPath+"/settings/pages?add=1", false)
+	add.has(t, `id="page-panel"`, `vk-affix__text">localhost:8080/s/<`, `name="access" value="public" checked`, `placeholder="only with Password"`, `disabled`, `for="custom_domain"`, ">Save page<")
+	pw := e.get(projPath+"/settings/pages?add=1&access=password&title=Office", true)
+	pw.has(t, `name="access" value="password" checked`, `value="Office"`)
+	if strings.Contains(pw.body, `disabled=""`) {
+		t.Error("the password field opens with Password access")
+	}
+	created := e.post(projPath+"/settings/pages", url.Values{"title": {"Homelab status"}, "slug": {"homelab"}, "match_tags": {"prod, backup"}, "access": {"public"}}, false)
+	if created.code != 303 {
+		t.Fatalf("create: %d %s", created.code, created.body)
+	}
+	tab = e.get(projPath+"/settings/pages", false)
+	tab.has(t, "Homelab status", "http://localhost:8080/s/homelab", ">public<", `<span class="vk-tag">prod</span>`, "no custom domain", `href="/s/homelab"`, ">Open<")
+	noPw := e.post(projPath+"/settings/pages", url.Values{"title": {"Office"}, "slug": {"office"}, "access": {"password"}}, false)
+	if noPw.code != 422 || !strings.Contains(noPw.body, "Set a password or make the page public.") {
+		t.Fatalf("private without password: %d %s", noPw.code, noPw.body)
+	}
+	if p := e.post(projPath+"/settings/pages", url.Values{"title": {"Office"}, "slug": {"office"}, "access": {"password"}, "password": {"s3cret"}}, false); p.code != 303 {
+		t.Fatalf("private page: %d %s", p.code, p.body)
+	}
+	dup := e.post(projPath+"/settings/pages", url.Values{"title": {"Again"}, "slug": {"office"}, "access": {"public"}}, false)
+	if dup.code != 422 || !strings.Contains(dup.body, "This address is taken.") {
+		t.Fatalf("duplicate: %d", dup.code)
+	}
+	edit := e.get(projPath+"/settings/pages?edit=office", false)
+	edit.has(t, `value="Office"`, `name="access" value="password" checked`, `placeholder="unchanged"`, "Delete page")
+	if p := e.post(projPath+"/settings/pages/office", url.Values{"title": {"Office"}, "slug": {"office"}, "access": {"password"}, "custom_domain": {"status.w4j.nl"}}, false); p.code != 303 {
+		t.Fatalf("edit keeps the password: %d %s", p.code, p.body)
+	}
+	tab = e.get(projPath+"/settings/pages", false)
+	tab.has(t, ">password<", "status.w4j.nl")
+	page, _ := e.svc.StatusPage(context.Background(), e.scope, "office")
+	if !page.HasPassword() || page.CustomDomain != "status.w4j.nl" {
+		t.Fatalf("edited page: %+v", page)
+	}
+	if p := e.post(projPath+"/settings/pages/office/delete", nil, false); p.code != 303 {
 		t.Fatalf("delete: %d", p.code)
 	}
 }
