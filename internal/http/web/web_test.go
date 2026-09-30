@@ -360,9 +360,9 @@ func TestCreateAndEditForm(t *testing.T) {
 	}
 	form.has(t, `id="monitor-form"`, `for="name"`, `for="slug"`, `for="schedule"`, `name="schedule_type"`, `for="timezone"`, `Europe/Amsterdam (project)`, `for="grace"`, `for="tags"`,
 		`vk-details__title">Advanced</span>`, "max runtime none · down after 1 · methods any · body 64 KB", `for="body_limit"`, "Ping URL", "As YAML", "kind: heartbeat", `Create monitor`, `hx-post="/o/homelab/p/prod/m/preview"`)
-	// the kind switch keeps the name and says what is not there yet
+	// the kind switch keeps the name and shows the kind's fields
 	sw := e.get(projPath+"/m/new?kind=http&name=Web", true)
-	sw.has(t, `value="Web"`, "arrive later in phase 1")
+	sw.has(t, `value="Web"`, `for="url"`, `value="200-299"`)
 	// validation: no schedule, bad grace
 	bad := e.post(projPath+"/m/new", url.Values{"name": {"Nightly backup"}, "grace": {"10s"}}, true)
 	if bad.code != 422 {
@@ -428,9 +428,106 @@ func TestPullMonitorDrawer(t *testing.T) {
 	if checked.code != 200 {
 		t.Fatalf("check now: %d %s", checked.code, checked.body)
 	}
-	checked.has(t, "vk-state--up", "200 ok", " ms<", "new → up · first ok")
+	checked.has(t, "vk-state--up", "200 OK", " ms<", "new → up · first ok")
 	list := e.get(projPath, false)
-	list.has(t, "next in", `class="vk-row"`)
+	list.has(t, `class="vk-spark`, `class="vk-row"`, " ms<")
+}
+
+func TestPullMonitorForms(t *testing.T) {
+	e := newEnv(t)
+	form := e.get(projPath+"/m/new?kind=http", false)
+	form.has(t, `name="kind" value="http" checked`, `for="url"`, `for="expect_status"`, "Codes or ranges, comma-separated.", `for="interval"`, `value="60s"`, `for="timeout"`, "10s or more.",
+		"<h3>Request</h3>", "<h3>Failures</h3>", `id="failures-msg"`, "A failed check is retried 2×, 5s apart, before it counts. Down after 3 counted failures, up after 1 success.",
+		"<h3>Response body</h3>", `name="body_match" value="none" checked`, "<h3>TLS and redirects</h3>", `name="verify_tls" value="1" checked`, `for="ca_pem"`, "GET · retry 2× after 5s · down after 3", `name="pull_form"`, "kind: http")
+	if strings.Contains(form.body, "Ping URL") || strings.Contains(form.body, `for="grace"`) {
+		t.Error("a pull form has no ping URL or grace")
+	}
+	// the body match segmented re-renders the form with its fields
+	jp := e.get(projPath+"/m/new?kind=http&name=API&url=https://x&body_match=jsonpath", true)
+	jp.has(t, `for="jsonpath"`, `for="equals"`, `value="API"`, `name="body_match" value="jsonpath" checked`)
+	tcp := e.get(projPath+"/m/new?kind=tcp&name=DB", true)
+	tcp.has(t, `for="host"`, `for="port"`, "<h3>Banner</h3>", `value="DB"`, `value="3"`)
+	tls := e.get(projPath+"/m/new?kind=tls", true)
+	tls.has(t, `for="servername"`, `value="443"`, "<h3>Expiry</h3>", `value="14"`)
+	dns := e.get(projPath+"/m/new?kind=dns", true)
+	dns.has(t, `for="dns_name"`, `<option value="A" selected>`, `for="resolver"`)
+	icmp := e.get(projPath+"/m/new?kind=icmp", true)
+	icmp.has(t, `for="count"`, `for="loss_threshold"`, `value="0.67"`)
+
+	// validation from the domain lands on the form's fields
+	bad := e.post(projPath+"/m/new", url.Values{"kind": {"http"}, "name": {"API"}, "url": {"ftp://x"}, "interval": {"30s"}, "timeout": {"45s"}, "expect_status": {"2xx"}, "pull_form": {"1"}}, true)
+	if bad.code != 422 {
+		t.Fatalf("validation: %d", bad.code)
+	}
+	bad.has(t, `id="url-msg"`, "Must be an absolute http(s) URL.", `id="timeout-msg"`, "Must be shorter than the interval.", "Use codes or ranges such as 200, 300-399.")
+	// preview for a pull form answers the failures sentence, the timeout hint, the summary and the YAML
+	pv := e.post(projPath+"/m/preview", url.Values{"kind": {"http"}, "name": {"API"}, "url": {"https://api.example.com/healthz"}, "interval": {"30s"}, "timeout": {"45s"}, "retries": {"1"}, "retry_delay": {"2s"}, "body_match": {"jsonpath"}, "jsonpath": {"$.status"}, "equals": {"ok"}, "pull_form": {"1"}}, true)
+	pv.has(t, `hx-target="#failures-msg"`, "retried 1×, 2s apart", `hx-target="#timeout-msg"`, "Must be shorter than the interval.", "GET · retry 1× after 2s · down after 3 · $.status = ok", "expect_body: {jsonpath: {path: $.status, equals: ok}}")
+	// create keeps the checkbox state and the body match
+	ok := e.post(projPath+"/m/new", url.Values{"kind": {"http"}, "name": {"Public API"}, "url": {"https://api.example.com/healthz"}, "expect_status": {"200, 300-399"}, "tags": {"api, prod"}, "interval": {"30s"}, "timeout": {"5s"},
+		"headers": {"Accept: application/json"}, "body_match": {"jsonpath"}, "jsonpath": {"$.status"}, "equals": {"ok"}, "follow_redirects": {"1"}, "pull_form": {"1"}}, true)
+	if ok.code != 204 || ok.hdr.Get("HX-Redirect") != projPath+"/m/public-api" {
+		t.Fatalf("create: %d %v %s", ok.code, ok.hdr, ok.body)
+	}
+	m, err := e.svc.MonitorBySlug(context.Background(), e.scope, "public-api")
+	if err != nil || m.Pull == nil || m.Pull.HTTP == nil {
+		t.Fatalf("created: %+v %v", m, err)
+	}
+	h := m.Pull.HTTP
+	if h.URL != "https://api.example.com/healthz" || len(h.ExpectStatus) != 2 || h.Headers["Accept"] != "application/json" || h.ExpectBody == nil || h.ExpectBody.JSONPath == nil || h.ExpectBody.JSONPath.Equals != "ok" || !h.Redirects() || h.Verify() || m.Pull.Interval.String() != "30s" || len(m.Tags) != 2 {
+		t.Fatalf("spec: %+v %+v", m.Pull, h)
+	}
+	edit := e.get(projPath+"/m/public-api/edit", false)
+	edit.has(t, `value="$.status"`, `name="body_match" value="jsonpath" checked`, `>Accept: application/json</textarea>`, `value="200, 300-399"`, `<details class="vk-details" open>`, "TLS unverified")
+	if strings.Contains(edit.body, `name="verify_tls" value="1" checked`) {
+		t.Error("verify_tls must show as off")
+	}
+	saved := e.post(projPath+"/m/public-api/edit", url.Values{"kind": {"http"}, "name": {"Public API"}, "url": {"https://api.example.com/v2"}, "interval": {"30s"}, "timeout": {"5s"}, "body_match": {"none"}, "verify_tls": {"1"}, "follow_redirects": {"1"}, "pull_form": {"1"}}, false)
+	if saved.code != 303 {
+		t.Fatalf("edit: %d %s", saved.code, saved.body)
+	}
+	m, _ = e.svc.MonitorBySlug(context.Background(), e.scope, "public-api")
+	if m.Pull.HTTP.URL != "https://api.example.com/v2" || !m.Pull.HTTP.ExpectBody.IsZero() || !m.Pull.HTTP.Verify() {
+		t.Fatalf("edited: %+v", m.Pull.HTTP)
+	}
+	// a tcp monitor from the form
+	tcpOK := e.post(projPath+"/m/new", url.Values{"kind": {"tcp"}, "name": {"DB"}, "host": {"db.lan"}, "port": {"5432"}, "interval": {"60s"}, "timeout": {"10s"}, "expect": {"220"}, "pull_form": {"1"}}, true)
+	if tcpOK.code != 204 {
+		t.Fatalf("tcp create: %d %s", tcpOK.code, tcpOK.body)
+	}
+	m, _ = e.svc.MonitorBySlug(context.Background(), e.scope, "db")
+	if m.Pull == nil || m.Pull.TCP == nil || m.Pull.TCP.Port != 5432 || m.Pull.TCP.Expect != "220" {
+		t.Fatalf("tcp spec: %+v", m.Pull)
+	}
+}
+
+func TestPullRowsShowSparklines(t *testing.T) {
+	e := newEnv(t)
+	reg, err := checks.NewRegistry(checks.Options{Outbound: outbound.Options{AllowPrivateTargets: true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.svc.SetChecker(reg)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte(`{"status":"ok"}`)) }))
+	defer srv.Close()
+	ctx := context.Background()
+	m, err := e.svc.CreateMonitor(ctx, e.scope, &domain.Monitor{Slug: "web", Name: "Web", Kind: domain.KindHTTP, Pull: &domain.PullSpec{HTTP: &domain.HTTPCheck{URL: srv.URL, ExpectBody: &domain.ExpectBody{JSONPath: &domain.JSONPathExpect{Path: "$.status", Equals: "ok"}}}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 3; i++ {
+		if err := e.svc.RunCheck(ctx, m.ID, e.now); err != nil {
+			t.Fatal(err)
+		}
+		e.now = e.now.Add(time.Hour)
+	}
+	list := e.get(projPath, false)
+	list.has(t, `class="vk-spark`, "<polyline points=", " ms<")
+	if strings.Contains(list.body, "next in") {
+		t.Error("pull rows carry a sparkline, not a next due")
+	}
+	drawer := e.get(projPath+"/m/web", true)
+	drawer.has(t, "200 OK · $.status = ok", " ms<")
 }
 
 func TestIncidentsPage(t *testing.T) {

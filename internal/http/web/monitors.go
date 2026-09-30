@@ -2,6 +2,7 @@ package web
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"sort"
 	"strconv"
@@ -97,8 +98,12 @@ func (h *Web) listData(c *reqCtx) (monitorsData, error) {
 	})
 	d.Filtered = filter.Tag != "" || filter.State != "" || filter.Query != ""
 	current := c.r.PathValue("slug")
+	latencies, err := h.svc.LatenciesSince(ctx, c.scope, c.now.Add(-24*time.Hour))
+	if err != nil {
+		return monitorsData{}, err
+	}
 	for _, m := range shown {
-		d.Rows = append(d.Rows, h.row(c, m, m.Slug == current))
+		d.Rows = append(d.Rows, h.row(c, m, m.Slug == current, sparkPoints(latencies[m.ID], c.now)))
 	}
 	params := q
 	params.Set("partial", "list")
@@ -145,13 +150,45 @@ func (h *Web) location(c *reqCtx, m *domain.Monitor) *time.Location {
 	return time.UTC
 }
 
+// sparkPoints folds a day of latency samples into hourly means, oldest
+// first, so a row's sparkline stays at most 24 points.
+func sparkPoints(samples []service.LatencyPoint, now time.Time) []float64 {
+	if len(samples) == 0 {
+		return nil
+	}
+	var sums [24]float64
+	var counts [24]int
+	for _, p := range samples {
+		age := now.Sub(p.At)
+		if age < 0 || age >= 24*time.Hour {
+			continue
+		}
+		i := 23 - int(age/time.Hour)
+		sums[i] += float64(p.Ms)
+		counts[i]++
+	}
+	var out []float64
+	for i := range sums {
+		if counts[i] > 0 {
+			out = append(out, sums[i]/float64(counts[i]))
+		}
+	}
+	return out
+}
+
 // row builds the list row for a monitor.
-func (h *Web) row(c *reqCtx, m *domain.Monitor, current bool) ui.MonitorRowProps {
+func (h *Web) row(c *reqCtx, m *domain.Monitor, current bool, points []float64) ui.MonitorRowProps {
 	loc := h.location(c, m)
 	path := c.projectPath() + "/m/" + m.Slug
 	row := ui.MonitorRowProps{
 		State: string(m.State), Name: m.Name, Slug: m.Slug, Kind: string(m.Kind), Tags: m.Tags, Href: path, Current: current,
 		Attrs: ui.Attr("hx-get", path) + ui.Attr("hx-target", "#drawer") + ui.Attr("hx-push-url", "true"),
+	}
+	if m.Pull != nil {
+		row.Points = points
+		if row.Points == nil {
+			row.Points = []float64{}
+		}
 	}
 	if len(row.Tags) > 3 {
 		row.Tags = row.Tags[:3]
@@ -168,11 +205,11 @@ func (h *Web) row(c *reqCtx, m *domain.Monitor, current bool) ui.MonitorRowProps
 			row.Last += lastDatum(last[0])
 		}
 	}
-	expected := h.svc.ExpectedAt(m, c.project.Timezone)
-	word := "due"
 	if m.Pull != nil {
-		expected, word = m.NextDueAt, "next"
+		// the trend column holds the sparkline for pull monitors
+		return row
 	}
+	expected := h.svc.ExpectedAt(m, c.project.Timezone)
 	switch m.State {
 	case domain.StatePaused:
 		row.Next = "paused " + view.Ago(m.StateSince, c.now)
@@ -180,7 +217,7 @@ func (h *Web) row(c *reqCtx, m *domain.Monitor, current bool) ui.MonitorRowProps
 		row.Next = "down " + view.For(m.StateSince, c.now)
 	default:
 		if expected != nil {
-			row.Next = word + " " + view.In(*expected, c.now)
+			row.Next = "due " + view.In(*expected, c.now)
 		}
 	}
 	return row
@@ -189,6 +226,9 @@ func (h *Web) row(c *reqCtx, m *domain.Monitor, current bool) ui.MonitorRowProps
 // lastDatum is the one datum that matters about the last observation.
 func lastDatum(o *domain.Observation) string {
 	switch {
+	case o.LatencyMs != nil && !o.OK:
+		r, _ := o.Detail["reason"].(string)
+		return " · " + shortReason(r)
 	case o.LatencyMs != nil:
 		return " · " + view.RunDuration(*o.LatencyMs)
 	case o.DurationMs != nil:
@@ -295,8 +335,12 @@ func (h *Web) drawerData(c *reqCtx, m *domain.Monitor) (*drawerData, error) {
 	if err != nil {
 		return nil, err
 	}
+	match := ""
+	if m.Pull != nil && m.Pull.HTTP != nil {
+		match = bodyMatch(m.Pull.HTTP)
+	}
 	for _, o := range obs {
-		d.Observations = append(d.Observations, obsRowFor(o, loc))
+		d.Observations = append(d.Observations, obsRowFor(o, loc, match))
 	}
 	recent, err := h.svc.ListEvents(ctx, c.scope, m.Slug, 20)
 	if err != nil {
@@ -312,10 +356,10 @@ func (h *Web) drawerData(c *reqCtx, m *domain.Monitor) (*drawerData, error) {
 	return d, nil
 }
 
-func obsRowFor(o *domain.Observation, loc *time.Location) obsRow {
+func obsRowFor(o *domain.Observation, loc *time.Location, match string) obsRow {
 	row := obsRow{Clock: view.Clock(o.At, loc), Abs: view.Abs(o.At, loc)}
 	if o.LatencyMs != nil {
-		return checkRow(o, row)
+		return checkRow(o, row, match)
 	}
 	switch {
 	case o.Signal == domain.SignalStart:
@@ -348,7 +392,7 @@ func obsRowFor(o *domain.Observation, loc *time.Location) obsRow {
 
 // checkRow renders one pull attempt: the reason or the status, and the
 // latency; an attempt inside a confirm sequence shows as confirming.
-func checkRow(o *domain.Observation, row obsRow) obsRow {
+func checkRow(o *domain.Observation, row obsRow, match string) obsRow {
 	row.Right = view.RunDuration(*o.LatencyMs)
 	reason, _ := o.Detail["reason"].(string)
 	switch {
@@ -357,7 +401,10 @@ func checkRow(o *domain.Observation, row obsRow) obsRow {
 	case o.OK:
 		row.State, row.Text = "up", "ok"
 		if st, ok := o.Detail["status"].(float64); ok {
-			row.Text = strconv.Itoa(int(st)) + " ok"
+			row.Text = strconv.Itoa(int(st)) + " " + http.StatusText(int(st))
+		}
+		if match != "" && o.Detail["matched"] == true {
+			row.Text += " · " + match
 		}
 	default:
 		row.State, row.Text = "down", reason
@@ -466,6 +513,9 @@ type formData struct {
 	SchedulePlaceholder string
 	ScheduleHint        string
 	GraceHint           string
+	IntervalHint        string
+	TimeoutHint         string
+	FailuresHint        string
 	AdvancedSummary     string
 	AdvancedOpen        bool
 	YAMLOpen            bool
@@ -504,11 +554,32 @@ func (h *Web) newForm(c *reqCtx, kind string) formData {
 		Kind: kind, Action: c.projectPath() + "/m/new", PreviewPath: c.projectPath() + "/m/preview", KindPath: c.projectPath() + "/m/new",
 		CancelPath: c.projectPath(), CancelHX: c.projectPath() + "?partial=drawer-empty", CSRF: c.csrf(),
 		OrgSlug: c.org.Slug, ProjectSlug: c.project.Slug, PingBase: h.pingBase(), PingKey: h.pingKeyFor(c), SubmitLabel: "Create monitor",
-		Values: map[string]string{"name": "", "slug": "", "schedule": "", "schedule_type": "period", "timezone": "", "grace": "5m", "tags": "", "max_runtime": "", "methods": "any", "failure_threshold": "1", "recovery_threshold": "1", "body_limit": ""},
+		Values: formDefaults(domain.Kind(kind)),
 		Errors: map[string]string{}, SlugHint: "Part of the ping URL. Empty derives it from the name.", YAMLOpen: true,
+	}
+	if domain.Kind(kind).IsPull() {
+		f.SlugHint = "Part of the address. Empty derives it from the name."
 	}
 	f.Timezones = h.timezoneOptions(c, "")
 	return f
+}
+
+// formDefaults are the form values of an empty monitor of a kind.
+func formDefaults(kind domain.Kind) map[string]string {
+	v := map[string]string{
+		"name": "", "slug": "", "tags": "",
+		"schedule": "", "schedule_type": "period", "timezone": "", "grace": "5m", "max_runtime": "", "methods": "any", "failure_threshold": "1", "recovery_threshold": "1", "body_limit": "",
+		"url": "", "expect_status": "200-299", "interval": "60s", "timeout": "10s", "method": "GET", "headers": "", "retries": "2", "retry_delay": "5s",
+		"body_match": "none", "contains": "", "not_contains": "", "jsonpath": "", "equals": "", "follow_redirects": "1", "verify_tls": "1", "ca_pem": "",
+		"host": "", "port": "", "send": "", "expect": "", "dns_name": "", "dns_type": "A", "resolver": "", "servername": "", "warn_days": "14", "crit_days": "3", "count": "3", "loss_threshold": "0.67",
+	}
+	if kind.IsPull() {
+		v["failure_threshold"] = strconv.Itoa(domain.DefaultPullThreshold)
+	}
+	if kind == domain.KindTLS {
+		v["port"] = "443"
+	}
+	return v
 }
 
 func (h *Web) formFromMonitor(c *reqCtx, m *domain.Monitor) formData {
@@ -544,8 +615,85 @@ func (h *Web) formFromMonitor(c *reqCtx, m *domain.Monitor) formData {
 		}
 		f.AdvancedOpen = s.MaxRuntime != 0 || s.FailureThreshold != 1 || s.RecoveryThreshold != 1 || len(s.Methods) > 0 || s.BodyLimit != 0
 	}
+	if s := m.Pull; s != nil {
+		fillPullValues(f.Values, m.Kind, s)
+		f.AdvancedOpen = pullAdvancedOpen(m.Kind, s)
+	}
 	f.Timezones = h.timezoneOptions(c, f.Values["timezone"])
 	return f
+}
+
+// fillPullValues shows a pull spec in the form's fields.
+func fillPullValues(v map[string]string, kind domain.Kind, s *domain.PullSpec) {
+	v["interval"], v["timeout"] = s.Interval.String(), s.Timeout.String()
+	v["failure_threshold"], v["recovery_threshold"] = strconv.Itoa(s.FailureThreshold), strconv.Itoa(s.RecoveryThreshold)
+	v["retries"], v["retry_delay"] = strconv.Itoa(s.Confirm.Retries), s.Confirm.Delay.String()
+	switch {
+	case kind == domain.KindHTTP && s.HTTP != nil:
+		h := s.HTTP
+		v["url"], v["method"], v["ca_pem"] = h.URL, h.Method, h.CAPem
+		ranges := make([]string, 0, len(h.ExpectStatus))
+		for _, r := range h.ExpectStatus {
+			ranges = append(ranges, r.String())
+		}
+		v["expect_status"] = strings.Join(ranges, ", ")
+		keys := make([]string, 0, len(h.Headers))
+		for k := range h.Headers {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		lines := make([]string, 0, len(keys))
+		for _, k := range keys {
+			lines = append(lines, k+": "+h.Headers[k])
+		}
+		v["headers"] = strings.Join(lines, "\n")
+		if eb := h.ExpectBody; !eb.IsZero() {
+			switch {
+			case eb.JSONPath != nil:
+				v["body_match"], v["jsonpath"], v["equals"] = "jsonpath", eb.JSONPath.Path, fmt.Sprint(eb.JSONPath.Equals)
+			case eb.Contains != "":
+				v["body_match"], v["contains"] = "contains", eb.Contains
+			case eb.NotContains != "":
+				v["body_match"], v["not_contains"] = "not_contains", eb.NotContains
+			}
+		}
+		v["follow_redirects"], v["verify_tls"] = flag(h.Redirects()), flag(h.Verify())
+	case kind == domain.KindTCP && s.TCP != nil:
+		v["host"], v["port"], v["send"], v["expect"] = s.TCP.Host, strconv.Itoa(s.TCP.Port), s.TCP.Send, s.TCP.Expect
+	case kind == domain.KindDNS && s.DNS != nil:
+		v["dns_name"], v["dns_type"], v["resolver"], v["expect"] = s.DNS.Name, s.DNS.Type, s.DNS.Resolver, strings.Join(s.DNS.Expect, ", ")
+	case kind == domain.KindTLS && s.TLS != nil:
+		v["host"], v["port"], v["servername"] = s.TLS.Host, strconv.Itoa(s.TLS.Port), s.TLS.ServerName
+		v["warn_days"], v["crit_days"] = strconv.Itoa(s.TLS.WarnDays), strconv.Itoa(s.TLS.CritDays)
+	case kind == domain.KindICMP && s.ICMP != nil:
+		v["host"], v["count"], v["loss_threshold"] = s.ICMP.Host, strconv.Itoa(s.ICMP.Count), strconv.FormatFloat(s.ICMP.LossThreshold, 'g', -1, 64)
+	}
+}
+
+func flag(on bool) string {
+	if on {
+		return "1"
+	}
+	return ""
+}
+
+// pullAdvancedOpen opens Advanced when anything in it differs from the defaults.
+func pullAdvancedOpen(kind domain.Kind, s *domain.PullSpec) bool {
+	if s.Confirm.Retries != domain.DefaultConfirmRetries || s.Confirm.Delay != domain.DefaultConfirmDelay || s.FailureThreshold != domain.DefaultPullThreshold || s.RecoveryThreshold != 1 {
+		return true
+	}
+	switch {
+	case kind == domain.KindHTTP && s.HTTP != nil:
+		h := s.HTTP
+		return h.Method != "GET" || len(h.Headers) > 0 || !h.ExpectBody.IsZero() || !h.Redirects() || !h.Verify() || h.CAPem != ""
+	case kind == domain.KindTCP && s.TCP != nil:
+		return s.TCP.Send != "" || s.TCP.Expect != ""
+	case kind == domain.KindTLS && s.TLS != nil:
+		return s.TLS.WarnDays != domain.DefaultTLSWarnDays || s.TLS.CritDays != domain.DefaultTLSCritDays
+	case kind == domain.KindICMP && s.ICMP != nil:
+		return s.ICMP.LossThreshold != domain.DefaultICMPLoss
+	}
+	return false
 }
 
 // parseMonitorForm turns form values (post or query) into a monitor,
@@ -567,12 +715,14 @@ func parseMonitorForm(values map[string][]string, f *formData) *domain.Monitor {
 	m := &domain.Monitor{Kind: domain.Kind(kind), Name: get("name"), Slug: get("slug")}
 	if !m.Kind.Valid() {
 		f.Errors["kind"] = "Unknown kind."
-	} else if m.Kind != domain.KindHeartbeat {
-		f.Errors["kind"] = "HTTP, TCP, DNS, TLS and ICMP monitors arrive later in phase 1."
 	}
 	if m.Slug == "" && m.Name != "" {
 		m.Slug = domain.Slugify(m.Name)
 		f.Values["slug"] = m.Slug
+	}
+	if m.Kind.IsPull() {
+		parsePull(values, f, m, get)
+		return m
 	}
 	spec := &domain.HeartbeatSpec{}
 	scheduleType := get("schedule_type")
@@ -646,8 +796,137 @@ func parseMonitorForm(values map[string][]string, f *formData) *domain.Monitor {
 	return m
 }
 
+// parsePull reads the pull fields into m.Pull, collecting parse errors.
+func parsePull(values map[string][]string, f *formData, m *domain.Monitor, get func(string) string) {
+	if v := get("tags"); v != "" {
+		m.Tags = domain.NormalizeTags(strings.Split(v, ","))
+	}
+	dur := func(k, hint string) domain.Duration {
+		v := get(k)
+		if v == "" {
+			return 0
+		}
+		d, err := domain.ParseDuration(v)
+		if err != nil {
+			f.Errors[k] = hint
+		}
+		return d
+	}
+	num := func(k string) int {
+		v := get(k)
+		if v == "" {
+			return 0
+		}
+		n, err := strconv.Atoi(v)
+		if err != nil {
+			f.Errors[k] = "Must be a whole number."
+		}
+		return n
+	}
+	spec := &domain.PullSpec{
+		Interval: dur("interval", "Use a duration such as 30s or 5m."), Timeout: dur("timeout", "Use a duration such as 5s."),
+		FailureThreshold: num("failure_threshold"), RecoveryThreshold: num("recovery_threshold"),
+	}
+	spec.Confirm = domain.Confirm{Retries: num("retries"), Delay: dur("retry_delay", "Use a duration such as 5s.")}
+	if f.Values["retries"] == "0" && spec.Confirm.Delay == 0 {
+		spec.Confirm.Delay = domain.DefaultConfirmDelay
+	}
+	explicit := len(values["pull_form"]) > 0 // checkboxes only mean "off" once the pull form posted them
+	switch m.Kind {
+	case domain.KindHTTP:
+		h := &domain.HTTPCheck{URL: get("url"), Method: get("method"), CAPem: get("ca_pem")}
+		for _, part := range strings.Split(get("expect_status"), ",") {
+			if part = strings.TrimSpace(part); part == "" {
+				continue
+			}
+			r, err := domain.ParseStatusRange(part)
+			if err != nil {
+				f.Errors["expect_status"] = "Use codes or ranges such as 200, 300-399."
+				break
+			}
+			h.ExpectStatus = append(h.ExpectStatus, r)
+		}
+		for _, line := range strings.Split(get("headers"), "\n") {
+			if line = strings.TrimSpace(line); line == "" {
+				continue
+			}
+			name, val, ok := strings.Cut(line, ":")
+			if !ok || strings.TrimSpace(name) == "" {
+				f.Errors["headers"] = "One Name: value per line."
+				break
+			}
+			if h.Headers == nil {
+				h.Headers = map[string]string{}
+			}
+			h.Headers[strings.TrimSpace(name)] = strings.TrimSpace(val)
+		}
+		match, contains, notContains, path, equals := get("body_match"), get("contains"), get("not_contains"), get("jsonpath"), get("equals")
+		switch match {
+		case "contains":
+			h.ExpectBody = &domain.ExpectBody{Contains: contains}
+			if contains == "" {
+				f.Errors["contains"] = "Say what the body must contain."
+			}
+		case "not_contains":
+			h.ExpectBody = &domain.ExpectBody{NotContains: notContains}
+			if notContains == "" {
+				f.Errors["not_contains"] = "Say what the body must not contain."
+			}
+		case "jsonpath":
+			h.ExpectBody = &domain.ExpectBody{JSONPath: &domain.JSONPathExpect{Path: path, Equals: equals}}
+			if path == "" {
+				f.Errors["jsonpath"] = "A path such as $.status."
+			}
+		default:
+			f.Values["body_match"] = "none"
+		}
+		if explicit {
+			redirects, verify := get("follow_redirects") == "1", get("verify_tls") == "1"
+			h.FollowRedirects, h.VerifyTLS = &redirects, &verify
+		} else {
+			f.Values["follow_redirects"], f.Values["verify_tls"] = "1", "1"
+		}
+		spec.HTTP = h
+	case domain.KindTCP:
+		spec.TCP = &domain.TCPCheck{Host: get("host"), Port: num("port"), Send: get("send"), Expect: get("expect")}
+	case domain.KindDNS:
+		d := &domain.DNSCheck{Name: get("dns_name"), Type: get("dns_type"), Resolver: get("resolver")}
+		for _, e := range strings.Split(get("expect"), ",") {
+			if e = strings.TrimSpace(e); e != "" {
+				d.Expect = append(d.Expect, e)
+			}
+		}
+		spec.DNS = d
+	case domain.KindTLS:
+		spec.TLS = &domain.TLSCheck{Host: get("host"), Port: num("port"), ServerName: get("servername"), WarnDays: num("warn_days"), CritDays: num("crit_days")}
+	case domain.KindICMP:
+		i := &domain.ICMPCheck{Host: get("host"), Count: num("count")}
+		if v := get("loss_threshold"); v != "" {
+			loss, err := strconv.ParseFloat(v, 64)
+			if err != nil {
+				f.Errors["loss_threshold"] = "A share between 0 and 1, such as 0.67."
+			}
+			i.LossThreshold = loss
+		}
+		spec.ICMP = i
+	}
+	m.Pull = spec
+	for _, k := range advancedPullFields {
+		if f.Errors[k] != "" {
+			f.AdvancedOpen = true
+		}
+	}
+}
+
+// advancedPullFields live inside the Advanced disclosure of pull forms.
+var advancedPullFields = []string{"method", "headers", "retries", "retry_delay", "failure_threshold", "recovery_threshold", "contains", "not_contains", "jsonpath", "equals", "ca_pem", "send", "expect", "warn_days", "crit_days", "loss_threshold"}
+
 // fillHints computes the sentences and the YAML for the current values.
 func (h *Web) fillHints(c *reqCtx, f *formData, m *domain.Monitor) {
+	if m.Kind.IsPull() {
+		h.fillPullHints(f, m)
+		return
+	}
 	spec := m.Heartbeat
 	if spec != nil {
 		cp := *spec
@@ -667,6 +946,24 @@ func (h *Web) fillHints(c *reqCtx, f *formData, m *domain.Monitor) {
 	f.YAML = domain.MonitorYAML(&preview)
 }
 
+// fillPullHints computes the pull form's sentences and YAML.
+func (h *Web) fillPullHints(f *formData, m *domain.Monitor) {
+	spec := m.Pull
+	if spec != nil {
+		cp := *spec
+		cp.Normalize()
+		spec = &cp
+	}
+	hs := describePull(m.Kind, spec)
+	f.IntervalHint, f.TimeoutHint, f.FailuresHint, f.AdvancedSummary = hs.Interval, hs.Timeout, hs.Failures, hs.Advanced
+	preview := *m
+	preview.Pull = spec
+	if preview.Slug == "" {
+		preview.Slug = "slug"
+	}
+	f.YAML = domain.MonitorYAML(&preview)
+}
+
 // applyValidation maps service field errors onto form fields.
 func applyValidation(f *formData, err error) bool {
 	ve, ok := domain.AsValidation(err)
@@ -674,18 +971,51 @@ func applyValidation(f *formData, err error) bool {
 		return false
 	}
 	for _, fe := range ve.Errors {
-		field := fe.Field
-		if field == "spec" {
-			field = "schedule"
-		}
+		field := formField(fe.Field, f.Values["body_match"])
 		if _, exists := f.Errors[field]; !exists {
 			f.Errors[field] = capitalise(fe.Msg) + "."
 		}
-		if field == "failure_threshold" || field == "recovery_threshold" || field == "max_runtime" || field == "methods" || field == "body_limit" {
+		switch field {
+		case "failure_threshold", "recovery_threshold", "max_runtime", "methods", "body_limit":
 			f.AdvancedOpen = true
+		}
+		for _, k := range advancedPullFields {
+			if field == k {
+				f.AdvancedOpen = true
+			}
 		}
 	}
 	return true
+}
+
+// formField maps a domain field ("http.expect_body", "confirm.retries")
+// to the form's field id.
+func formField(field, bodyMatch string) string {
+	switch field {
+	case "spec":
+		return "schedule"
+	case "confirm.retries":
+		return "retries"
+	case "confirm.delay":
+		return "retry_delay"
+	case "dns.name":
+		return "dns_name"
+	case "dns.type":
+		return "dns_type"
+	case "http.expect_body":
+		if bodyMatch == "jsonpath" || bodyMatch == "none" || bodyMatch == "" {
+			return "jsonpath"
+		}
+		return bodyMatch
+	case "http", "tcp", "dns", "tls", "icmp":
+		return "url"
+	}
+	for _, prefix := range []string{"http.", "tcp.", "dns.", "tls.", "icmp."} {
+		if strings.HasPrefix(field, prefix) {
+			return strings.TrimPrefix(field, prefix)
+		}
+	}
+	return field
 }
 
 func capitalise(s string) string {
@@ -722,9 +1052,19 @@ func (h *Web) newMonitor(c *reqCtx) error {
 	q := c.r.URL.Query()
 	if len(q) > 0 && (q.Has("name") || q.Has("kind")) {
 		m := parseMonitorForm(q, &f)
-		delete(f.Errors, "schedule")
+		f.Errors = map[string]string{}
 		if f.Values["grace"] == "" {
 			f.Values["grace"] = "5m"
+		}
+		if m.Kind.IsPull() {
+			// switching kind keeps the shared fields; the kind's own get their defaults
+			defaults := formDefaults(m.Kind)
+			for k, v := range defaults {
+				if f.Values[k] == "" && k != "name" && k != "slug" && k != "tags" {
+					f.Values[k] = v
+				}
+			}
+			m = parseMonitorForm(valuesOf(f.Values), &f)
 		}
 		h.fillHints(c, &f, m)
 	} else {
@@ -742,6 +1082,10 @@ func (h *Web) createMonitor(c *reqCtx) error {
 	m := parseMonitorForm(c.r.PostForm, &f)
 	h.fillHints(c, &f, m)
 	if len(f.Errors) > 0 {
+		// show the domain's complaints beside the parse errors in one round
+		probe := *m
+		probe.Normalize()
+		applyValidation(&f, probe.Validate())
 		return h.renderForm(c, http.StatusUnprocessableEntity, f)
 	}
 	created, err := h.svc.CreateMonitor(c.r.Context(), c.scope, m)
@@ -786,6 +1130,9 @@ func (h *Web) updateMonitor(c *reqCtx) error {
 	f.Values["slug"], f.Kind = cur.Slug, string(cur.Kind)
 	h.fillHints(c, &f, m)
 	if len(f.Errors) > 0 {
+		probe := *m
+		probe.Normalize()
+		applyValidation(&f, probe.Validate())
 		return h.renderForm(c, http.StatusUnprocessableEntity, f)
 	}
 	if _, err := h.svc.UpdateMonitor(c.r.Context(), c.scope, cur.Slug, m); err != nil {
@@ -815,5 +1162,25 @@ func (h *Web) previewMonitor(c *reqCtx) error {
 	if f.Errors["grace"] != "" {
 		f.GraceHint = f.Errors["grace"]
 	}
+	if m.Pull != nil {
+		if err := m.Pull.Validate(m.Kind); err != nil {
+			if ve, ok := domain.AsValidation(err); ok {
+				for _, fe := range ve.Errors {
+					if fe.Field == "timeout" {
+						f.TimeoutHint = capitalise(fe.Msg) + "."
+					}
+				}
+			}
+		}
+	}
 	return h.render(c, http.StatusOK, "monitor_form", "preview", f)
+}
+
+// valuesOf turns the form's values back into a query for re-parsing.
+func valuesOf(v map[string]string) map[string][]string {
+	out := make(map[string][]string, len(v))
+	for k, s := range v {
+		out[k] = []string{s}
+	}
+	return out
 }

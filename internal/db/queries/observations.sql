@@ -18,6 +18,11 @@ SELECT * FROM observations
 WHERE project_id = ? AND monitor_id = ? AND at >= ?
 ORDER BY at, id;
 
+-- name: ListLatenciesSince :many
+SELECT monitor_id, at, latency_ms FROM observations
+WHERE project_id = ? AND at >= ? AND latency_ms IS NOT NULL
+ORDER BY at;
+
 -- name: LastObservation :one
 SELECT * FROM observations
 WHERE project_id = ? AND monitor_id = ?

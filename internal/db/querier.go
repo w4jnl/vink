@@ -94,6 +94,7 @@ type Querier interface {
 	ListEvents(ctx context.Context, arg ListEventsParams) ([]Event, error)
 	ListEventsSince(ctx context.Context, arg ListEventsSinceParams) ([]Event, error)
 	ListIncidents(ctx context.Context, arg ListIncidentsParams) ([]ListIncidentsRow, error)
+	ListLatenciesSince(ctx context.Context, arg ListLatenciesSinceParams) ([]ListLatenciesSinceRow, error)
 	ListMembershipsForOrg(ctx context.Context, orgID string) ([]ListMembershipsForOrgRow, error)
 	ListMembershipsForUser(ctx context.Context, userID string) ([]ListMembershipsForUserRow, error)
 	ListMonitors(ctx context.Context, projectID string) ([]Monitor, error)

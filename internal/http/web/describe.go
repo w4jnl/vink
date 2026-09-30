@@ -146,3 +146,110 @@ func parseBytes(s string) (int64, bool) {
 	}
 	return n * mult, s != ""
 }
+
+// pullHints are the sentences of a pull form.
+type pullHints struct {
+	Interval string
+	Timeout  string
+	Failures string
+	Advanced string
+}
+
+// describePull explains a pull spec: the failures sentence under the
+// thresholds and the Advanced summary.
+func describePull(kind domain.Kind, spec *domain.PullSpec) pullHints {
+	h := pullHints{Interval: "10s or more.", Timeout: "Shorter than the interval."}
+	if spec == nil {
+		return h
+	}
+	retries := spec.Confirm.Retries
+	if retries > 0 {
+		h.Failures = fmt.Sprintf("A failed check is retried %d×, %s apart, before it counts. ", retries, spec.Confirm.Delay)
+	} else {
+		h.Failures = "A failed check counts at once. "
+	}
+	h.Failures += fmt.Sprintf("Down after %d counted %s, up after %d %s.", spec.FailureThreshold, plural2(spec.FailureThreshold, "failure", "failures"), spec.RecoveryThreshold, plural2(spec.RecoveryThreshold, "success", "successes"))
+	var parts []string
+	if kind == domain.KindHTTP && spec.HTTP != nil {
+		parts = append(parts, spec.HTTP.Method)
+	}
+	if retries > 0 {
+		parts = append(parts, fmt.Sprintf("retry %d× after %s", retries, spec.Confirm.Delay))
+	} else {
+		parts = append(parts, "no retry")
+	}
+	parts = append(parts, fmt.Sprintf("down after %d", spec.FailureThreshold))
+	switch {
+	case kind == domain.KindHTTP && spec.HTTP != nil:
+		if bm := bodyMatch(spec.HTTP); bm != "" {
+			parts = append(parts, bm)
+		}
+		if !spec.HTTP.Redirects() {
+			parts = append(parts, "no redirects")
+		}
+		if !spec.HTTP.Verify() {
+			parts = append(parts, "TLS unverified")
+		}
+	case kind == domain.KindTLS && spec.TLS != nil:
+		parts = append(parts, fmt.Sprintf("warn %d d · crit %d d", spec.TLS.WarnDays, spec.TLS.CritDays))
+	case kind == domain.KindICMP && spec.ICMP != nil:
+		parts = append(parts, fmt.Sprintf("loss over %.0f%%", spec.ICMP.LossThreshold*100))
+	case kind == domain.KindTCP && spec.TCP != nil && spec.TCP.Expect != "":
+		parts = append(parts, fmt.Sprintf("banner %q", spec.TCP.Expect))
+	}
+	h.Advanced = strings.Join(parts, " · ")
+	return h
+}
+
+// bodyMatch words an http body expectation: "$.status = ok".
+func bodyMatch(h *domain.HTTPCheck) string {
+	eb := h.ExpectBody
+	if eb.IsZero() {
+		return ""
+	}
+	switch {
+	case eb.JSONPath != nil:
+		return eb.JSONPath.Path + " = " + fmt.Sprint(eb.JSONPath.Equals)
+	case eb.Contains != "":
+		return fmt.Sprintf("contains %q", eb.Contains)
+	case eb.NotContains != "":
+		return fmt.Sprintf("without %q", eb.NotContains)
+	}
+	return ""
+}
+
+func plural2(n int, one, many string) string {
+	if n == 1 {
+		return one
+	}
+	return many
+}
+
+// shortReason is the word a list row has room for: "refused", "timeout", "503".
+func shortReason(reason string) string {
+	r := strings.ToLower(reason)
+	switch {
+	case reason == "":
+		return "fail"
+	case strings.Contains(r, "connection refused"):
+		return "refused"
+	case strings.HasPrefix(r, "timeout"):
+		return "timeout"
+	case strings.Contains(r, "no such host"):
+		return "no such host"
+	case strings.Contains(r, "refusing private target"):
+		return "private target"
+	case strings.HasPrefix(r, "x509") || strings.Contains(r, "certificate"):
+		if strings.Contains(r, "expire") {
+			return "cert expiry"
+		}
+		return "tls"
+	}
+	if len(reason) >= 3 && reason[0] >= '1' && reason[0] <= '5' && reason[1] >= '0' && reason[1] <= '9' && reason[2] >= '0' && reason[2] <= '9' {
+		return reason[:3]
+	}
+	if len(reason) > 24 {
+		return reason[:24] + "…"
+	}
+	return reason
+}

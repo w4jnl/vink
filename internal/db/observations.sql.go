@@ -133,6 +133,46 @@ func (q *Queries) LastObservation(ctx context.Context, arg LastObservationParams
 	return i, err
 }
 
+const listLatenciesSince = `-- name: ListLatenciesSince :many
+SELECT monitor_id, at, latency_ms FROM observations
+WHERE project_id = ? AND at >= ? AND latency_ms IS NOT NULL
+ORDER BY at
+`
+
+type ListLatenciesSinceParams struct {
+	ProjectID string
+	At        int64
+}
+
+type ListLatenciesSinceRow struct {
+	MonitorID string
+	At        int64
+	LatencyMs *int64
+}
+
+func (q *Queries) ListLatenciesSince(ctx context.Context, arg ListLatenciesSinceParams) ([]ListLatenciesSinceRow, error) {
+	rows, err := q.db.QueryContext(ctx, listLatenciesSince, arg.ProjectID, arg.At)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListLatenciesSinceRow
+	for rows.Next() {
+		var i ListLatenciesSinceRow
+		if err := rows.Scan(&i.MonitorID, &i.At, &i.LatencyMs); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listObservations = `-- name: ListObservations :many
 SELECT id, monitor_id, project_id, at, source, signal, ok, latency_ms, exit_code, run_id, duration_ms, remote_addr, user_agent, body_ref, detail FROM observations
 WHERE project_id = ?1 AND monitor_id = ?2

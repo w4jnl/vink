@@ -129,3 +129,30 @@ func (s *Service) EventsSince(ctx context.Context, sc domain.Scope, m *domain.Mo
 	}
 	return out, nil
 }
+
+// LatencyPoint is one timed latency sample.
+type LatencyPoint struct {
+	At time.Time
+	Ms int64
+}
+
+// LatenciesSince returns every latency sample of the project since a
+// time, grouped by monitor id, oldest first. The list rows draw their
+// sparklines from it in one query.
+func (s *Service) LatenciesSince(ctx context.Context, sc domain.Scope, since time.Time) (map[string][]LatencyPoint, error) {
+	if err := requireProject(sc); err != nil {
+		return nil, err
+	}
+	rows, err := s.db.Read().ListLatenciesSince(ctx, db.ListLatenciesSinceParams{ProjectID: sc.ProjectID, At: domain.Millis(since)})
+	if err != nil {
+		return nil, err
+	}
+	out := map[string][]LatencyPoint{}
+	for _, r := range rows {
+		if r.LatencyMs == nil {
+			continue
+		}
+		out[r.MonitorID] = append(out[r.MonitorID], LatencyPoint{At: domain.FromMillis(r.At), Ms: *r.LatencyMs})
+	}
+	return out, nil
+}
