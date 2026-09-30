@@ -274,7 +274,13 @@ func TestMonitorsPageEmptyAndRows(t *testing.T) {
 	}
 	p = e.get(projPath, false)
 	p.has(t, `class="vk-row"`, `vk-glyph--down`, "Nightly", "Hourly", `hx-get="/o/homelab/p/prod/m/nightly"`, `vk-chip`, `data-down-count="2"`, `favicon-down.svg`, `title="2 open"`,
-		`<span class="vk-row__tags"><span class="vk-tag">backup</span><span class="vk-tag">prod</span></span>`, `class="vk-page vk-page--full" id="page"`, `id="drawer" hidden>`, `data-empty="1"`)
+		`<span class="vk-row__tags"><span class="vk-tag">backup</span><span class="vk-tag">prod</span></span>`, `class="vk-page vk-page--full" id="page"`)
+	if strings.Contains(p.body, `id="drawer"`) || strings.Contains(p.body, "No monitor selected") {
+		t.Error("with nothing selected the page has no drawer")
+	}
+	if empty := e.get(projPath+"?partial=drawer-empty", true); !strings.Contains(empty.body, `data-empty="1"`) {
+		t.Errorf("empty drawer partial: %s", empty.body)
+	}
 	// down sorts first, and chips carry counts
 	if !strings.Contains(p.body, `>down<span class="vk-chip__n">2</span>`) || !strings.Contains(p.body, `>prod<span class="vk-chip__n">2</span>`) {
 		t.Errorf("chips: %s", p.body)

@@ -51,12 +51,20 @@
 
   // Beside an open drawer the list drops its tags column (the drawer
   // shows them); with nothing selected the list takes the full width.
+  // The server renders the drawer only when a monitor is open; the
+  // script keeps an empty, hidden one as the target for row clicks.
   function syncDrawer() {
-    var drawer = document.getElementById('drawer');
-    var page = drawer && drawer.closest('.vk-page');
+    var page = document.getElementById('page');
     if (!page) return;
-    var empty = !!drawer.querySelector('[data-empty]');
-    drawer.hidden = empty;
+    var drawer = document.getElementById('drawer');
+    if (!drawer) {
+      drawer = document.createElement('aside');
+      drawer.className = 'vk-drawer';
+      drawer.id = 'drawer';
+      page.appendChild(drawer);
+    }
+    var empty = !drawer.firstElementChild || !!drawer.querySelector('[data-empty]');
+    drawer.style.display = empty ? 'none' : '';
     page.classList.toggle('vk-page--full', empty);
   }
 
