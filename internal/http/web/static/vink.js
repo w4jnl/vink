@@ -51,9 +51,20 @@
 
   document.addEventListener('DOMContentLoaded', function () { wire(document); favicon(); });
   document.addEventListener('htmx:after:settle', function () { wire(document); favicon(); });
+  // htmx 4 hands the request context as e.detail.ctx (htmx 2 put headers
+  // on e.detail). Set the header where it exists, and for a state-changing
+  // request without a form put the token in the body too, so a bare
+  // hx-post button such as the channel switch passes the CSRF check.
   document.addEventListener('htmx:config:request', function (e) {
     var t = csrf();
-    if (t && e.detail && e.detail.headers) e.detail.headers['X-CSRF-Token'] = t;
+    if (!t || !e.detail) return;
+    var ctx = e.detail.ctx || e.detail;
+    var req = ctx.request || ctx;
+    var headers = req.headers || ctx.headers;
+    if (headers) headers['X-CSRF-Token'] = t;
+    var method = String(req.method || 'GET').toUpperCase();
+    var body = req.body;
+    if (method !== 'GET' && body && typeof body.has === 'function' && !body.has('_csrf')) body.append('_csrf', t);
   });
 
   document.addEventListener('keydown', function (e) {

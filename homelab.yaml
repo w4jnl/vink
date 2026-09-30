@@ -1,0 +1,13 @@
+version: 1
+channels:
+  - {name: ntfy, kind: ntfy, url: https://ntfy.example.com, topic: vink, token: ${NTFY_TOKEN}}
+routes:
+  - {match_tags: [], channels: [ntfy], on: [down, up]}
+maintenance:
+  - {name: weekly patching, match_tags: [db], rrule: "FREQ=WEEKLY;BYDAY=SU", from: "02:00", to: "04:00"}
+monitors:
+  - {slug: web, name: Web app, kind: http, tags: [web], interval: 30s, http: {url: http://192.168.1.10:8000/health, expect_body: {jsonpath: {path: $.status, equals: ok}}}}
+  - {slug: db, name: Database, kind: tcp, tags: [db], interval: 30s, tcp: {host: 192.168.1.20, port: 5432}}
+  - {slug: cert, name: Certificate, kind: tls, tags: [web], interval: 5m, tls: {host: vink.w4j.nl}}
+status_pages:
+  - {slug: homelab, title: Homelab status, match_tags: [web, db], public: true}
