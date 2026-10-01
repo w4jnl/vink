@@ -78,7 +78,7 @@ internal/http/agentgw/    WebSocket gateway, assignment, result intake
 internal/agent/           agent runtime: connect, run checks, report, reconnect
 internal/cli/             REST client, contexts (~/.config/vink/config.toml), table/json printers
 internal/metrics/         Prometheus collectors
-docs/                     apply-schema.json, deploy/ (systemd, nomad, compose, traefik-authelia, apache-kerberos)
+docs/                     apply-schema.json, deploy/ (systemd, compose, traefik-authelia, apache-kerberos)
 ```
 
 **Conventions inside the tree**
@@ -600,7 +600,7 @@ key_file = "/var/lib/vink/secret.key"     # 32 bytes, created on first run; encr
 
 ## Packaging, testing, milestones, open decisions
 
-**Packaging**: `goreleaser` builds `vink_{version}_{os}_{arch}` for linux/darwin × amd64/arm64 and windows/amd64 (agent and CLI use), a `FROM scratch` container image with `/vink` and `/etc/ssl/certs`, plus `docs/deploy/`: `vink.service` (systemd, `DynamicUser=yes`, `StateDirectory=vink`), `vink.nomad.hcl`, `compose.yaml`, the Traefik/Authelia and Apache/Kerberos snippets above. Version, commit and date are injected via `-ldflags`; `vink version` prints them. The DB file is the only state; backup = `sqlite3 vink.db ".backup vink.bak"` or `vink admin backup` (uses the online backup API).
+**Packaging**: `goreleaser` builds `vink_{version}_{os}_{arch}` for linux/darwin × amd64/arm64 and windows/amd64 (agent and CLI use), a `FROM scratch` container image with `/vink` and `/etc/ssl/certs`, plus `docs/deploy/`: `vink.service` (systemd, `DynamicUser=yes`, `StateDirectory=vink`), `vink-agent.service`, `compose.yaml`, the Traefik/Authelia and Apache/Kerberos snippets above. Version, commit and date are injected via `-ldflags`; `vink version` prints them. The DB file is the only state; backup = `sqlite3 vink.db ".backup vink.bak"` or `vink admin backup` (uses the online backup API).
 
 **Testing**
 
@@ -643,7 +643,7 @@ Phase 2 — closed network (gate: installs air-gapped from one binary)
 - [x] `vink agent`, gateway, assignment, offline handling, labels; `agents` admin UI and CLI
 - [x] `outbound.proxy` and CA everywhere; `allow_private_targets`; no-egress audit (a test that runs the server with a blocked network and asserts zero outbound attempts)
 - [x] Importers: Healthchecks API export, Uptime Kuma backup JSON
-- [ ] Nomad job, compose, Apache/Kerberos and Traefik/Authelia docs verified against real deployments (written and validated with `nomad job validate`, `docker compose config` and `goreleaser check`; real deployments pending)
+- [x] Traefik/Authelia docs verified against the homelab (2026-10-01); compose written and validated with `docker compose config`; Apache/Kerberos written, to be tested later; Nomad dropped
 
 Phase 3 — multi-tenant polish (gate: second org onboarded without hand-holding)
 

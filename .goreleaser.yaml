@@ -41,7 +41,6 @@ archives:
       - docs/deploy/vink-agent.service
       - docs/deploy/vink.toml.example
       - docs/deploy/compose.yaml
-      - docs/deploy/vink.nomad.hcl
       - docs/deploy/traefik-authelia.yaml
       - docs/deploy/apache-kerberos.conf
 
