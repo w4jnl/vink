@@ -1103,3 +1103,73 @@ func TestAgentsTabDrawerAndRunFrom(t *testing.T) {
 		t.Fatalf("released: %+v", m)
 	}
 }
+
+func TestProjectsTab(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	root := "/o/homelab/admin/projects"
+	e.monitor("job", "prod")
+
+	tab := e.get(root, false)
+	if tab.code != 200 {
+		t.Fatalf("projects tab: %d", tab.code)
+	}
+	tab.has(t, `href="/o/homelab/admin/projects?add=1">Add project</a>`,
+		`<a class="vk-srow__link" href="/o/homelab/p/prod">prod</a></span><span class="vk-srow__sub" title="/o/homelab/p/prod · Europe/Amsterdam">/o/homelab/p/prod · Europe/Amsterdam</span>`,
+		`vk-srow__cell--l"><span class="vk-counts"><span class="vk-counts__n vk-counts__n--new" title="1 new">`, `>1 monitor</span>`, `vk-srow__cell--mono">since 27 Sep</span>`,
+		`<a class="vk-btn" href="/o/homelab/p/prod">Open</a><a class="vk-btn" href="/o/homelab/admin/projects?edit=prod">Edit</a>`)
+	if strings.Contains(tab.body, "vk-quota") || strings.Contains(tab.body, "Not yet") {
+		t.Error("no quota line without quotas, and no placeholder")
+	}
+	hundred, five := int64(100), int64(5)
+	if err := e.svc.DB().Write().SetOrgQuotas(ctx, db.SetOrgQuotasParams{QuotaMonitors: &hundred, QuotaAgents: &five, ID: e.org.ID}); err != nil {
+		t.Fatal(err)
+	}
+	e.get(root, false).has(t, `<p class="vk-quota"><span>Quota set by the instance admin</span><span class="vk-usage"><meter class="vk-usage__meter" min="0" max="100" value="1"`, `1 / 100 monitors`, `0 / 5 agents`)
+
+	// the add panel, validation, a create
+	panel := e.get(root+"?add=1", false)
+	panel.has(t, `<section class="vk-panel" id="project-panel"><div class="vk-panel__head"><h2>Add project</h2></div>`, `id="pr_name" name="pr_name"`, `id="pr_slug" name="pr_slug"`, `In its URLs: /o/homelab/p/&lt;slug&gt;`,
+		`<select class="vk-input" id="pr_tz" name="pr_tz"`, `<option value="Europe/Amsterdam" selected>Europe/Amsterdam</option>`, `Default for cron schedules and maintenance windows.`, `vink creates the project with its own ping key and a default route.`, `>Create project</button>`, `href="/o/homelab/admin/projects">Cancel</a>`)
+	if strings.Contains(panel.body, "?add=1\">Add project") {
+		t.Error("the Add project button hides while the panel is open")
+	}
+	bad := e.post(root, url.Values{"pr_name": {"Lab"}, "pr_slug": {"Lab!"}, "pr_tz": {"Mars/Olympus"}}, false)
+	if bad.code != 422 || !strings.Contains(bad.body, `id="pr_slug-msg"`) || !strings.Contains(bad.body, "Unknown timezone") {
+		t.Fatalf("bad project: %d", bad.code)
+	}
+	dup := e.post(root, url.Values{"pr_name": {"Production"}, "pr_slug": {"prod"}, "pr_tz": {"UTC"}}, false)
+	if dup.code != 422 || !strings.Contains(dup.body, "A project with this slug exists in this org.") {
+		t.Fatalf("duplicate: %d", dup.code)
+	}
+	ok := e.post(root, url.Values{"pr_name": {"Lab Network"}, "pr_tz": {"UTC"}}, false)
+	if ok.code != 303 || !strings.Contains(ok.hdr.Get("Location"), root+"?flash=") {
+		t.Fatalf("create: %d %s", ok.code, ok.hdr.Get("Location"))
+	}
+	after := e.get(ok.hdr.Get("Location"), false)
+	after.has(t, `Project lab-network created with its own ping key and a default route.`, `href="/o/homelab/p/lab-network">lab-network</a>`, `/o/homelab/p/lab-network · UTC`, `<span class="vk-counts__none">no monitors</span>`, `>0 monitors</span>`, `Projects<span class="vk-tab__n">2</span>`)
+	if p, err := e.svc.ProjectBySlug(ctx, e.org.ID, "lab-network"); err != nil || p.Name != "Lab Network" || p.PingKey == "" {
+		t.Fatalf("created project: %+v %v", p, err)
+	}
+
+	// edit: the panel with the slug locked, a save
+	edit := e.get(root+"?edit=lab-network", false)
+	edit.has(t, `<h2>Edit lab-network</h2>`, `value="Lab Network"`, `id="pr_slug" name="pr_slug"`, `disabled`, `Part of its URLs; it cannot change.`, `<option value="UTC" selected>UTC</option>`, `>Save changes</button>`)
+	if r := e.get(root+"?edit=nope", false); r.code != 404 {
+		t.Fatalf("edit unknown: %d", r.code)
+	}
+	if r := e.post(root+"/lab-network", url.Values{"pr_name": {""}, "pr_tz": {"UTC"}}, false); r.code != 422 || !strings.Contains(r.body, "Must not be empty.") {
+		t.Fatalf("empty name: %d", r.code)
+	}
+	saved := e.post(root+"/lab-network", url.Values{"pr_name": {"Lab"}, "pr_tz": {"Europe/London"}}, false)
+	if saved.code != 303 {
+		t.Fatalf("save: %d %s", saved.code, saved.body)
+	}
+	if p, _ := e.svc.ProjectBySlug(ctx, e.org.ID, "lab-network"); p.Name != "Lab" || p.Timezone != "Europe/London" {
+		t.Fatalf("saved project: %+v", p)
+	}
+	e.get(saved.hdr.Get("Location"), false).has(t, `Project lab-network saved.`, `/o/homelab/p/lab-network · Europe/London`)
+	if r := e.post("/o/acme/admin/projects", url.Values{"pr_name": {"X"}}, false); r.code != 404 {
+		t.Fatalf("foreign org create: %d", r.code)
+	}
+}

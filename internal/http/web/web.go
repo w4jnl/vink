@@ -60,6 +60,8 @@ func (h *Web) Mount(mux *http.ServeMux) {
 	mux.Handle("GET /logout", h.user(h.logout))
 	mux.Handle("GET /o/{org}/admin", h.orgAdmin(h.orgAdminHome))
 	mux.Handle("GET /o/{org}/admin/{tab}", h.orgAdmin(h.orgAdminTab))
+	mux.Handle("POST /o/{org}/admin/projects", h.orgAdmin(h.createProject))
+	mux.Handle("POST /o/{org}/admin/projects/{slug}", h.orgAdmin(h.updateProject))
 	mux.Handle("POST /o/{org}/admin/agents", h.orgAdmin(h.createAgent))
 	mux.Handle("GET /o/{org}/admin/agents/{name}", h.orgAdmin(h.agentDetail))
 	mux.Handle("POST /o/{org}/admin/agents/{name}/labels", h.orgAdmin(h.saveAgentLabels))

@@ -85,7 +85,6 @@ func (h *Web) adminData(c *reqCtx, tab string) (adminData, error) {
 		d.ComingSoon = "Members and invites arrive in phase 3."
 	case "projects":
 		d.Lede = "A project holds monitors, channels, routes and keys. Roles in " + c.org.Slug + " apply to every project."
-		d.ComingSoon = "The projects tab arrives later in phase 2."
 	case "agents":
 		d.Lede = "Agents run pull checks from networks vink cannot reach. An agent dials out to vink over WebSocket, keeps nothing on disk and never listens on a port."
 	}
@@ -101,8 +100,11 @@ func (h *Web) orgAdminTab(c *reqCtx) error {
 	if !known {
 		return domain.NotFound("settings tab")
 	}
-	if tab == "agents" {
+	switch tab {
+	case "agents":
 		return h.agentsList(c)
+	case "projects":
+		return h.projectsList(c)
 	}
 	d, err := h.adminData(c, tab)
 	if err != nil {
