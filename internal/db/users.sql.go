@@ -23,7 +23,7 @@ func (q *Queries) CountUsers(ctx context.Context) (int64, error) {
 const createUser = `-- name: CreateUser :one
 INSERT INTO users (id, subject, email, display_name, password_hash, is_instance_admin, created_at)
 VALUES (?, ?, ?, ?, ?, ?, ?)
-RETURNING id, subject, email, display_name, password_hash, is_instance_admin, created_at
+RETURNING id, subject, email, display_name, password_hash, is_instance_admin, created_at, source, disabled_at, disabled_by, totp_secret, totp_enabled_at, totp_last_step, password_changed_at
 `
 
 type CreateUserParams struct {
@@ -55,12 +55,19 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 		&i.PasswordHash,
 		&i.IsInstanceAdmin,
 		&i.CreatedAt,
+		&i.Source,
+		&i.DisabledAt,
+		&i.DisabledBy,
+		&i.TotpSecret,
+		&i.TotpEnabledAt,
+		&i.TotpLastStep,
+		&i.PasswordChangedAt,
 	)
 	return i, err
 }
 
 const getUser = `-- name: GetUser :one
-SELECT id, subject, email, display_name, password_hash, is_instance_admin, created_at FROM users WHERE id = ?
+SELECT id, subject, email, display_name, password_hash, is_instance_admin, created_at, source, disabled_at, disabled_by, totp_secret, totp_enabled_at, totp_last_step, password_changed_at FROM users WHERE id = ?
 `
 
 func (q *Queries) GetUser(ctx context.Context, id string) (User, error) {
@@ -74,12 +81,19 @@ func (q *Queries) GetUser(ctx context.Context, id string) (User, error) {
 		&i.PasswordHash,
 		&i.IsInstanceAdmin,
 		&i.CreatedAt,
+		&i.Source,
+		&i.DisabledAt,
+		&i.DisabledBy,
+		&i.TotpSecret,
+		&i.TotpEnabledAt,
+		&i.TotpLastStep,
+		&i.PasswordChangedAt,
 	)
 	return i, err
 }
 
 const getUserBySubject = `-- name: GetUserBySubject :one
-SELECT id, subject, email, display_name, password_hash, is_instance_admin, created_at FROM users WHERE subject = ?
+SELECT id, subject, email, display_name, password_hash, is_instance_admin, created_at, source, disabled_at, disabled_by, totp_secret, totp_enabled_at, totp_last_step, password_changed_at FROM users WHERE subject = ?
 `
 
 func (q *Queries) GetUserBySubject(ctx context.Context, subject string) (User, error) {
@@ -93,12 +107,19 @@ func (q *Queries) GetUserBySubject(ctx context.Context, subject string) (User, e
 		&i.PasswordHash,
 		&i.IsInstanceAdmin,
 		&i.CreatedAt,
+		&i.Source,
+		&i.DisabledAt,
+		&i.DisabledBy,
+		&i.TotpSecret,
+		&i.TotpEnabledAt,
+		&i.TotpLastStep,
+		&i.PasswordChangedAt,
 	)
 	return i, err
 }
 
 const listUsers = `-- name: ListUsers :many
-SELECT id, subject, email, display_name, password_hash, is_instance_admin, created_at FROM users ORDER BY subject
+SELECT id, subject, email, display_name, password_hash, is_instance_admin, created_at, source, disabled_at, disabled_by, totp_secret, totp_enabled_at, totp_last_step, password_changed_at FROM users ORDER BY subject
 `
 
 func (q *Queries) ListUsers(ctx context.Context) ([]User, error) {
@@ -118,6 +139,13 @@ func (q *Queries) ListUsers(ctx context.Context) ([]User, error) {
 			&i.PasswordHash,
 			&i.IsInstanceAdmin,
 			&i.CreatedAt,
+			&i.Source,
+			&i.DisabledAt,
+			&i.DisabledBy,
+			&i.TotpSecret,
+			&i.TotpEnabledAt,
+			&i.TotpLastStep,
+			&i.PasswordChangedAt,
 		); err != nil {
 			return nil, err
 		}

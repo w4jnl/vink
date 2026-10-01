@@ -6,6 +6,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/w4jnl/vink/internal/audit"
 	"github.com/w4jnl/vink/internal/db"
 	"github.com/w4jnl/vink/internal/domain"
 	"github.com/w4jnl/vink/internal/secrets"
@@ -35,7 +36,19 @@ func (s *Service) CreateLocalUser(ctx context.Context, sc domain.Scope, subject,
 	if err := requireInstanceAdmin(sc); err != nil {
 		return nil, err
 	}
-	return s.createLocalUser(ctx, s.db.Write(), subject, email, name, password, instanceAdmin)
+	var out *domain.User
+	err := s.db.Tx(ctx, func(q *db.Queries) error {
+		u, err := s.createLocalUser(ctx, q, subject, email, name, password, instanceAdmin)
+		if err != nil {
+			return err
+		}
+		out = u
+		return s.record(ctx, q, sc, audit.Entry{Action: "user.create", Target: u.Subject, TargetID: u.ID, Detail: map[string]any{"instance_admin": instanceAdmin}})
+	})
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func (s *Service) createLocalUser(ctx context.Context, q *db.Queries, subject, email, name, password string, instanceAdmin bool) (*domain.User, error) {
@@ -90,7 +103,16 @@ func (s *Service) SetPassword(ctx context.Context, sc domain.Scope, userID, pass
 	if err != nil {
 		return err
 	}
-	return s.db.Write().SetUserPassword(ctx, db.SetUserPasswordParams{PasswordHash: &hash, ID: userID})
+	u, err := s.UserByID(ctx, userID)
+	if err != nil {
+		return err
+	}
+	return s.db.Tx(ctx, func(q *db.Queries) error {
+		if err := q.SetUserPassword(ctx, db.SetUserPasswordParams{PasswordHash: &hash, ID: userID}); err != nil {
+			return err
+		}
+		return s.record(ctx, q, sc, audit.Entry{Action: "user.password", Target: u.Subject, TargetID: u.ID})
+	})
 }
 
 // UserBySubject looks a user up by login name or proxy subject.
@@ -136,8 +158,12 @@ func (s *Service) SetInstanceAdmin(ctx context.Context, sc domain.Scope, subject
 	if err != nil {
 		return err
 	}
-	_, err = s.db.Write().SetInstanceAdmin(ctx, db.SetInstanceAdminParams{IsInstanceAdmin: admin, ID: u.ID})
-	return err
+	return s.db.Tx(ctx, func(q *db.Queries) error {
+		if _, err := q.SetInstanceAdmin(ctx, db.SetInstanceAdminParams{IsInstanceAdmin: admin, ID: u.ID}); err != nil {
+			return err
+		}
+		return s.record(ctx, q, sc, audit.Entry{Action: "user.instance_admin", Target: u.Subject, TargetID: u.ID, Detail: map[string]any{"admin": admin}})
+	})
 }
 
 // EnsureProxyUser creates a proxy-authenticated user on first sight and
@@ -187,7 +213,8 @@ func (s *Service) SetMembership(ctx context.Context, sc domain.Scope, userID, or
 	if !role.Valid() {
 		return (&domain.ValidationError{Errors: []domain.FieldError{{Field: "role", Msg: "must be owner, admin, member or viewer"}}}).OrNil()
 	}
-	if _, err := s.db.Read().GetUser(ctx, userID); err != nil {
+	user, err := s.db.Read().GetUser(ctx, userID)
+	if err != nil {
 		return notFoundIfNoRows(err, "user")
 	}
 	if _, err := s.db.Read().GetOrg(ctx, orgID); err != nil {
@@ -198,7 +225,18 @@ func (s *Service) SetMembership(ctx context.Context, sc domain.Scope, userID, or
 			return err
 		}
 	}
-	return s.db.Write().UpsertMembership(ctx, db.UpsertMembershipParams{UserID: userID, OrgID: orgID, Role: string(role), Source: "local", CreatedAt: domain.Millis(s.now())})
+	from := ""
+	if cur, err := s.db.Read().GetMembership(ctx, db.GetMembershipParams{UserID: userID, OrgID: orgID}); err == nil {
+		from = cur.Role
+	}
+	return s.db.Tx(ctx, func(q *db.Queries) error {
+		if err := q.UpsertMembership(ctx, db.UpsertMembershipParams{UserID: userID, OrgID: orgID, Role: string(role), Source: "local", CreatedAt: domain.Millis(s.now())}); err != nil {
+			return err
+		}
+		e := orgEntry(orgID, "member.role", user.Subject, user.ID)
+		e.Detail = map[string]any{"from": from, "to": string(role)}
+		return s.record(ctx, q, sc, e)
+	})
 }
 
 // RemoveMembership ends a user's role in an org. The last owner stays.
@@ -209,12 +247,28 @@ func (s *Service) RemoveMembership(ctx context.Context, sc domain.Scope, userID,
 	if err := s.keepLastOwner(ctx, userID, orgID); err != nil {
 		return err
 	}
-	n, err := s.db.Write().DeleteMembership(ctx, db.DeleteMembershipParams{UserID: userID, OrgID: orgID})
+	user, err := s.db.Read().GetUser(ctx, userID)
+	if err != nil {
+		return notFoundIfNoRows(err, "user")
+	}
+	cur, err := s.db.Read().GetMembership(ctx, db.GetMembershipParams{UserID: userID, OrgID: orgID})
+	if err != nil {
+		return notFoundIfNoRows(err, "membership")
+	}
+	err = s.db.Tx(ctx, func(q *db.Queries) error {
+		n, err := q.DeleteMembership(ctx, db.DeleteMembershipParams{UserID: userID, OrgID: orgID})
+		if err != nil {
+			return err
+		}
+		if n == 0 {
+			return domain.NotFound("membership")
+		}
+		e := orgEntry(orgID, "member.remove", user.Subject, user.ID)
+		e.Detail = map[string]any{"from": cur.Role}
+		return s.record(ctx, q, sc, e)
+	})
 	if err != nil {
 		return err
-	}
-	if n == 0 {
-		return domain.NotFound("membership")
 	}
 	s.log.Info("membership removed", "org_id", orgID, "user_id", userID, "actor", sc.Actor)
 	return nil
@@ -337,7 +391,14 @@ func (s *Service) Bootstrap(ctx context.Context, in BootstrapInput) (*BootstrapR
 		in.ProjectName = in.OrgName
 	}
 	res := &BootstrapResult{}
-	res.User, err = s.createLocalUser(ctx, s.db.Write(), in.Subject, in.Email, in.Name, in.Password, true)
+	err = s.db.Tx(ctx, func(q *db.Queries) error {
+		u, err := s.createLocalUser(ctx, q, in.Subject, in.Email, in.Name, in.Password, true)
+		if err != nil {
+			return err
+		}
+		res.User = u
+		return s.record(ctx, q, admin, audit.Entry{Action: "user.create", Target: u.Subject, TargetID: u.ID, Detail: map[string]any{"instance_admin": true}})
+	})
 	if err != nil {
 		return nil, err
 	}

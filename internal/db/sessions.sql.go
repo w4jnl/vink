@@ -64,7 +64,7 @@ func (q *Queries) DeleteUserSessions(ctx context.Context, userID string) error {
 }
 
 const getSession = `-- name: GetSession :one
-SELECT id, user_id, csrf, created_at, expires_at, last_project_id FROM sessions WHERE id = ? AND expires_at > ?
+SELECT id, user_id, csrf, created_at, expires_at, last_project_id, user_agent, ip, last_seen_at FROM sessions WHERE id = ? AND expires_at > ?
 `
 
 type GetSessionParams struct {
@@ -82,6 +82,9 @@ func (q *Queries) GetSession(ctx context.Context, arg GetSessionParams) (Session
 		&i.CreatedAt,
 		&i.ExpiresAt,
 		&i.LastProjectID,
+		&i.UserAgent,
+		&i.Ip,
+		&i.LastSeenAt,
 	)
 	return i, err
 }

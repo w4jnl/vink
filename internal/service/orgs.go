@@ -25,11 +25,21 @@ func (s *Service) CreateOrg(ctx context.Context, sc domain.Scope, slug, name str
 	if err := ve.OrNil(); err != nil {
 		return nil, err
 	}
-	row, err := s.db.Write().CreateOrg(ctx, db.CreateOrgParams{ID: domain.NewID(), Slug: slug, Name: name, CreatedAt: domain.Millis(s.now())})
+	var out *domain.Org
+	err := s.db.Tx(ctx, func(q *db.Queries) error {
+		row, err := q.CreateOrg(ctx, db.CreateOrgParams{ID: domain.NewID(), Slug: slug, Name: name, CreatedAt: domain.Millis(s.now())})
+		if err != nil {
+			return conflictIfUnique(err, "an org with slug "+slug+" exists")
+		}
+		out = orgFromRow(row)
+		e := orgEntry(out.ID, "org.create", out.Slug, out.ID)
+		e.After = orgSnapshot(out)
+		return s.record(ctx, q, sc, e)
+	})
 	if err != nil {
-		return nil, conflictIfUnique(err, "an org with slug "+slug+" exists")
+		return nil, err
 	}
-	return orgFromRow(row), nil
+	return out, nil
 }
 
 // OrgBySlug looks an org up by slug. It carries no scope because the auth

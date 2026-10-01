@@ -52,8 +52,8 @@ func TestMigrateAppliesOnceAndIsIdempotent(t *testing.T) {
 	if err := d.Reader.QueryRowContext(ctx, `SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name <> 'schema_migrations'`).Scan(&n); err != nil {
 		t.Fatal(err)
 	}
-	if n != 18 {
-		t.Errorf("expected 18 tables, got %d", n)
+	if n != 24 {
+		t.Errorf("expected 24 tables, got %d", n)
 	}
 }
 
@@ -116,7 +116,7 @@ func TestRollbackAndDump(t *testing.T) {
 		t.Errorf("dump missing the route_channels migration:\n%s", s)
 	}
 	// rolling back walks the migrations newest first, down to nothing
-	for _, want := range []string{"20261003000000", "20261002000000", "20261001000000", "20260930000000", "20260927000000"} {
+	for _, want := range []string{"20261005000000", "20261004000000", "20261003000000", "20261002000000", "20261001000000", "20260930000000", "20260927000000"} {
 		v, err := Rollback(ctx, d.Writer, quiet())
 		if err != nil {
 			t.Fatal(err)

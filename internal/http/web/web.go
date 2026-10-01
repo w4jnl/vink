@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/w4jnl/vink/internal/audit"
 	"github.com/w4jnl/vink/internal/auth"
 	"github.com/w4jnl/vink/internal/domain"
 	"github.com/w4jnl/vink/internal/http/middleware"
@@ -145,6 +146,7 @@ func securityHeaders(w http.ResponseWriter) {
 func (h *Web) public(fn handlerFn) http.Handler {
 	return h.authn.Identity(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		securityHeaders(w)
+		r = r.WithContext(audit.WithRequest(r.Context(), audit.Request{Via: audit.ViaWeb, RequestID: middleware.GetRequestID(r.Context()), RemoteAddr: middleware.ClientIP(r)}))
 		c := &reqCtx{w: w, r: r, principal: auth.PrincipalFrom(r.Context()), now: h.now()}
 		if err := fn(c); err != nil {
 			h.fail(c, err)

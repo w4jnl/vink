@@ -31,6 +31,25 @@ type ApiKey struct {
 	RevokedAt  *int64
 }
 
+type Audit struct {
+	ID         string
+	At         int64
+	Actor      string
+	ActorKind  string
+	ActorID    *string
+	OrgID      *string
+	ProjectID  *string
+	Act        string
+	Target     string
+	TargetID   *string
+	SpecBefore *string
+	SpecAfter  *string
+	Detail     string
+	Via        string
+	RequestID  *string
+	RemoteAddr *string
+}
+
 type Body struct {
 	ObservationID string
 	ProjectID     string
@@ -89,6 +108,37 @@ type Incident struct {
 	AckedAt      *int64
 	OpenEventID  string
 	CloseEventID *string
+}
+
+type InstanceMetum struct {
+	Name      string
+	Value     string
+	UpdatedAt int64
+}
+
+type Invite struct {
+	ID        string
+	OrgID     string
+	Role      string
+	Note      string
+	TokenHash string
+	CreatedBy *string
+	CreatedAt int64
+	ExpiresAt int64
+	UsedAt    *int64
+	UsedBy    *string
+	RevokedAt *int64
+}
+
+type LoginChallenge struct {
+	ID        string
+	UserID    string
+	CreatedAt int64
+	ExpiresAt int64
+	Attempts  int64
+	Ip        string
+	UserAgent string
+	NextPath  string
 }
 
 type Maintenance struct {
@@ -179,6 +229,24 @@ type Project struct {
 	CreatedAt        int64
 }
 
+type RecoveryCode struct {
+	UserID    string
+	Prefix    string
+	Hash      string
+	CreatedAt int64
+	UsedAt    *int64
+}
+
+type ResetToken struct {
+	ID        string
+	UserID    string
+	TokenHash string
+	CreatedBy *string
+	CreatedAt int64
+	ExpiresAt int64
+	UsedAt    *int64
+}
+
 type Route struct {
 	ID           string
 	ProjectID    string
@@ -207,6 +275,9 @@ type Session struct {
 	CreatedAt     int64
 	ExpiresAt     int64
 	LastProjectID *string
+	UserAgent     string
+	Ip            string
+	LastSeenAt    *int64
 }
 
 type StatusPage struct {
@@ -223,11 +294,18 @@ type StatusPage struct {
 }
 
 type User struct {
-	ID              string
-	Subject         string
-	Email           string
-	DisplayName     string
-	PasswordHash    *string
-	IsInstanceAdmin bool
-	CreatedAt       int64
+	ID                string
+	Subject           string
+	Email             string
+	DisplayName       string
+	PasswordHash      *string
+	IsInstanceAdmin   bool
+	CreatedAt         int64
+	Source            string
+	DisabledAt        *int64
+	DisabledBy        *string
+	TotpSecret        *string
+	TotpEnabledAt     *int64
+	TotpLastStep      int64
+	PasswordChangedAt *int64
 }

@@ -57,15 +57,25 @@ func (s *Service) CreateStatusPage(ctx context.Context, sc domain.Scope, p *doma
 		return nil, err
 	}
 	now := s.now()
-	row, err := s.db.Write().CreateStatusPage(ctx, db.CreateStatusPageParams{
-		ID: domain.NewID(), ProjectID: sc.ProjectID, Slug: p.Slug, Title: p.Title, MatchTags: tagsJSON(p.MatchTags), Public: p.Public,
-		PasswordHash: ptrs(p.PasswordHash), CustomDomain: ptrs(p.CustomDomain), CreatedAt: domain.Millis(now), UpdatedAt: domain.Millis(now),
+	var out *domain.StatusPage
+	err := s.db.Tx(ctx, func(q *db.Queries) error {
+		row, err := q.CreateStatusPage(ctx, db.CreateStatusPageParams{
+			ID: domain.NewID(), ProjectID: sc.ProjectID, Slug: p.Slug, Title: p.Title, MatchTags: tagsJSON(p.MatchTags), Public: p.Public,
+			PasswordHash: ptrs(p.PasswordHash), CustomDomain: ptrs(p.CustomDomain), CreatedAt: domain.Millis(now), UpdatedAt: domain.Millis(now),
+		})
+		if err != nil {
+			return conflictIfUnique(err, "the address "+p.Slug+" is taken")
+		}
+		out = statusPageFromRow(row)
+		e := projectEntry(sc, "page.create", out.Slug, out.ID)
+		e.After = pageSnapshot(out)
+		return s.record(ctx, q, sc, e)
 	})
 	if err != nil {
-		return nil, conflictIfUnique(err, "the address "+p.Slug+" is taken")
+		return nil, err
 	}
 	s.log.Info("status page created", "project_id", sc.ProjectID, "page", p.Slug, "actor", sc.Actor)
-	return statusPageFromRow(row), nil
+	return out, nil
 }
 
 // StatusPage returns one page of the project.
@@ -113,15 +123,26 @@ func (s *Service) UpdateStatusPage(ctx context.Context, sc domain.Scope, slug st
 	if err := preparePage(&next, password, cur.PasswordHash); err != nil {
 		return nil, err
 	}
-	row, err := s.db.Write().UpdateStatusPage(ctx, db.UpdateStatusPageParams{
-		Slug: next.Slug, Title: next.Title, MatchTags: tagsJSON(next.MatchTags), Public: next.Public, PasswordHash: ptrs(next.PasswordHash), CustomDomain: ptrs(next.CustomDomain),
-		UpdatedAt: domain.Millis(s.now()), ProjectID: sc.ProjectID, ID: cur.ID,
+	var out *domain.StatusPage
+	err = s.db.Tx(ctx, func(q *db.Queries) error {
+		row, err := q.UpdateStatusPage(ctx, db.UpdateStatusPageParams{
+			Slug: next.Slug, Title: next.Title, MatchTags: tagsJSON(next.MatchTags), Public: next.Public, PasswordHash: ptrs(next.PasswordHash), CustomDomain: ptrs(next.CustomDomain),
+			UpdatedAt: domain.Millis(s.now()), ProjectID: sc.ProjectID, ID: cur.ID,
+		})
+		if err != nil {
+			return conflictIfUnique(err, "the address "+next.Slug+" is taken")
+		}
+		out = statusPageFromRow(row)
+		e := projectEntry(sc, "page.update", out.Slug, out.ID)
+		e.Before, e.After = pageSnapshot(cur), pageSnapshot(out)
+		e.Detail = map[string]any{"fields": changedFields(e.Before, e.After)}
+		return s.record(ctx, q, sc, e)
 	})
 	if err != nil {
-		return nil, conflictIfUnique(err, "the address "+next.Slug+" is taken")
+		return nil, err
 	}
 	s.log.Info("status page updated", "project_id", sc.ProjectID, "page", next.Slug, "actor", sc.Actor)
-	return statusPageFromRow(row), nil
+	return out, nil
 }
 
 // DeleteStatusPage removes a page.
@@ -129,12 +150,24 @@ func (s *Service) DeleteStatusPage(ctx context.Context, sc domain.Scope, slug st
 	if err := requireEdit(sc); err != nil {
 		return err
 	}
-	n, err := s.db.Write().DeleteStatusPage(ctx, db.DeleteStatusPageParams{ProjectID: sc.ProjectID, Slug: slug})
+	cur, err := s.StatusPage(ctx, sc, slug)
 	if err != nil {
 		return err
 	}
-	if n == 0 {
-		return domain.NotFound("status page")
+	err = s.db.Tx(ctx, func(q *db.Queries) error {
+		n, err := q.DeleteStatusPage(ctx, db.DeleteStatusPageParams{ProjectID: sc.ProjectID, Slug: slug})
+		if err != nil {
+			return err
+		}
+		if n == 0 {
+			return domain.NotFound("status page")
+		}
+		e := projectEntry(sc, "page.delete", cur.Slug, cur.ID)
+		e.Before = pageSnapshot(cur)
+		return s.record(ctx, q, sc, e)
+	})
+	if err != nil {
+		return err
 	}
 	s.log.Info("status page deleted", "project_id", sc.ProjectID, "page", slug, "actor", sc.Actor)
 	return nil

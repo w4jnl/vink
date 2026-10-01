@@ -93,6 +93,9 @@ type Service struct {
 	agentCache      agentCache
 	agentPresence   func(agentID string) bool
 	agentSince      func(agentID string) (time.Time, bool)
+	// noAudit silences per-resource audit rows while an apply runs; the
+	// apply writes one row of its own.
+	noAudit bool
 }
 
 // New wires a service. The clock is time.Now unless SetClock is called.

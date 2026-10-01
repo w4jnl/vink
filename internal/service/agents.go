@@ -67,14 +67,24 @@ func (s *Service) CreateAgent(ctx context.Context, sc domain.Scope, name string,
 	if err != nil {
 		return nil, "", err
 	}
-	row, err := s.db.Write().CreateAgent(ctx, db.CreateAgentParams{
-		ID: domain.NewID(), OrgID: sc.OrgID, Name: a.Name, TokenHash: secrets.HashToken(token), TokenPrefix: prefix, Labels: domain.LabelsJSON(a.Labels), Version: nil, CreatedAt: domain.Millis(s.now()),
+	var out *domain.Agent
+	err = s.db.Tx(ctx, func(q *db.Queries) error {
+		row, err := q.CreateAgent(ctx, db.CreateAgentParams{
+			ID: domain.NewID(), OrgID: sc.OrgID, Name: a.Name, TokenHash: secrets.HashToken(token), TokenPrefix: prefix, Labels: domain.LabelsJSON(a.Labels), Version: nil, CreatedAt: domain.Millis(s.now()),
+		})
+		if err != nil {
+			return conflictIfUnique(err, "an agent named "+a.Name+" exists")
+		}
+		out = agentFromRow(row)
+		e := orgEntry(sc.OrgID, "agent.create", out.Name, out.ID)
+		e.After = agentSnapshot(out)
+		return s.record(ctx, q, sc, e)
 	})
 	if err != nil {
-		return nil, "", conflictIfUnique(err, "an agent named "+a.Name+" exists")
+		return nil, "", err
 	}
 	s.log.Info("agent created", "org_id", sc.OrgID, "agent", a.Name, "actor", sc.Actor)
-	return agentFromRow(row), token, nil
+	return out, token, nil
 }
 
 // ListAgents lists the org's agents by name.
@@ -120,13 +130,23 @@ func (s *Service) UpdateAgentLabels(ctx context.Context, sc domain.Scope, name s
 	if err := next.Validate(); err != nil {
 		return nil, err
 	}
-	row, err := s.db.Write().UpdateAgentLabels(ctx, db.UpdateAgentLabelsParams{Labels: domain.LabelsJSON(next.Labels), OrgID: sc.OrgID, ID: cur.ID})
+	var out *domain.Agent
+	err = s.db.Tx(ctx, func(q *db.Queries) error {
+		row, err := q.UpdateAgentLabels(ctx, db.UpdateAgentLabelsParams{Labels: domain.LabelsJSON(next.Labels), OrgID: sc.OrgID, ID: cur.ID})
+		if err != nil {
+			return err
+		}
+		out = agentFromRow(row)
+		e := orgEntry(sc.OrgID, "agent.labels", out.Name, out.ID)
+		e.Before, e.After = agentSnapshot(cur), agentSnapshot(out)
+		return s.record(ctx, q, sc, e)
+	})
 	if err != nil {
 		return nil, err
 	}
 	s.log.Info("agent labels updated", "org_id", sc.OrgID, "agent", cur.Name, "actor", sc.Actor)
 	s.bus.Publish(engineChanged(""))
-	return agentFromRow(row), nil
+	return out, nil
 }
 
 // RevokeAgent deletes an agent; its token stops working at once and the
@@ -136,14 +156,22 @@ func (s *Service) RevokeAgent(ctx context.Context, sc domain.Scope, name string)
 	if err != nil {
 		return err
 	}
-	n, err := s.db.Write().DeleteAgent(ctx, db.DeleteAgentParams{OrgID: sc.OrgID, ID: cur.ID})
+	err = s.db.Tx(ctx, func(q *db.Queries) error {
+		n, err := q.DeleteAgent(ctx, db.DeleteAgentParams{OrgID: sc.OrgID, ID: cur.ID})
+		if err != nil {
+			return err
+		}
+		if n == 0 {
+			return domain.NotFound("agent")
+		}
+		if _, err := q.ClearAgentMonitors(ctx, ptrs(cur.ID)); err != nil {
+			return err
+		}
+		e := orgEntry(sc.OrgID, "agent.revoke", cur.Name, cur.ID)
+		e.Before = agentSnapshot(cur)
+		return s.record(ctx, q, sc, e)
+	})
 	if err != nil {
-		return err
-	}
-	if n == 0 {
-		return domain.NotFound("agent")
-	}
-	if _, err := s.db.Write().ClearAgentMonitors(ctx, ptrs(cur.ID)); err != nil {
 		return err
 	}
 	s.agentCache.drop(cur.ID)

@@ -317,6 +317,7 @@ func (a *Authenticator) Login(w http.ResponseWriter, r *http.Request, subject, p
 	user, err := a.svc.VerifyPassword(ctx, subject, password)
 	if err != nil {
 		a.log.Info("login failed", "subject", subject, "ip", middleware.ClientIP(r))
+		_ = a.svc.RecordSignIn(ctx, nil, subject, "password", false)
 		return nil, err
 	}
 	if old, err := r.Cookie(CookieName); err == nil && old.Value != "" {
@@ -332,12 +333,18 @@ func (a *Authenticator) Login(w http.ResponseWriter, r *http.Request, subject, p
 		return nil, err
 	}
 	a.log.Info("login", "subject", user.Subject, "ip", middleware.ClientIP(r))
+	if err := a.svc.RecordSignIn(ctx, user, user.Subject, "password", true); err != nil {
+		return nil, err
+	}
 	return &Principal{User: *user, InstanceAdmin: user.InstanceAdmin, Memberships: memberships, Session: sess, Source: "session"}, nil
 }
 
 // Logout ends the session and clears the cookie.
 func (a *Authenticator) Logout(w http.ResponseWriter, r *http.Request) error {
 	if c, err := r.Cookie(CookieName); err == nil && c.Value != "" {
+		if p := PrincipalFrom(r.Context()); p != nil {
+			_ = a.svc.RecordSignOut(r.Context(), &p.User)
+		}
 		if err := a.svc.DeleteSession(r.Context(), c.Value); err != nil {
 			return err
 		}

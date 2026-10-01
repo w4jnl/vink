@@ -78,9 +78,13 @@ func (s *Service) CreateChannel(ctx context.Context, sc domain.Scope, c *domain.
 			if err != nil {
 				return err
 			}
-			return q.InsertRouteChannel(ctx, db.InsertRouteChannelParams{RouteID: route.ID, ChannelID: out.ID, ProjectID: sc.ProjectID})
+			if err := q.InsertRouteChannel(ctx, db.InsertRouteChannelParams{RouteID: route.ID, ChannelID: out.ID, ProjectID: sc.ProjectID}); err != nil {
+				return err
+			}
 		}
-		return nil
+		e := projectEntry(sc, "channel.create", out.Name, out.ID)
+		e.After = channelSnapshot(out)
+		return s.record(ctx, q, sc, e)
 	})
 	if err != nil {
 		return nil, err
@@ -164,14 +168,28 @@ func (s *Service) UpdateChannel(ctx context.Context, sc domain.Scope, id string,
 	if err != nil {
 		return nil, err
 	}
-	row, err := s.db.Write().UpdateChannel(ctx, db.UpdateChannelParams{
-		Name: next.Name, Kind: string(next.Kind), Config: sealed, Enabled: next.Enabled, UpdatedAt: domain.Millis(s.now()), ProjectID: sc.ProjectID, ID: id,
+	var out *domain.Channel
+	err = s.db.Tx(ctx, func(q *db.Queries) error {
+		row, err := q.UpdateChannel(ctx, db.UpdateChannelParams{
+			Name: next.Name, Kind: string(next.Kind), Config: sealed, Enabled: next.Enabled, UpdatedAt: domain.Millis(s.now()), ProjectID: sc.ProjectID, ID: id,
+		})
+		if err != nil {
+			return conflictIfUnique(err, "a channel named "+next.Name+" exists")
+		}
+		out, err = s.channelFromRow(row)
+		if err != nil {
+			return err
+		}
+		e := projectEntry(sc, "channel.update", out.Name, out.ID)
+		e.Before, e.After = channelSnapshot(cur), channelSnapshot(out)
+		e.Detail = map[string]any{"fields": changedFields(e.Before, e.After)}
+		return s.record(ctx, q, sc, e)
 	})
 	if err != nil {
-		return nil, conflictIfUnique(err, "a channel named "+next.Name+" exists")
+		return nil, err
 	}
 	s.log.Info("channel updated", "project_id", sc.ProjectID, "channel", next.Name, "actor", sc.Actor)
-	return s.channelFromRow(row)
+	return out, nil
 }
 
 // DeleteChannel removes a channel and, by cascade, its routes.
@@ -179,7 +197,11 @@ func (s *Service) DeleteChannel(ctx context.Context, sc domain.Scope, id string)
 	if err := requireEdit(sc); err != nil {
 		return err
 	}
-	err := s.db.Tx(ctx, func(q *db.Queries) error {
+	cur, err := s.Channel(ctx, sc, id)
+	if err != nil {
+		return err
+	}
+	err = s.db.Tx(ctx, func(q *db.Queries) error {
 		n, err := q.DeleteChannel(ctx, db.DeleteChannelParams{ProjectID: sc.ProjectID, ID: id})
 		if err != nil {
 			return err
@@ -188,8 +210,12 @@ func (s *Service) DeleteChannel(ctx context.Context, sc domain.Scope, id string)
 			return domain.NotFound("channel")
 		}
 		// A route whose last channel went away has nowhere to send.
-		_, err = q.DeleteOrphanRoutes(ctx, sc.ProjectID)
-		return err
+		if _, err := q.DeleteOrphanRoutes(ctx, sc.ProjectID); err != nil {
+			return err
+		}
+		e := projectEntry(sc, "channel.delete", cur.Name, cur.ID)
+		e.Before = channelSnapshot(cur)
+		return s.record(ctx, q, sc, e)
 	})
 	if err != nil {
 		return err

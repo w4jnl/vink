@@ -83,15 +83,24 @@ func (s *Service) CreateMonitor(ctx context.Context, sc domain.Scope, m *domain.
 	if err != nil {
 		return nil, err
 	}
-	row, err := s.db.Write().CreateMonitor(ctx, db.CreateMonitorParams{
-		ID: m.ID, ProjectID: project.ID, OrgID: project.OrgID, Slug: m.Slug, Name: m.Name, Kind: string(m.Kind),
-		Spec: string(spec), Tags: m.TagsJSON(), State: string(domain.StateNew), StateSince: domain.Millis(now), BaseAt: domain.Millis(now),
-		NextDueAt: domain.MillisPtr(next), CreatedAt: domain.Millis(now), UpdatedAt: domain.Millis(now),
+	var out *domain.Monitor
+	err = s.db.Tx(ctx, func(q *db.Queries) error {
+		row, err := q.CreateMonitor(ctx, db.CreateMonitorParams{
+			ID: m.ID, ProjectID: project.ID, OrgID: project.OrgID, Slug: m.Slug, Name: m.Name, Kind: string(m.Kind),
+			Spec: string(spec), Tags: m.TagsJSON(), State: string(domain.StateNew), StateSince: domain.Millis(now), BaseAt: domain.Millis(now),
+			NextDueAt: domain.MillisPtr(next), CreatedAt: domain.Millis(now), UpdatedAt: domain.Millis(now),
+		})
+		if err != nil {
+			return conflictIfUnique(err, "a monitor with slug "+m.Slug+" exists")
+		}
+		out, err = monitorFromRow(row)
+		if err != nil {
+			return err
+		}
+		e := projectEntry(sc, "monitor.create", out.Slug, out.ID)
+		e.OrgID, e.ProjectID, e.After = project.OrgID, project.ID, domain.MonitorYAML(out)
+		return s.record(ctx, q, sc, e)
 	})
-	if err != nil {
-		return nil, conflictIfUnique(err, "a monitor with slug "+m.Slug+" exists")
-	}
-	out, err := monitorFromRow(row)
 	if err != nil {
 		return nil, err
 	}
@@ -244,7 +253,13 @@ func (s *Service) UpdateMonitor(ctx context.Context, sc domain.Scope, slug strin
 			saved.AgentID = nil
 		}
 		out, err = monitorFromRow(saved)
-		return err
+		if err != nil {
+			return err
+		}
+		e := projectEntry(sc, "monitor.update", out.Slug, out.ID)
+		e.Before, e.After = domain.MonitorYAML(cur), domain.MonitorYAML(out)
+		e.Detail = map[string]any{"fields": changedFields(e.Before, e.After)}
+		return s.record(ctx, q, sc, e)
 	})
 	if err != nil {
 		return nil, err
@@ -263,12 +278,20 @@ func (s *Service) DeleteMonitor(ctx context.Context, sc domain.Scope, slug strin
 	if err != nil {
 		return err
 	}
-	n, err := s.db.Write().DeleteMonitor(ctx, db.DeleteMonitorParams{ProjectID: sc.ProjectID, ID: m.ID})
+	err = s.db.Tx(ctx, func(q *db.Queries) error {
+		n, err := q.DeleteMonitor(ctx, db.DeleteMonitorParams{ProjectID: sc.ProjectID, ID: m.ID})
+		if err != nil {
+			return err
+		}
+		if n == 0 {
+			return domain.NotFound("monitor")
+		}
+		e := projectEntry(sc, "monitor.delete", m.Slug, m.ID)
+		e.Before = domain.MonitorYAML(m)
+		return s.record(ctx, q, sc, e)
+	})
 	if err != nil {
 		return err
-	}
-	if n == 0 {
-		return domain.NotFound("monitor")
 	}
 	s.bus.Publish(engine.MonitorChanged{ProjectID: sc.ProjectID, MonitorID: m.ID, Deleted: true})
 	s.log.Info("monitor deleted", "project_id", sc.ProjectID, "monitor", slug, "actor", sc.Actor)
@@ -339,7 +362,11 @@ func (s *Service) setPaused(ctx context.Context, sc domain.Scope, slug string, p
 		next.NextDueAt, next.FailStreak, next.OkStreak, next.RunStartedAt, next.RunID = due, 0, 0, nil, ""
 		next.UpdatedAt = now
 		out = &next
-		return nil
+		action := "monitor.resume"
+		if paused {
+			action = "monitor.pause"
+		}
+		return s.record(ctx, q, sc, projectEntry(sc, action, m.Slug, m.ID))
 	})
 	if err != nil {
 		return nil, err

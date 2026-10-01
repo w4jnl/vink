@@ -34,13 +34,17 @@ func (s *Service) Apply(ctx context.Context, sc domain.Scope, f *apply.File, o A
 	}
 	diff := &apply.Diff{DryRun: o.DryRun, Created: []string{}, Updated: []string{}, Recreated: []string{}, Deleted: []string{}, Unchanged: []string{}}
 	err := s.db.Tx(ctx, func(q *db.Queries) error {
-		if err := s.inTx(q).applyFile(ctx, sc, f, o, diff); err != nil {
+		tx := s.inTx(q)
+		tx.noAudit = true // the apply row below stands for every change inside it
+		if err := tx.applyFile(ctx, sc, f, o, diff); err != nil {
 			return err
 		}
 		if o.DryRun {
 			return errDryRun
 		}
-		return nil
+		e := projectEntry(sc, "apply", "vink.yaml", "")
+		e.Detail = applyDetail(diff, o.Prune)
+		return s.record(ctx, q, sc, e)
 	})
 	if err != nil && !errors.Is(err, errDryRun) {
 		return nil, err
@@ -566,6 +570,7 @@ func (s *Service) ApplyOrg(ctx context.Context, sc domain.Scope, f *apply.OrgFil
 	var touched []string
 	err = s.db.Tx(ctx, func(q *db.Queries) error {
 		tx := s.inTx(q)
+		tx.noAudit = true // one apply row per project stands for the changes inside it
 		for i, e := range f.Projects {
 			project, err := tx.ProjectBySlug(ctx, sc.OrgID, e.Slug)
 			created := false
@@ -588,6 +593,14 @@ func (s *Service) ApplyOrg(ctx context.Context, sc domain.Scope, f *apply.OrgFil
 			}
 			diff.Projects = append(diff.Projects, pd)
 			touched = append(touched, project.ID)
+			if !o.DryRun {
+				entry := projectEntry(psc, "apply", "org file", "")
+				entry.Detail = applyDetail(&pd.Diff, o.Prune)
+				entry.Detail["project_created"] = created
+				if err := s.record(ctx, q, psc, entry); err != nil {
+					return err
+				}
+			}
 		}
 		if o.DryRun {
 			return errDryRun
@@ -604,4 +617,9 @@ func (s *Service) ApplyOrg(ctx context.Context, sc domain.Scope, f *apply.OrgFil
 		}
 	}
 	return diff, nil
+}
+
+// applyDetail is what the audit row keeps of an apply: the counts.
+func applyDetail(d *apply.Diff, prune bool) map[string]any {
+	return map[string]any{"created": len(d.Created), "updated": len(d.Updated), "recreated": len(d.Recreated), "deleted": len(d.Deleted), "unchanged": len(d.Unchanged), "prune": prune}
 }

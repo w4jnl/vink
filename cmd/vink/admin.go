@@ -13,7 +13,9 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/w4jnl/vink/internal/audit"
 	"github.com/w4jnl/vink/internal/config"
+	"github.com/w4jnl/vink/internal/db"
 	"github.com/w4jnl/vink/internal/domain"
 	"github.com/w4jnl/vink/internal/logging"
 	"github.com/w4jnl/vink/internal/secrets"
@@ -60,6 +62,10 @@ func newAdminBackupCmd(f *serverFlags) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			// the server page warns when this is older than a day
+			if err := db.New(d.Writer).SetInstanceMeta(cmd.Context(), db.SetInstanceMetaParams{Name: service.MetaLastBackup, Value: time.Now().UTC().Format(time.RFC3339), UpdatedAt: time.Now().UnixMilli()}); err != nil {
+				return fmt.Errorf("record the backup: %w", err)
+			}
 			fmt.Fprintf(cmd.OutOrStdout(), "wrote %s (%d bytes)\n", out, info.Size())
 			return nil
 		},
@@ -87,6 +93,7 @@ func (f *serverFlags) withService(cmd *cobra.Command, fn func(*service.Service, 
 	svcCfg.PingBaseURL = cfg.PingBaseURL()
 	svcCfg.BodyLimit = int64(cfg.Ping.BodyLimit)
 	svcCfg.Keyring = keyring
+	cmd.SetContext(audit.WithRequest(cmd.Context(), audit.Request{Via: audit.ViaCLI}))
 	if err := fn(service.New(d, nil, log, svcCfg), cfg); err != nil {
 		// name the database, so a command aimed at the wrong file says so
 		return fmt.Errorf("%w (database %s)", err, cfg.DB.Path)

@@ -7,8 +7,10 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/w4jnl/vink/internal/audit"
 	"github.com/w4jnl/vink/internal/auth"
 	"github.com/w4jnl/vink/internal/domain"
+	"github.com/w4jnl/vink/internal/http/middleware"
 	"github.com/w4jnl/vink/internal/ratelimit"
 	"github.com/w4jnl/vink/internal/service"
 )
@@ -143,7 +145,7 @@ func (a *API) wrap(h handlerFunc, mode scopeMode, sessionPath, orgKeys bool) htt
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("Referrer-Policy", "same-origin")
-		ctx := r.Context()
+		ctx := audit.WithRequest(r.Context(), audit.Request{Via: audit.ViaAPI, RequestID: middleware.GetRequestID(r.Context()), RemoteAddr: middleware.ClientIP(r)})
 
 		var (
 			sc        domain.Scope

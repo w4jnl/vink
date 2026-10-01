@@ -183,6 +183,11 @@ func (s *Service) CheckNow(ctx context.Context, sc domain.Scope, slug string) (*
 	if err := run(ctx, m.ID); err != nil {
 		return nil, err
 	}
+	if err := s.db.Tx(ctx, func(q *db.Queries) error {
+		return s.record(ctx, q, sc, projectEntry(sc, "monitor.check", m.Slug, m.ID))
+	}); err != nil {
+		return nil, err
+	}
 	s.log.Info("check now", "project_id", sc.ProjectID, "monitor", slug, "actor", sc.Actor)
 	return s.MonitorBySlug(ctx, sc, slug)
 }

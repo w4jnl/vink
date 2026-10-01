@@ -78,15 +78,28 @@ func (s *Service) CreateMaintenance(ctx context.Context, sc domain.Scope, w *dom
 	}
 	now := s.now()
 	starts, ends, rrule, from, to := maintenanceParams(w)
-	row, err := s.db.Write().CreateMaintenance(ctx, db.CreateMaintenanceParams{
-		ID: domain.NewID(), ProjectID: sc.ProjectID, Name: w.Name, MatchTags: tagsJSON(w.MatchTags), StartsAt: starts, EndsAt: ends,
-		Rrule: rrule, FromTime: from, ToTime: to, Timezone: w.Timezone, CreatedAt: domain.Millis(now), UpdatedAt: domain.Millis(now),
+	var out *domain.Maintenance
+	err := s.db.Tx(ctx, func(q *db.Queries) error {
+		row, err := q.CreateMaintenance(ctx, db.CreateMaintenanceParams{
+			ID: domain.NewID(), ProjectID: sc.ProjectID, Name: w.Name, MatchTags: tagsJSON(w.MatchTags), StartsAt: starts, EndsAt: ends,
+			Rrule: rrule, FromTime: from, ToTime: to, Timezone: w.Timezone, CreatedAt: domain.Millis(now), UpdatedAt: domain.Millis(now),
+		})
+		if err != nil {
+			return err
+		}
+		out, err = maintenanceFromRow(row)
+		if err != nil {
+			return err
+		}
+		e := projectEntry(sc, "maintenance.create", out.Name, out.ID)
+		e.After = maintenanceSnapshot(out)
+		return s.record(ctx, q, sc, e)
 	})
 	if err != nil {
 		return nil, err
 	}
 	s.log.Info("maintenance window created", "project_id", sc.ProjectID, "window", w.Name, "actor", sc.Actor)
-	return maintenanceFromRow(row)
+	return out, nil
 }
 
 // Maintenance returns one window.
@@ -162,15 +175,29 @@ func (s *Service) UpdateMaintenance(ctx context.Context, sc domain.Scope, id str
 		return nil, err
 	}
 	starts, ends, rrule, from, to := maintenanceParams(&next)
-	row, err := s.db.Write().UpdateMaintenance(ctx, db.UpdateMaintenanceParams{
-		Name: next.Name, MatchTags: tagsJSON(next.MatchTags), StartsAt: starts, EndsAt: ends, Rrule: rrule, FromTime: from, ToTime: to, Timezone: next.Timezone,
-		EndedUntil: nil, UpdatedAt: domain.Millis(s.now()), ProjectID: sc.ProjectID, ID: id,
+	var out *domain.Maintenance
+	err = s.db.Tx(ctx, func(q *db.Queries) error {
+		row, err := q.UpdateMaintenance(ctx, db.UpdateMaintenanceParams{
+			Name: next.Name, MatchTags: tagsJSON(next.MatchTags), StartsAt: starts, EndsAt: ends, Rrule: rrule, FromTime: from, ToTime: to, Timezone: next.Timezone,
+			EndedUntil: nil, UpdatedAt: domain.Millis(s.now()), ProjectID: sc.ProjectID, ID: id,
+		})
+		if err != nil {
+			return err
+		}
+		out, err = maintenanceFromRow(row)
+		if err != nil {
+			return err
+		}
+		e := projectEntry(sc, "maintenance.update", out.Name, out.ID)
+		e.Before, e.After = maintenanceSnapshot(cur), maintenanceSnapshot(out)
+		e.Detail = map[string]any{"fields": changedFields(e.Before, e.After)}
+		return s.record(ctx, q, sc, e)
 	})
 	if err != nil {
 		return nil, err
 	}
 	s.log.Info("maintenance window updated", "project_id", sc.ProjectID, "window", next.Name, "actor", sc.Actor)
-	return maintenanceFromRow(row)
+	return out, nil
 }
 
 // DeleteMaintenance removes a window.
@@ -178,12 +205,24 @@ func (s *Service) DeleteMaintenance(ctx context.Context, sc domain.Scope, id str
 	if err := requireEdit(sc); err != nil {
 		return err
 	}
-	n, err := s.db.Write().DeleteMaintenance(ctx, db.DeleteMaintenanceParams{ProjectID: sc.ProjectID, ID: id})
+	cur, err := s.Maintenance(ctx, sc, id)
 	if err != nil {
 		return err
 	}
-	if n == 0 {
-		return domain.NotFound("maintenance window")
+	err = s.db.Tx(ctx, func(q *db.Queries) error {
+		n, err := q.DeleteMaintenance(ctx, db.DeleteMaintenanceParams{ProjectID: sc.ProjectID, ID: id})
+		if err != nil {
+			return err
+		}
+		if n == 0 {
+			return domain.NotFound("maintenance window")
+		}
+		e := projectEntry(sc, "maintenance.delete", cur.Name, cur.ID)
+		e.Before = maintenanceSnapshot(cur)
+		return s.record(ctx, q, sc, e)
+	})
+	if err != nil {
+		return err
 	}
 	s.log.Info("maintenance window deleted", "project_id", sc.ProjectID, "window_id", id, "actor", sc.Actor)
 	return nil
@@ -210,16 +249,27 @@ func (s *Service) EndMaintenance(ctx context.Context, sc domain.Scope, id string
 		w.EndsAt = &now
 	}
 	starts, ends, rrule, from, to := maintenanceParams(w)
-	row, err := s.db.Write().UpdateMaintenance(ctx, db.UpdateMaintenanceParams{
-		Name: w.Name, MatchTags: tagsJSON(w.MatchTags), StartsAt: starts, EndsAt: ends, Rrule: rrule, FromTime: from, ToTime: to, Timezone: w.Timezone,
-		EndedUntil: domain.MillisPtr(w.EndedUntil), UpdatedAt: domain.Millis(now), ProjectID: sc.ProjectID, ID: id,
+	var out *domain.Maintenance
+	err = s.db.Tx(ctx, func(q *db.Queries) error {
+		row, err := q.UpdateMaintenance(ctx, db.UpdateMaintenanceParams{
+			Name: w.Name, MatchTags: tagsJSON(w.MatchTags), StartsAt: starts, EndsAt: ends, Rrule: rrule, FromTime: from, ToTime: to, Timezone: w.Timezone,
+			EndedUntil: domain.MillisPtr(w.EndedUntil), UpdatedAt: domain.Millis(now), ProjectID: sc.ProjectID, ID: id,
+		})
+		if err != nil {
+			return err
+		}
+		out, err = maintenanceFromRow(row)
+		if err != nil {
+			return err
+		}
+		return s.record(ctx, q, sc, projectEntry(sc, "maintenance.end", w.Name, id))
 	})
 	if err != nil {
 		return nil, err
 	}
 	s.log.Info("maintenance window ended", "project_id", sc.ProjectID, "window", w.Name, "actor", sc.Actor)
 	s.bus.Publish(engineChanged(sc.ProjectID))
-	return maintenanceFromRow(row)
+	return out, nil
 }
 
 // ActiveMaintenance lists the windows running at now.

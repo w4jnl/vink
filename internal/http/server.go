@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/w4jnl/vink/internal/audit"
 	"github.com/w4jnl/vink/internal/auth"
 	"github.com/w4jnl/vink/internal/config"
 	"github.com/w4jnl/vink/internal/domain"
@@ -109,7 +110,8 @@ func Handler(d Deps, withPing bool) http.Handler {
 // ackLink acknowledges an incident from a signed one-click token and
 // sends the person to the project's incidents page.
 func (d Deps) ackLink(w http.ResponseWriter, r *http.Request) {
-	inc, err := d.Svc.AckIncidentByToken(r.Context(), r.PathValue("token"))
+	ctx := audit.WithRequest(r.Context(), audit.Request{Via: "link", RequestID: middleware.GetRequestID(r.Context()), RemoteAddr: middleware.ClientIP(r)})
+	inc, err := d.Svc.AckIncidentByToken(ctx, r.PathValue("token"))
 	if err != nil {
 		if errors.Is(err, domain.ErrUnauthorized) || errors.Is(err, domain.ErrNotFound) {
 			http.Error(w, "this acknowledgement link is invalid or has expired", http.StatusNotFound)

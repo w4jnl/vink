@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/w4jnl/vink/internal/audit"
 	"github.com/w4jnl/vink/internal/db"
 	"github.com/w4jnl/vink/internal/domain"
 )
@@ -45,13 +46,22 @@ func (s *Service) CreateProject(ctx context.Context, sc domain.Scope, orgID, slu
 	if _, err := s.db.Read().GetOrg(ctx, orgID); err != nil {
 		return nil, notFoundIfNoRows(err, "org")
 	}
-	row, err := s.db.Write().CreateProject(ctx, db.CreateProjectParams{
-		ID: domain.NewID(), OrgID: orgID, Slug: slug, Name: name, Timezone: timezone, PingKey: NewPingKey(), CreatedAt: domain.Millis(s.now()),
+	var out *domain.Project
+	err := s.db.Tx(ctx, func(q *db.Queries) error {
+		row, err := q.CreateProject(ctx, db.CreateProjectParams{
+			ID: domain.NewID(), OrgID: orgID, Slug: slug, Name: name, Timezone: timezone, PingKey: NewPingKey(), CreatedAt: domain.Millis(s.now()),
+		})
+		if err != nil {
+			return conflictIfUnique(err, "a project with slug "+slug+" exists in this org")
+		}
+		out = projectFromRow(row)
+		e := audit.Entry{Action: "project.create", Target: out.Slug, TargetID: out.ID, OrgID: orgID, ProjectID: out.ID, After: projectSnapshot(out)}
+		return s.record(ctx, q, sc, e)
 	})
 	if err != nil {
-		return nil, conflictIfUnique(err, "a project with slug "+slug+" exists in this org")
+		return nil, err
 	}
-	return projectFromRow(row), nil
+	return out, nil
 }
 
 // Project returns the project the scope is bound to.
@@ -154,7 +164,22 @@ func (s *Service) UpdateProject(ctx context.Context, sc domain.Scope, name, time
 	if err := ve.OrNil(); err != nil {
 		return nil, err
 	}
-	if err := s.db.Write().UpdateProject(ctx, db.UpdateProjectParams{Name: name, Timezone: timezone, OrgID: sc.OrgID, ID: sc.ProjectID}); err != nil {
+	cur, err := s.Project(ctx, sc)
+	if err != nil {
+		return nil, err
+	}
+	err = s.db.Tx(ctx, func(q *db.Queries) error {
+		if err := q.UpdateProject(ctx, db.UpdateProjectParams{Name: name, Timezone: timezone, OrgID: sc.OrgID, ID: sc.ProjectID}); err != nil {
+			return err
+		}
+		next := *cur
+		next.Name, next.Timezone = name, timezone
+		e := projectEntry(sc, "project.update", cur.Slug, cur.ID)
+		e.Before, e.After = projectSnapshot(cur), projectSnapshot(&next)
+		e.Detail = map[string]any{"fields": changedFields(e.Before, e.After)}
+		return s.record(ctx, q, sc, e)
+	})
+	if err != nil {
 		return nil, err
 	}
 	return s.Project(ctx, sc)
@@ -173,7 +198,18 @@ func (s *Service) RotatePingKey(ctx context.Context, sc domain.Scope) (*domain.P
 	if s.cfg.PingKeyGrace <= 0 {
 		until = s.now().Add(-time.Second)
 	}
-	err := s.db.Write().RotatePingKey(ctx, db.RotatePingKeyParams{PingKey: NewPingKey(), PingKeyPrevUntil: ptri(domain.Millis(until)), OrgID: sc.OrgID, ID: sc.ProjectID})
+	cur, err := s.Project(ctx, sc)
+	if err != nil {
+		return nil, err
+	}
+	err = s.db.Tx(ctx, func(q *db.Queries) error {
+		if err := q.RotatePingKey(ctx, db.RotatePingKeyParams{PingKey: NewPingKey(), PingKeyPrevUntil: ptri(domain.Millis(until)), OrgID: sc.OrgID, ID: sc.ProjectID}); err != nil {
+			return err
+		}
+		e := projectEntry(sc, "pingkey.rotate", cur.Slug, cur.ID)
+		e.Detail = map[string]any{"old_key_until": until.UTC().Format(time.RFC3339)}
+		return s.record(ctx, q, sc, e)
+	})
 	if err != nil {
 		return nil, err
 	}

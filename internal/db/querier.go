@@ -14,6 +14,8 @@ type Querier interface {
 	ClearAgentMonitors(ctx context.Context, agentID *string) (int64, error)
 	// tenancy: org
 	CountAgents(ctx context.Context, orgID string) (int64, error)
+	// tenancy: root (the service scopes by org_id and project_id)
+	CountAudit(ctx context.Context, arg CountAuditParams) (CountAuditRow, error)
 	// tenancy: root (dispatcher keeps per-monitor order)
 	CountEarlierPendingDeliveries(ctx context.Context, arg CountEarlierPendingDeliveriesParams) (int64, error)
 	CountMonitorsByState(ctx context.Context, projectID string) ([]CountMonitorsByStateRow, error)
@@ -29,6 +31,8 @@ type Querier interface {
 	CountPendingDeliveries(ctx context.Context) (int64, error)
 	CountProjects(ctx context.Context, orgID string) (int64, error)
 	CountRoutesForChannel(ctx context.Context, arg CountRoutesForChannelParams) (int64, error)
+	// tenancy: root (the service scopes by org_id and project_id)
+	CountStateEvents(ctx context.Context, arg CountStateEventsParams) (int64, error)
 	CountUsers(ctx context.Context) (int64, error)
 	CreateAPIKey(ctx context.Context, arg CreateAPIKeyParams) (ApiKey, error)
 	// tenancy: org
@@ -72,6 +76,8 @@ type Querier interface {
 	GetChannelByName(ctx context.Context, arg GetChannelByNameParams) (Channel, error)
 	GetEvent(ctx context.Context, arg GetEventParams) (Event, error)
 	GetIncident(ctx context.Context, arg GetIncidentParams) (GetIncidentRow, error)
+	// tenancy: root (instance facts)
+	GetInstanceMeta(ctx context.Context, name string) (InstanceMetum, error)
 	GetMaintenance(ctx context.Context, arg GetMaintenanceParams) (Maintenance, error)
 	GetMembership(ctx context.Context, arg GetMembershipParams) (Membership, error)
 	GetMonitor(ctx context.Context, arg GetMonitorParams) (Monitor, error)
@@ -97,6 +103,8 @@ type Querier interface {
 	GetStatusPageBySlug(ctx context.Context, slug string) (StatusPage, error)
 	GetUser(ctx context.Context, id string) (User, error)
 	GetUserBySubject(ctx context.Context, subject string) (User, error)
+	// tenancy: root (written inside the transaction of the action, for its scope)
+	InsertAudit(ctx context.Context, arg InsertAuditParams) error
 	InsertBody(ctx context.Context, arg InsertBodyParams) error
 	InsertDelivery(ctx context.Context, arg InsertDeliveryParams) error
 	InsertEvent(ctx context.Context, arg InsertEventParams) error
@@ -119,6 +127,12 @@ type Querier interface {
 	ListAgentsSeenBefore(ctx context.Context, lastSeenAt *int64) ([]Agent, error)
 	// tenancy: root (instance admin)
 	ListAllProjects(ctx context.Context) ([]ListAllProjectsRow, error)
+	// tenancy: root (the service scopes by org_id and project_id below)
+	// The log: admin actions from audit and state flips from events, newest
+	// first, 51 rows so the caller knows whether an older page exists.
+	ListAudit(ctx context.Context, arg ListAuditParams) ([]ListAuditRow, error)
+	// tenancy: root (the service scopes by org_id and project_id)
+	ListAuditActors(ctx context.Context, arg ListAuditActorsParams) ([]string, error)
 	ListChannels(ctx context.Context, projectID string) ([]Channel, error)
 	ListDeliveriesForEvent(ctx context.Context, arg ListDeliveriesForEventParams) ([]Delivery, error)
 	// tenancy: root (checker pool; remote checks belong to an agent)
@@ -178,6 +192,8 @@ type Querier interface {
 	RevokeOrgAPIKey(ctx context.Context, arg RevokeOrgAPIKeyParams) (int64, error)
 	RotatePingKey(ctx context.Context, arg RotatePingKeyParams) error
 	SetInstanceAdmin(ctx context.Context, arg SetInstanceAdminParams) (int64, error)
+	// tenancy: root (instance facts)
+	SetInstanceMeta(ctx context.Context, arg SetInstanceMetaParams) error
 	// tenancy: root (agent gateway)
 	SetMonitorAgent(ctx context.Context, arg SetMonitorAgentParams) error
 	SetMonitorPaused(ctx context.Context, arg SetMonitorPausedParams) error

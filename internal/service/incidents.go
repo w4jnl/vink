@@ -93,12 +93,20 @@ func (s *Service) AckIncident(ctx context.Context, sc domain.Scope, id string) (
 	if inc.AckedAt != nil {
 		return inc, nil
 	}
-	n, err := s.db.Write().AckIncident(ctx, db.AckIncidentParams{AckedBy: ptrs(sc.Actor), AckedAt: ptri(domain.Millis(s.now())), ProjectID: sc.ProjectID, ID: id})
+	err = s.db.Tx(ctx, func(q *db.Queries) error {
+		n, err := q.AckIncident(ctx, db.AckIncidentParams{AckedBy: ptrs(sc.Actor), AckedAt: ptri(domain.Millis(s.now())), ProjectID: sc.ProjectID, ID: id})
+		if err != nil {
+			return err
+		}
+		if n == 0 {
+			return domain.NotFound("incident")
+		}
+		e := projectEntry(sc, "incident.ack", inc.MonitorSlug, inc.ID)
+		e.Detail = map[string]any{"incident": inc.ID}
+		return s.record(ctx, q, sc, e)
+	})
 	if err != nil {
 		return nil, err
-	}
-	if n == 0 {
-		return nil, domain.NotFound("incident")
 	}
 	s.log.Info("incident acknowledged", "project_id", sc.ProjectID, "incident", id, "actor", sc.Actor)
 	return s.Incident(ctx, sc, id)

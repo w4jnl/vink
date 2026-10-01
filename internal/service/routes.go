@@ -69,7 +69,16 @@ func (s *Service) CreateRoute(ctx context.Context, sc domain.Scope, r *domain.Ro
 			return err
 		}
 		id = row.ID
-		return s.writeRouteChannels(ctx, q, sc, id, r.ChannelIDs)
+		if err := s.writeRouteChannels(ctx, q, sc, id, r.ChannelIDs); err != nil {
+			return err
+		}
+		created, err := s.inTx(q).Route(ctx, sc, id)
+		if err != nil {
+			return err
+		}
+		e := projectEntry(sc, "route.create", routeLabel(created.MatchTags, created.ChannelNames()), id)
+		e.After = routeSnapshot(created)
+		return s.record(ctx, q, sc, e)
 	})
 	if err != nil {
 		return nil, err
@@ -127,7 +136,11 @@ func (s *Service) UpdateRoute(ctx context.Context, sc domain.Scope, id string, r
 	if err := requireEdit(sc); err != nil {
 		return nil, err
 	}
-	err := s.db.Tx(ctx, func(q *db.Queries) error {
+	cur, err := s.Route(ctx, sc, id)
+	if err != nil {
+		return nil, err
+	}
+	err = s.db.Tx(ctx, func(q *db.Queries) error {
 		if _, err := q.GetRoute(ctx, db.GetRouteParams{ProjectID: sc.ProjectID, ID: id}); err != nil {
 			return notFoundIfNoRows(err, "route")
 		}
@@ -140,7 +153,17 @@ func (s *Service) UpdateRoute(ctx context.Context, sc domain.Scope, id string, r
 		}); err != nil {
 			return err
 		}
-		return s.writeRouteChannels(ctx, q, sc, id, r.ChannelIDs)
+		if err := s.writeRouteChannels(ctx, q, sc, id, r.ChannelIDs); err != nil {
+			return err
+		}
+		next, err := s.inTx(q).Route(ctx, sc, id)
+		if err != nil {
+			return err
+		}
+		e := projectEntry(sc, "route.update", routeLabel(next.MatchTags, next.ChannelNames()), id)
+		e.Before, e.After = routeSnapshot(cur), routeSnapshot(next)
+		e.Detail = map[string]any{"fields": changedFields(e.Before, e.After)}
+		return s.record(ctx, q, sc, e)
 	})
 	if err != nil {
 		return nil, err
@@ -153,14 +176,22 @@ func (s *Service) DeleteRoute(ctx context.Context, sc domain.Scope, id string) e
 	if err := requireEdit(sc); err != nil {
 		return err
 	}
-	n, err := s.db.Write().DeleteRoute(ctx, db.DeleteRouteParams{ProjectID: sc.ProjectID, ID: id})
+	cur, err := s.Route(ctx, sc, id)
 	if err != nil {
 		return err
 	}
-	if n == 0 {
-		return domain.NotFound("route")
-	}
-	return nil
+	return s.db.Tx(ctx, func(q *db.Queries) error {
+		n, err := q.DeleteRoute(ctx, db.DeleteRouteParams{ProjectID: sc.ProjectID, ID: id})
+		if err != nil {
+			return err
+		}
+		if n == 0 {
+			return domain.NotFound("route")
+		}
+		e := projectEntry(sc, "route.delete", routeLabel(cur.MatchTags, cur.ChannelNames()), id)
+		e.Before = routeSnapshot(cur)
+		return s.record(ctx, q, sc, e)
+	})
 }
 
 // RouteCountForChannel says how many routes send to a channel.
