@@ -29,8 +29,8 @@ func newApplyCmd(g *globals) *cobra.Command {
 	var dryRun, prune bool
 	cmd := &cobra.Command{
 		Use:   "apply -f vink.yaml",
-		Short: "Apply a declarative file to the project and print the diff",
-		Long:  "Reads the file, expands ${VAR} from the environment, checks it against docs/apply-schema.json and sends it to the server. Exit 1 on a validation error, 2 on a server error.",
+		Short: "Apply a declarative file to the project, or an org file to its projects, and print the diff",
+		Long:  "Reads the file, expands ${VAR} from the environment, checks it against docs/apply-schema.json and sends it to the server. A project file applies to the context's project; an org file (org: and projects:) needs a context with an org key and applies every project it names. Exit 1 on a validation error, 2 on a server error.",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			data, err := readInput(cmd, file)
 			if err != nil {
@@ -40,7 +40,7 @@ func newApplyCmd(g *globals) *cobra.Command {
 			if err != nil {
 				return cli.UserError("%v", err)
 			}
-			parsed, err := apply.Parse(data, true)
+			project, org, err := apply.ParseAny(data, true)
 			if err != nil {
 				return cli.UserError("%v", err)
 			}
@@ -55,12 +55,31 @@ func newApplyCmd(g *globals) *cobra.Command {
 			if prune {
 				params = append(params, "prune=1")
 			}
-			path := "/apply"
+			query := ""
 			if len(params) > 0 {
-				path += "?" + strings.Join(params, "&")
+				query = "?" + strings.Join(params, "&")
+			}
+			if org != nil {
+				// an org file goes to the org route with the context's org key
+				if org.Org == "" {
+					return cli.UserError("the org file needs org: <slug>")
+				}
+				var diff apply.OrgDiff
+				raw, err := c.DoRaw(cmd.Context(), "PUT", "/orgs/"+org.Org+"/apply"+query, org, &diff)
+				if err != nil {
+					return err
+				}
+				if f.asJSON {
+					p.JSON(raw)
+					return nil
+				}
+				if !f.quiet {
+					printOrgDiff(cmd.OutOrStdout(), diff)
+				}
+				return nil
 			}
 			var diff apply.Diff
-			raw, err := c.DoRaw(cmd.Context(), "PUT", path, parsed, &diff)
+			raw, err := c.DoRaw(cmd.Context(), "PUT", "/apply"+query, project, &diff)
 			if err != nil {
 				return err
 			}
@@ -85,17 +104,20 @@ func newApplyCmd(g *globals) *cobra.Command {
 
 func newExportCmd(g *globals) *cobra.Command {
 	f := &clientFlags{g: g}
-	var out string
+	var out, org string
 	var secrets bool
 	cmd := &cobra.Command{
-		Use:   "export [-o vink.yaml]",
-		Short: "Write the project as an apply file",
+		Use:   "export [-o vink.yaml] [--org slug]",
+		Short: "Write the project as an apply file, or every project of an org with --org",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			c, _, _, _, err := f.connect(cmd)
 			if err != nil {
 				return err
 			}
 			path := "/export"
+			if org != "" {
+				path = "/orgs/" + org + "/export"
+			}
 			if secrets {
 				path += "?secrets=1"
 			}
@@ -123,7 +145,42 @@ func newExportCmd(g *globals) *cobra.Command {
 	f.add(cmd, false)
 	cmd.Flags().StringVarP(&out, "out", "o", "", "write to this file instead of stdout")
 	cmd.Flags().BoolVar(&secrets, "secrets", false, "include channel secrets (needs an rw key); the file is written with mode 0600")
+	cmd.Flags().StringVar(&org, "org", "", "export every project of this org as one file; the context needs an org key")
 	return cmd
+}
+
+// printOrgDiff writes an org apply's diff, one block per project.
+func printOrgDiff(out io.Writer, diff apply.OrgDiff) {
+	created, updated, recreated, deleted, unchanged := 0, 0, 0, 0, 0
+	for _, p := range diff.Projects {
+		head := p.Slug
+		if p.Created {
+			head += " (created)"
+		}
+		fmt.Fprintln(out, head)
+		for _, name := range p.Diff.Created {
+			fmt.Fprintf(out, "  + %s\n", name)
+		}
+		for _, name := range p.Updated {
+			fmt.Fprintf(out, "  ~ %s\n", name)
+		}
+		for _, name := range p.Recreated {
+			fmt.Fprintf(out, "  ! %s (recreated, state reset)\n", name)
+		}
+		for _, name := range p.Deleted {
+			fmt.Fprintf(out, "  - %s\n", name)
+		}
+		created += len(p.Diff.Created)
+		updated += len(p.Updated)
+		recreated += len(p.Recreated)
+		deleted += len(p.Deleted)
+		unchanged += len(p.Unchanged)
+	}
+	summary := fmt.Sprintf("%d projects: %d created, %d updated, %d recreated, %d deleted, %d unchanged", len(diff.Projects), created, updated, recreated, deleted, unchanged)
+	if diff.DryRun {
+		summary += " (dry run, nothing applied)"
+	}
+	fmt.Fprintln(out, summary)
 }
 
 // printDiff writes the apply diff the way apply and import show it.

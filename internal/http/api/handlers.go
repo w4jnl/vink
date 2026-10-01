@@ -730,6 +730,41 @@ func (a *API) exportProject(w http.ResponseWriter, r *http.Request) error {
 	return err
 }
 
+// applyOrg applies an org file: every project it names, in one transaction.
+func (a *API) applyOrg(w http.ResponseWriter, r *http.Request) error {
+	body, err := io.ReadAll(io.LimitReader(r.Body, 16<<20))
+	if err != nil {
+		return err
+	}
+	f, err := apply.ParseOrg(body, true)
+	if err != nil {
+		return (&domain.ValidationError{Errors: []domain.FieldError{{Field: "file", Msg: err.Error()}}}).OrNil()
+	}
+	q := r.URL.Query()
+	diff, err := a.svc.ApplyOrg(r.Context(), scope(r), f, service.ApplyOptions{DryRun: isOn(q.Get("dry_run")), Prune: isOn(q.Get("prune"))})
+	if err != nil {
+		return err
+	}
+	writeJSON(w, http.StatusOK, diff)
+	return nil
+}
+
+// exportOrg writes every project of the org as one apply YAML.
+func (a *API) exportOrg(w http.ResponseWriter, r *http.Request) error {
+	f, err := a.svc.ExportOrg(r.Context(), scope(r), isOn(r.URL.Query().Get("secrets")))
+	if err != nil {
+		return err
+	}
+	out, err := apply.EncodeOrg(f)
+	if err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/yaml; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	_, err = w.Write(out) //nolint:gosec // YAML vink generated, served as application/yaml, never as HTML
+	return err
+}
+
 // --- status pages ---------------------------------------------------------
 
 func (a *API) listStatusPages(w http.ResponseWriter, r *http.Request) error {

@@ -241,9 +241,13 @@ func TestCrossTenantIsolation(t *testing.T) {
 				}
 				rec := httptest.NewRecorder()
 				h.ServeHTTP(rec, req)
-				if !strings.Contains(path, "{name}") && c.want == 404 && c.prefix == "/api/v1/orgs/beta" {
-					// a list or create in B's own org: never A's agent
-					if rec.Code == 404 || bytes.Contains(rec.Body.Bytes(), []byte(a.agent)) {
+				ownOrg := c.prefix == "/api/v1/orgs/beta"
+				keyRoute := path == "/apply" || path == "/export" // the two routes an org key may call
+				if !strings.Contains(path, "{name}") && ownOrg && (c.want == 404 || (keyRoute && c.key == b.orgRW)) {
+					// a list, create, export or apply in B's own org: never
+					// A's agent, A's monitor or A's org
+					leak := bytes.Contains(rec.Body.Bytes(), []byte(a.agent)) || bytes.Contains(rec.Body.Bytes(), []byte(a.monitor)) || bytes.Contains(rec.Body.Bytes(), []byte("org: alpha"))
+					if rec.Code == 404 || rec.Code == 403 || leak {
 						t.Fatalf("own org %s: %d %s", route, rec.Code, rec.Body.String())
 					}
 					return

@@ -131,6 +131,21 @@ components:
         recreated: {type: array, items: {type: string}}
         deleted: {type: array, items: {type: string}}
         unchanged: {type: array, items: {type: string}}
+    OrgDiff:
+      type: object
+      description: One Diff per project the file named.
+      properties:
+        dry_run: {type: boolean}
+        org: {type: string}
+        projects:
+          type: array
+          items:
+            allOf:
+              - $ref: "#/components/schemas/Diff"
+              - type: object
+                properties:
+                  slug: {type: string}
+                  project_created: {type: boolean, description: the project itself was created by this apply}
     AgentIn:
       type: object
       properties:
@@ -419,6 +434,22 @@ paths:
       summary: Replace the agent's labels
       requestBody: {content: {application/json: {schema: {$ref: "#/components/schemas/AgentIn"}}}}
       responses: {"200": {description: The agent.}}
+  /orgs/{org}/apply:
+    parameters: [{$ref: "#/components/parameters/org"}]
+    put:
+      summary: Apply an org file to every project it names, in one transaction (org key or an org admin's session)
+      description: The body is an org file (docs/apply-schema.json, org_file). A project that does not exist is created; projects the file does not name are left alone; no project is ever deleted.
+      parameters:
+        - {name: dry_run, in: query, schema: {type: string, enum: ["1"]}, description: compute the diff and roll back}
+        - {name: prune, in: query, schema: {type: string, enum: ["1"]}, description: inside each listed project, delete what the file does not name}
+      requestBody: {content: {application/yaml: {schema: {type: string}}, application/json: {schema: {type: object}}}}
+      responses: {"200": {description: OrgDiff.}, "403": {description: A project key, a read-only key, or no admin role.}, "422": {description: The file is not valid, or is for another org.}}
+  /orgs/{org}/export:
+    parameters: [{$ref: "#/components/parameters/org"}]
+    get:
+      summary: Every project of the org as one apply YAML (org key or an org admin's session)
+      parameters: [{name: secrets, in: query, schema: {type: string, enum: ["1"]}, description: include channel secrets; needs an rw key}]
+      responses: {"200": {description: application/yaml.}, "403": {description: A project key, or secrets asked for without write access.}}
   /monitors/{slug}/check:
     parameters: [{$ref: "#/components/parameters/slug"}]
     post: {summary: Run a pull monitor's check now and return it, responses: {"200": {description: The monitor after the attempt.}, "422": {description: Not a pull monitor, or paused.}}}

@@ -101,6 +101,8 @@ func (a *API) Mount(mux *http.ServeMux) {
 	a.registerOrg(mux, "GET", "/agents/{name}", a.getAgent, false)
 	a.registerOrg(mux, "PUT", "/agents/{name}/labels", a.putAgentLabels, false)
 	a.registerOrg(mux, "DELETE", "/agents/{name}", a.deleteAgent, false)
+	a.registerOrg(mux, "PUT", "/apply", a.applyOrg, true)
+	a.registerOrg(mux, "GET", "/export", a.exportOrg, true)
 	mux.HandleFunc("GET "+Prefix+"/openapi.yaml", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/yaml")
 		_, _ = w.Write(openAPI)

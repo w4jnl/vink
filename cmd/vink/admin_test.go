@@ -154,3 +154,44 @@ func TestAdminBackup(t *testing.T) {
 		t.Fatalf("overwrite must be refused: %d %s", code, errs)
 	}
 }
+
+func TestAdminOrgKeys(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "vink.db")
+	runCLI := func(stdin string, args ...string) (string, string, int) {
+		var out, errb bytes.Buffer
+		code := run(context.Background(), append([]string{"--color", "never"}, args...), strings.NewReader(stdin), &out, &errb)
+		return out.String(), errb.String(), code
+	}
+	if _, errs, code := runCLI("hunter2hunter2\n", "admin", "init", "--db", dbPath, "--org", "homelab", "--user", "j", "--password-stdin"); code != 0 {
+		t.Fatalf("init: %s", errs)
+	}
+	out, errs, code := runCLI("", "admin", "org", "key", "create", "--db", dbPath, "--org", "homelab", "--name", "gitops", "--access", "rw", "--json")
+	if code != 0 {
+		t.Fatalf("create: %s", errs)
+	}
+	var k struct{ ID, Name, Prefix, Access, Token string }
+	if err := json.Unmarshal([]byte(out), &k); err != nil || !strings.HasPrefix(k.Token, "vk_") || k.Access != "rw" || k.Name != "gitops" {
+		t.Fatalf("create output: %s %v", out, err)
+	}
+	out, errs, code = runCLI("", "admin", "org", "key", "create", "--db", dbPath, "--org", "homelab")
+	if code != 0 || !strings.Contains(out, "token (shown once)  vk_") || !strings.Contains(out, "vink export --org homelab") || !strings.Contains(out, "(") {
+		t.Fatalf("text create: %d %s %s", code, out, errs)
+	}
+	if _, errs, code := runCLI("", "admin", "org", "key", "create", "--db", dbPath, "--org", "homelab", "--access", "rwx"); code == 0 || !strings.Contains(errs, "ro or rw") {
+		t.Fatalf("bad access: %d %s", code, errs)
+	}
+	out, _, _ = runCLI("", "admin", "org", "key", "ls", "--db", dbPath, "--org", "homelab")
+	if !strings.Contains(out, "gitops") || !strings.Contains(out, "org key") || !strings.Contains(out, "vk_"+k.Prefix) || strings.Contains(out, k.Token) {
+		t.Fatalf("ls: %s", out)
+	}
+	if _, errs, code := runCLI("", "admin", "org", "key", "revoke", "--db", dbPath, "--org", "homelab", k.ID); code != 0 {
+		t.Fatalf("revoke: %s", errs)
+	}
+	out, _, _ = runCLI("", "admin", "org", "key", "ls", "--db", dbPath, "--org", "homelab", "--json")
+	if strings.Contains(out, k.ID) {
+		t.Fatalf("after revoke: %s", out)
+	}
+	if _, errs, code := runCLI("", "admin", "org", "key", "revoke", "--db", dbPath, "--org", "homelab", k.ID); code == 0 || errs == "" {
+		t.Fatalf("revoke twice: %d %s", code, errs)
+	}
+}

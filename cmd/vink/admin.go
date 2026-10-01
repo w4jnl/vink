@@ -201,7 +201,104 @@ func newAdminOrgCmd(f *serverFlags) *cobra.Command {
 		},
 	}
 	ls.Flags().BoolVar(&asJSON, "json", false, "print as JSON")
-	cmd.AddCommand(create, ls)
+	cmd.AddCommand(create, ls, newAdminOrgKeyCmd(f))
+	return cmd
+}
+
+// newAdminOrgKeyCmd manages org keys: API keys that export and apply
+// every project of an org, for GitOps from a workstation.
+func newAdminOrgKeyCmd(f *serverFlags) *cobra.Command {
+	cmd := &cobra.Command{Use: "key", Short: "Manage org keys, which export and apply every project of an org"}
+	var orgSlug string
+	cmd.PersistentFlags().StringVar(&orgSlug, "org", "", "org slug (required)")
+	_ = cmd.MarkPersistentFlagRequired("org")
+	orgScope := func(cmd *cobra.Command, svc *service.Service) (domain.Scope, error) {
+		org, err := svc.OrgBySlug(cmd.Context(), orgSlug)
+		if err != nil {
+			return domain.Scope{}, err
+		}
+		sc := adminScope
+		sc.OrgID = org.ID
+		return sc, nil
+	}
+	var name, access string
+	var asJSON bool
+	create := &cobra.Command{
+		Use:   "create",
+		Short: "Issue an org key and print it once",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return f.withService(cmd, func(svc *service.Service, cfg *config.Config) error {
+				sc, err := orgScope(cmd, svc)
+				if err != nil {
+					return err
+				}
+				k, token, err := svc.CreateOrgAPIKey(cmd.Context(), sc, name, domain.Access(access))
+				if err != nil {
+					return err
+				}
+				if asJSON {
+					return json.NewEncoder(cmd.OutOrStdout()).Encode(map[string]any{"id": k.ID, "name": k.Name, "prefix": k.Prefix, "access": k.Access, "token": token})
+				}
+				fmt.Fprintf(cmd.OutOrStdout(), "created org key %s (%s, %s)\ntoken (shown once)  %s\n\nvink ctx add %s-org --server %s --key %s\nvink export --org %s -o %s.yaml\n", k.Name, k.Prefix, k.Access, token, orgSlug, strings.TrimRight(cfg.Server.BaseURL, "/"), token, orgSlug, orgSlug)
+				return nil
+			})
+		},
+	}
+	create.Flags().StringVar(&name, "name", "", "a name for the key (default: org key)")
+	create.Flags().StringVar(&access, "access", "ro", "ro exports; rw exports with secrets and applies")
+	create.Flags().BoolVar(&asJSON, "json", false, "print as JSON")
+	var lsJSON bool
+	ls := &cobra.Command{
+		Use:   "ls",
+		Short: "List the org's org keys",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return f.withService(cmd, func(svc *service.Service, _ *config.Config) error {
+				sc, err := orgScope(cmd, svc)
+				if err != nil {
+					return err
+				}
+				keys, err := svc.ListOrgAPIKeys(cmd.Context(), sc)
+				if err != nil {
+					return err
+				}
+				if lsJSON {
+					return json.NewEncoder(cmd.OutOrStdout()).Encode(keys)
+				}
+				tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 4, 2, ' ', 0)
+				fmt.Fprintln(tw, "ID\tNAME\tPREFIX\tACCESS\tCREATED\tLAST USED")
+				for _, k := range keys {
+					used := "never"
+					if k.LastUsedAt != nil {
+						used = k.LastUsedAt.Local().Format("2006-01-02 15:04")
+					}
+					fmt.Fprintf(tw, "%s\t%s\tvk_%s…\t%s\t%s\t%s\n", k.ID, k.Name, k.Prefix, k.Access, k.CreatedAt.Format("2006-01-02"), used)
+				}
+				return tw.Flush()
+			})
+		},
+	}
+	ls.Flags().BoolVar(&lsJSON, "json", false, "print as JSON")
+	revoke := &cobra.Command{
+		Use:   "revoke <id>",
+		Short: "Revoke an org key",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return f.withService(cmd, func(svc *service.Service, _ *config.Config) error {
+				sc, err := orgScope(cmd, svc)
+				if err != nil {
+					return err
+				}
+				if err := svc.RevokeOrgAPIKey(cmd.Context(), sc, args[0]); err != nil {
+					return err
+				}
+				fmt.Fprintf(cmd.OutOrStdout(), "revoked org key %s\n", args[0])
+				return nil
+			})
+		},
+	}
+	cmd.AddCommand(create, ls, revoke)
 	return cmd
 }
 

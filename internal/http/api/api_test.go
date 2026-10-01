@@ -692,6 +692,74 @@ func TestOrgKeys(t *testing.T) {
 	}
 }
 
+func TestOrgApplyAndExport(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	orgAdmin := domain.Scope{OrgID: e.org.ID, Role: domain.RoleAdmin, Actor: "seed"}
+	_, rw, err := e.svc.CreateOrgAPIKey(ctx, orgAdmin, "gitops", domain.AccessRW)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, ro, err := e.svc.CreateOrgAPIKey(ctx, orgAdmin, "reader", domain.AccessRO)
+	if err != nil {
+		t.Fatal(err)
+	}
+	file := map[string]any{"version": 1, "org": "homelab", "projects": []any{
+		map[string]any{"slug": "prod", "monitors": []any{map[string]any{"slug": "web", "kind": "http", "http": map[string]any{"url": "https://example.com"}}}},
+		map[string]any{"slug": "gitops", "name": "GitOps", "timezone": "UTC", "monitors": []any{map[string]any{"slug": "nightly", "schedule": map[string]any{"period": "1d"}, "grace": "1h"}}},
+	}}
+	dry := e.key(rw, "PUT", "/orgs/homelab/apply?dry_run=1", file)
+	if dry.code != 200 || !strings.Contains(string(dry.body), `"dry_run":true`) || !strings.Contains(string(dry.body), `"slug":"gitops","project_created":true`) {
+		t.Fatalf("dry run: %d %s", dry.code, dry.body)
+	}
+	if _, err := e.svc.ProjectBySlug(ctx, e.org.ID, "gitops"); err == nil {
+		t.Fatal("dry run must not create")
+	}
+	applied := e.key(rw, "PUT", "/orgs/homelab/apply", file)
+	if applied.code != 200 || !strings.Contains(string(applied.body), `"created":["monitor nightly"]`) {
+		t.Fatalf("apply: %d %s", applied.code, applied.body)
+	}
+	if p, err := e.svc.ProjectBySlug(ctx, e.org.ID, "gitops"); err != nil || p.Name != "GitOps" {
+		t.Fatalf("gitops: %+v %v", p, err)
+	}
+	export := e.key(ro, "GET", "/orgs/homelab/export", nil)
+	if export.code != 200 || !strings.Contains(string(export.body), "org: homelab") || !strings.Contains(string(export.body), "slug: gitops") || !strings.Contains(string(export.body), "slug: lab") || !strings.Contains(string(export.body), "slug: nightly") {
+		t.Fatalf("export: %d %s", export.code, export.body)
+	}
+	// who may not
+	if r := e.key(ro, "PUT", "/orgs/homelab/apply", file); r.code != 403 {
+		t.Fatalf("ro apply: %d %s", r.code, r.body)
+	}
+	if r := e.key(ro, "GET", "/orgs/homelab/export?secrets=1", nil); r.code != 403 {
+		t.Fatalf("ro secrets: %d", r.code)
+	}
+	if r := e.key(e.rw, "GET", "/orgs/homelab/export", nil); r.code != 403 {
+		t.Fatalf("project key: %d %s", r.code, r.body)
+	}
+	if r := e.key(rw, "GET", "/orgs/acme/export", nil); r.code != 404 {
+		t.Fatalf("other org: %d", r.code)
+	}
+	wrong := map[string]any{"version": 1, "org": "acme", "projects": []any{}}
+	if r := e.key(rw, "PUT", "/orgs/homelab/apply", wrong); r.code != 422 || !strings.Contains(string(r.body), "the file is for acme") {
+		t.Fatalf("wrong org: %d %s", r.code, r.body)
+	}
+	if r := e.key(rw, "PUT", "/orgs/homelab/apply", map[string]any{"version": 1, "monitors": []any{}}); r.code != 422 || !strings.Contains(string(r.body), "project file") {
+		t.Fatalf("project file on the org route: %d %s", r.code, r.body)
+	}
+	// an org admin's session may export and apply too
+	cookie, csrf := e.adminSession(t)
+	as := func(r *http.Request) { r.AddCookie(cookie); r.Header.Set(auth.CSRFHeader, csrf) }
+	if r := e.do("GET", "/api/v1/orgs/homelab/export", nil, as); r.code != 200 || !strings.Contains(string(r.body), "org: homelab") {
+		t.Fatalf("session export: %d %s", r.code, r.body)
+	}
+	if r := e.do("PUT", "/api/v1/orgs/homelab/apply", file, as); r.code != 200 {
+		t.Fatalf("session apply: %d %s", r.code, r.body)
+	}
+	if r := e.do("GET", "/api/v1/orgs/homelab/export", nil, func(r *http.Request) { r.AddCookie(e.cookie) }); r.code != 403 {
+		t.Fatalf("member session export: %d", r.code)
+	}
+}
+
 func TestChannelsRoutesKeysPingKey(t *testing.T) {
 	e := newEnv(t)
 	r := e.key(e.rw, "POST", "/channels", map[string]any{"name": "ntfy", "kind": "ntfy", "config": map[string]any{"url": "https://ntfy.example.com", "topic": "vink", "token": "tk_secret"}})

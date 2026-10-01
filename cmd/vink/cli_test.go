@@ -385,3 +385,56 @@ func TestImportCommands(t *testing.T) {
 		t.Fatalf("missing file: %d %s", code, errs)
 	}
 }
+
+func TestOrgExportAndApply(t *testing.T) {
+	e := newCLIEnv(t)
+	ctx := context.Background()
+	e.monitor("web")
+	_, orgKey, err := e.svc.CreateOrgAPIKey(ctx, domain.Scope{OrgID: e.project.OrgID, Role: domain.RoleAdmin, Actor: "seed"}, "gitops", domain.AccessRW)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// a project key cannot act for the org
+	if _, errs, code := e.run("", "export", "--org", "homelab"); code == 0 || !strings.Contains(errs, "project key acts as its project") {
+		t.Fatalf("project key: %d %s", code, errs)
+	}
+	t.Setenv("VINK_KEY", orgKey)
+	out, errs, code := e.run("", "export", "--org", "homelab")
+	if code != 0 || !strings.Contains(out, "org: homelab") || !strings.Contains(out, "slug: prod") || !strings.Contains(out, "slug: web") {
+		t.Fatalf("export --org: %d %s %s", code, out, errs)
+	}
+	if _, errs, code := e.run("", "export"); code == 0 || !strings.Contains(errs, "org key may only export and apply") {
+		t.Fatalf("org key on a project export: %d %s", code, errs)
+	}
+	dir := t.TempDir()
+	path := filepath.Join(dir, "org.yaml")
+	file := out + "  - slug: lab\n    name: Lab\n    monitors:\n      - slug: nightly\n        schedule: {period: 1d}\n        grace: 1h\n"
+	if err := os.WriteFile(path, []byte(file), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	out, errs, code = e.run("", "apply", "-f", path, "--dry-run")
+	if code != 0 || !strings.Contains(out, "lab (created)") || !strings.Contains(out, "  + monitor nightly") || !strings.Contains(out, "2 projects:") || !strings.Contains(out, "(dry run, nothing applied)") {
+		t.Fatalf("dry run: %d %s %s", code, out, errs)
+	}
+	if _, err := e.svc.ProjectBySlug(ctx, e.project.OrgID, "lab"); err == nil {
+		t.Fatal("dry run must not create")
+	}
+	out, errs, code = e.run("", "apply", "-f", path)
+	if code != 0 || !strings.Contains(out, "prod\n") || !strings.Contains(out, "lab (created)") || !strings.Contains(out, "2 projects: 1 created, 0 updated") {
+		t.Fatalf("apply: %d %s %s", code, out, errs)
+	}
+	if p, err := e.svc.ProjectBySlug(ctx, e.project.OrgID, "lab"); err != nil || p.Name != "Lab" {
+		t.Fatalf("lab: %+v %v", p, err)
+	}
+	out, _, code = e.run("", "apply", "-f", path, "--json")
+	if code != 0 || !strings.Contains(out, `"project_created":false`) {
+		t.Fatalf("json: %d %s", code, out)
+	}
+	// an org file without org:, and an org file against a project key
+	if err := os.WriteFile(path, []byte("version: 1\nprojects: []\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, errs, code := e.run("", "apply", "-f", path); code != 1 || !strings.Contains(errs, "org") {
+		t.Fatalf("no org: %d %s", code, errs)
+	}
+}
