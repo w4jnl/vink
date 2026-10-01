@@ -9,6 +9,18 @@ import (
 	"context"
 )
 
+const countOwners = `-- name: CountOwners :one
+SELECT COUNT(*) FROM memberships WHERE org_id = ? AND role = 'owner'
+`
+
+// tenancy: org
+func (q *Queries) CountOwners(ctx context.Context, orgID string) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countOwners, orgID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const deleteHeaderMembershipsForUser = `-- name: DeleteHeaderMembershipsForUser :exec
 DELETE FROM memberships WHERE user_id = ? AND source = 'header'
 `
@@ -141,6 +153,64 @@ func (q *Queries) ListMembershipsForUser(ctx context.Context, userID string) ([]
 			&i.CreatedAt,
 			&i.OrgSlug,
 			&i.OrgName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listOrgMembers = `-- name: ListOrgMembers :many
+SELECT m.user_id, m.org_id, m.role, m.source, m.created_at, u.subject, u.email, u.display_name, u.source AS user_source, u.disabled_at,
+  (SELECT MAX(s.last_seen_at) FROM sessions s WHERE s.user_id = m.user_id) AS last_seen_at
+FROM memberships m JOIN users u ON u.id = m.user_id
+WHERE m.org_id = ?
+ORDER BY u.subject
+`
+
+type ListOrgMembersRow struct {
+	UserID      string
+	OrgID       string
+	Role        string
+	Source      string
+	CreatedAt   int64
+	Subject     string
+	Email       string
+	DisplayName string
+	UserSource  string
+	DisabledAt  *int64
+	LastSeenAt  interface{}
+}
+
+// tenancy: org
+func (q *Queries) ListOrgMembers(ctx context.Context, orgID string) ([]ListOrgMembersRow, error) {
+	rows, err := q.db.QueryContext(ctx, listOrgMembers, orgID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListOrgMembersRow
+	for rows.Next() {
+		var i ListOrgMembersRow
+		if err := rows.Scan(
+			&i.UserID,
+			&i.OrgID,
+			&i.Role,
+			&i.Source,
+			&i.CreatedAt,
+			&i.Subject,
+			&i.Email,
+			&i.DisplayName,
+			&i.UserSource,
+			&i.DisabledAt,
+			&i.LastSeenAt,
 		); err != nil {
 			return nil, err
 		}

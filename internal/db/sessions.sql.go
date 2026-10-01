@@ -10,16 +10,19 @@ import (
 )
 
 const createSession = `-- name: CreateSession :exec
-INSERT INTO sessions (id, user_id, csrf, created_at, expires_at)
-VALUES (?, ?, ?, ?, ?)
+INSERT INTO sessions (id, user_id, csrf, created_at, expires_at, user_agent, ip, last_seen_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 `
 
 type CreateSessionParams struct {
-	ID        string
-	UserID    string
-	Csrf      string
-	CreatedAt int64
-	ExpiresAt int64
+	ID         string
+	UserID     string
+	Csrf       string
+	CreatedAt  int64
+	ExpiresAt  int64
+	UserAgent  string
+	Ip         string
+	LastSeenAt *int64
 }
 
 func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) error {
@@ -29,6 +32,9 @@ func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) er
 		arg.Csrf,
 		arg.CreatedAt,
 		arg.ExpiresAt,
+		arg.UserAgent,
+		arg.Ip,
+		arg.LastSeenAt,
 	)
 	return err
 }
@@ -114,5 +120,20 @@ type TouchSessionParams struct {
 
 func (q *Queries) TouchSession(ctx context.Context, arg TouchSessionParams) error {
 	_, err := q.db.ExecContext(ctx, touchSession, arg.ExpiresAt, arg.ID)
+	return err
+}
+
+const touchSessionSeen = `-- name: TouchSessionSeen :exec
+UPDATE sessions SET last_seen_at = ?, ip = ? WHERE id = ?
+`
+
+type TouchSessionSeenParams struct {
+	LastSeenAt *int64
+	Ip         string
+	ID         string
+}
+
+func (q *Queries) TouchSessionSeen(ctx context.Context, arg TouchSessionSeenParams) error {
+	_, err := q.db.ExecContext(ctx, touchSessionSeen, arg.LastSeenAt, arg.Ip, arg.ID)
 	return err
 }

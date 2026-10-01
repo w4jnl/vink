@@ -9,6 +9,7 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
@@ -283,4 +284,21 @@ func randomString(n int) (string, error) {
 		out[i] = keyAlphabet[int(v)%len(keyAlphabet)]
 	}
 	return string(out), nil
+}
+
+// NewLinkToken makes a one-time link token with the given prefix (iv_ for
+// invites, rs_ for reset links): 256 bits of randomness, so SHA-256 is
+// the right hash for it and the lookup is direct.
+func NewLinkToken(prefix string) (string, error) {
+	s, err := randomString(43)
+	if err != nil {
+		return "", err
+	}
+	return prefix + s, nil
+}
+
+// HashLink is the stored form of a one-time link token.
+func HashLink(token string) string {
+	sum := sha256.Sum256([]byte(token))
+	return hex.EncodeToString(sum[:])
 }

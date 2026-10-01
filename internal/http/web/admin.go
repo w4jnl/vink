@@ -69,9 +69,15 @@ func (h *Web) adminData(c *reqCtx, tab string) (adminData, error) {
 	if err != nil {
 		return d, err
 	}
+	members, err := h.svc.ListMembers(c.r.Context(), c.scope)
+	if err != nil {
+		return d, err
+	}
 	for _, t := range orgTabs {
 		tab := ui.Tab{ID: t.ID, Label: t.Label, Href: c.orgPath() + "/" + t.ID}
 		switch t.ID {
+		case "members":
+			tab.Count = ui.Count(len(members))
 		case "projects":
 			tab.Count = ui.Count(n)
 		case "agents":
@@ -82,7 +88,6 @@ func (h *Web) adminData(c *reqCtx, tab string) (adminData, error) {
 	switch tab {
 	case "members":
 		d.Lede = "Roles apply to every project in " + c.org.Slug + ". Admins manage members and projects; only owners transfer ownership or delete the org."
-		d.ComingSoon = "Members and invites arrive in phase 3."
 	case "projects":
 		d.Lede = "A project holds monitors, channels, routes and keys. Roles in " + c.org.Slug + " apply to every project."
 	case "agents":
@@ -105,6 +110,8 @@ func (h *Web) orgAdminTab(c *reqCtx) error {
 		return h.agentsList(c)
 	case "projects":
 		return h.projectsList(c)
+	case "members":
+		return h.membersList(c)
 	}
 	d, err := h.adminData(c, tab)
 	if err != nil {

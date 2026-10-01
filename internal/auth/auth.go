@@ -293,6 +293,10 @@ func (a *Authenticator) fromSession(r *http.Request) (*Principal, error) {
 		}
 		return nil, err
 	}
+	if user.Disabled() {
+		return nil, nil
+	}
+	a.svc.SeenSession(ctx, sess, middleware.ClientIP(r))
 	memberships, err := a.svc.MembershipsForUser(ctx, user.ID)
 	if err != nil {
 		return nil, err
@@ -323,7 +327,7 @@ func (a *Authenticator) Login(w http.ResponseWriter, r *http.Request, subject, p
 	if old, err := r.Cookie(CookieName); err == nil && old.Value != "" {
 		_ = a.svc.DeleteSession(ctx, old.Value)
 	}
-	sess, err := a.svc.CreateSession(ctx, user.ID)
+	sess, err := a.svc.CreateSessionWith(ctx, user.ID, middleware.ClientIP(r), r.UserAgent())
 	if err != nil {
 		return nil, err
 	}

@@ -99,6 +99,11 @@ func NewTemplates(static *Static) (*Templates, error) {
 			err := assign(v, &p)
 			return ui.IncidentRow(p), err
 		},
+		"inlineselect": func(v any) (ui.HTML, error) {
+			var p ui.InlineSelectProps
+			err := assign(v, &p)
+			return ui.InlineSelect(p), err
+		},
 		"settingsrow": func(v any) (ui.HTML, error) {
 			var p ui.SettingsRowProps
 			err := assign(v, &p)

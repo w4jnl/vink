@@ -17,8 +17,8 @@ const MinPasswordLen = 8
 
 func userFromRow(r db.User) *domain.User {
 	return &domain.User{
-		ID: r.ID, Subject: r.Subject, Email: r.Email, DisplayName: r.DisplayName, HasPassword: r.PasswordHash != nil,
-		InstanceAdmin: r.IsInstanceAdmin, CreatedAt: domain.FromMillis(r.CreatedAt),
+		ID: r.ID, Subject: r.Subject, Email: r.Email, DisplayName: r.DisplayName, HasPassword: r.PasswordHash != nil, Source: r.Source,
+		InstanceAdmin: r.IsInstanceAdmin, DisabledAt: domain.FromMillisPtr(r.DisabledAt), CreatedAt: domain.FromMillis(r.CreatedAt),
 	}
 }
 

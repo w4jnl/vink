@@ -1,7 +1,7 @@
 {{define "content"}}<div class="vk-page{{if not .Drawer}} vk-page--full{{end}}" id="page"><main class="vk-main" id="admin">
 <div class="vk-main__head"><h1>{{.Org}}</h1><span class="vk-muted vk-mono">org settings</span></div>
 {{tabs .Tabs .Tab "Org settings"}}
-<div id="tab">{{if eq .Tab "agents"}}{{template "admin-agents" .}}{{else if eq .Tab "projects"}}{{template "admin-projects" .}}{{else}}{{template "admin-tab" .}}{{end}}</div>
+<div id="tab">{{if eq .Tab "agents"}}{{template "admin-agents" .}}{{else if eq .Tab "projects"}}{{template "admin-projects" .}}{{else if eq .Tab "members"}}{{template "admin-members" .}}{{else}}{{template "admin-tab" .}}{{end}}</div>
 </main>{{if .Drawer}}<aside class="vk-drawer" id="drawer">{{template "agent-drawer" .Drawer}}</aside>{{end}}</div>{{end}}
 
 {{define "admin-tab"}}<div class="vk-tabhead"><p class="vk-lede">{{.Lede}}</p></div><div class="vk-empty"><h3>Not yet</h3><p>{{.ComingSoon}}</p></div>{{end}}
@@ -45,3 +45,30 @@
 {{if not .EditSlug}}<p class="vk-field__hint">vink creates the project with its own ping key and a default route. Add channels in its settings.</p>{{end}}{{end}}
 
 {{define "project-actions"}}{{if .EditSlug}}{{button (dict "Label" "Save changes" "Variant" "primary" "Type" "submit" "Attrs" (attrs "form" "project-form"))}}{{else}}{{button (dict "Label" "Create project" "Variant" "primary" "Type" "submit" "Attrs" (attrs "form" "project-form"))}}{{end}}{{button (dict "Label" "Cancel" "Href" .CancelPath)}}{{end}}
+
+{{define "admin-members"}}<div class="vk-tabhead"><p class="vk-lede">{{.Lede}}</p>{{if not .Panel}}{{button (dict "Label" "Invite" "Href" (print .TabPath "?invite=1"))}}{{end}}</div>
+{{if .Flash}}{{notice .FlashTone "" .Flash ""}}{{end}}
+{{if .Panel}}{{template "invite-panel" .Panel}}{{end}}
+<div class="vk-srows">{{range .Members}}{{template "member-row" .}}{{end}}</div>
+{{if .ProxyNote}}{{notice .ProxyNote.Tone .ProxyNote.Title .ProxyNote.Text ""}}{{end}}
+{{if .Invites}}<h2 class="vk-listhead">Invites <span>{{.InviteCounts}}</span></h2>
+<div class="vk-srows">{{range .Invites}}{{settingsrow (dict "Lead" .Lead "HasLead" true "Title" .Title "Sub" .Sub "Muted" .Muted "Cells" .Cells "Actions" .Actions)}}{{if .Note}}<div class="vk-srow__note">{{.Note}}</div>{{end}}{{end}}</div>{{end}}
+{{if .Owner}}{{template "owner-actions" .Owner}}{{end}}{{end}}
+
+{{define "member-row"}}{{settingsrow (dict "Lead" .Lead "HasLead" true "TitleHTML" .TitleHTML "Sub" .Sub "Muted" .Muted "Cells" .Cells "Actions" .Actions)}}{{if .Note}}<div class="vk-srow__note">{{.Note}}</div>{{end}}{{end}}
+
+{{define "invite-panel"}}<form id="invite-form" class="vk-sr" method="post" action="{{.Action}}"><input type="hidden" name="_csrf" value="{{.CSRF}}"></form>{{panel "Invite a local account" "" (partial "invite-fields" .) (partial "invite-actions" .) "invite-panel"}}{{end}}
+
+{{define "invite-fields"}}{{fieldrow (list (field (dict "ID" "inv_for" "Label" "For" "Value" .Values.inv_for "Hint" "A note for the invite list. They pick their own username." "Error" .Errors.inv_for "Attrs" (attrs "form" "invite-form" "required" ""))) (field (dict "ID" "inv_role" "Label" "Role" "Control" "select" "Value" .Values.inv_role "Options" .Roles "Error" .Errors.inv_role "Attrs" (attrs "form" "invite-form")))) false}}
+<p class="vk-field__hint">vink makes a one-time link that expires after 7 days. People who sign in through the proxy or OIDC need no invite; their groups decide.</p>{{end}}
+
+{{define "invite-actions"}}{{button (dict "Label" "Create link" "Variant" "primary" "Type" "submit" "Attrs" (attrs "form" "invite-form"))}}{{button (dict "Label" "Cancel" "Href" .CancelPath)}}{{end}}
+
+{{define "owner-actions"}}<h2 class="vk-listhead">Owner actions</h2>
+{{if .Error}}{{notice "error" "" .Error ""}}{{end}}
+<form id="transfer-form" class="vk-sr" method="post" action="{{.TransferPath}}"><input type="hidden" name="_csrf" value="{{.CSRF}}"></form>
+<form id="delete-org-form" class="vk-sr" method="post" action="{{.DeletePath}}"><input type="hidden" name="_csrf" value="{{.CSRF}}"></form>
+<div class="vk-srows">
+{{settingsrow (dict "Title" "Transfer ownership" "Sub" "Make another member the owner. You stay on as admin." "Prose" true "Cells" .TransferCells "Actions" .TransferActions)}}
+{{settingsrow (dict "Title" "Delete org" "Sub" .DeleteSub "Prose" true "Actions" .DeleteActions)}}
+</div>{{end}}

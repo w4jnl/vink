@@ -1225,3 +1225,171 @@ func TestSwitcherListsOrgsWithoutProjects(t *testing.T) {
 	e.get("/projects", false).has(t, `href="/o/empty/admin/projects?add=1"`)
 	e.get(projPath, false).has(t, `<span>acme</span><span class="vk-tag">owner</span>`, `<span>empty</span><span class="vk-tag">owner</span>`, `<span>homelab</span><span class="vk-tag">owner</span>`, `href="/o/empty/admin/projects?add=1"><span>New project</span>`)
 }
+
+func TestMembersInvitesAndOwnerActions(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	root := "/o/homelab/admin/members"
+	admin := domain.Scope{InstanceAdmin: true, Role: domain.RoleOwner}
+	j, _ := e.svc.UserBySubject(ctx, "j")
+	_ = e.svc.SetMembership(ctx, admin, j.ID, e.org.ID, domain.RoleOwner)
+	bob, _ := e.svc.CreateLocalUser(ctx, admin, "bob", "bob@example.com", "Bob Jansen", "correct horse", false)
+	_ = e.svc.SetMembership(ctx, admin, bob.ID, e.org.ID, domain.RoleMember)
+
+	// the tab: you as owner, locked; bob with a live select and Remove
+	tab := e.get(root, false)
+	if tab.code != 200 {
+		t.Fatalf("members: %d", tab.code)
+	}
+	tab.has(t, `aria-current="page">Members<span class="vk-tab__n">2</span>`, `href="/o/homelab/admin/members?invite=1">Invite</a>`,
+		`<span class="vk-srow__lead"><span class="vk-avatar" aria-hidden="true">J</span></span><div class="vk-srow__main"><span class="vk-srow__title">Jaro <span class="vk-tag">you</span></span><span class="vk-srow__sub" title="j@example.com · local account">`,
+		`aria-label="Role for Jaro" disabled`, `vk-srow__cell--mono">active now</span><span class="vk-srow__actions"></span>`,
+		`<span class="vk-srow__title">Bob Jansen</span>`, `aria-label="Role for Bob Jansen" hx-post="/o/homelab/admin/members/`+bob.ID+`/role" hx-trigger="change"`, `<option value="member" selected>member</option>`, `vk-srow__cell--mono">never</span>`,
+		`action="/o/homelab/admin/members/`+bob.ID+`/remove"`, `data-confirm="Really remove?">Remove</button>`,
+		`<h2 class="vk-listhead">Owner actions</h2>`, `name="new_owner"`, `<option value="`+bob.ID+`">Bob Jansen</option>`, `Possible once homelab has no projects. It has 1 project.`, `>Delete org</button>`)
+	if strings.Contains(tab.body, "vk-listhead\">Invites") {
+		t.Error("no invites heading without invites")
+	}
+
+	// the invite panel, a bad note, a link shown once
+	e.get(root+"?invite=1", false).has(t, `<h2>Invite a local account</h2>`, `id="inv_for" name="inv_for"`, `<select class="vk-input" id="inv_role" name="inv_role"`, `<option value="owner">owner</option>`, `<option value="member" selected>member</option>`, `>Create link</button>`)
+	if r := e.post(root+"/invites", url.Values{"inv_for": {"  "}, "inv_role": {"member"}}, false); r.code != 422 || !strings.Contains(r.body, `id="inv_for-msg"`) {
+		t.Fatalf("empty note: %d", r.code)
+	}
+	created := e.post(root+"/invites", url.Values{"inv_for": {"Lisa"}, "inv_role": {"member"}}, false)
+	if created.code != 200 {
+		t.Fatalf("create invite: %d %s", created.code, created.body)
+	}
+	created.has(t, `<h2 class="vk-listhead">Invites <span>1 open</span></h2>`, `<span class="vk-avatar" aria-hidden="true">L</span>`, `<span class="vk-srow__title">for Lisa</span>`, `created by Jaro · today`, `<span class="vk-tag">member</span>`, `vk-srow__cell--l vk-srow__cell--mono">expires `,
+		`<b class="vk-notice__title">Invite link created.</b> Send it to Lisa. It works once; vink keeps only a hash, so this is the only time you see it.`, `<code class="vk-ping__url">http://localhost:8080/invite/iv_`)
+	_, rest, _ := strings.Cut(created.body, `<code class="vk-ping__url">http://localhost:8080/invite/`)
+	token, _, _ := strings.Cut(rest, "<")
+	if !strings.HasPrefix(token, "iv_") {
+		t.Fatalf("token: %q", token)
+	}
+	if again := e.get(root, false); strings.Contains(again.body, token) {
+		t.Error("the link shows once")
+	}
+
+	// the invite page: the form, a weak password, the account, then the expired card
+	page := e.do("GET", "/invite/"+token, nil, false, false)
+	if page.code != 200 {
+		t.Fatalf("invite page: %d", page.code)
+	}
+	page.has(t, `<h1>Join homelab</h1>`, `<b>Jaro</b> invited you to homelab as a <b>member</b>. The link works once and expires `, `id="username" name="username"`, `autocomplete="new-password"`, `>Create account</button>`, `href="/login">Sign in</a>, then open the link again.`)
+	weak := e.do("POST", "/invite/"+token, url.Values{"username": {"lisa"}, "display_name": {"Lisa de Boer"}, "password": {"short"}}, false, false)
+	if weak.code != 422 || !strings.Contains(weak.body, `id="password-msg"`) {
+		t.Fatalf("weak password: %d", weak.code)
+	}
+	taken := e.do("POST", "/invite/"+token, url.Values{"username": {"bob"}, "password": {"a-long-passphrase"}}, false, false)
+	if taken.code != 422 || !strings.Contains(taken.body, "That username is taken.") {
+		t.Fatalf("taken: %d", taken.code)
+	}
+	joined := e.do("POST", "/invite/"+token, url.Values{"username": {"lisa"}, "display_name": {"Lisa de Boer"}, "password": {"a-long-passphrase"}}, false, false)
+	if joined.code != 303 || joined.hdr.Get("Location") != "/" || len(joined.hdr.Values("Set-Cookie")) == 0 {
+		t.Fatalf("join: %d %s", joined.code, joined.hdr.Get("Location"))
+	}
+	lisa, err := e.svc.UserBySubject(ctx, "lisa")
+	if err != nil || lisa.DisplayName != "Lisa de Boer" || lisa.Source != "local" {
+		t.Fatalf("lisa: %+v %v", lisa, err)
+	}
+	if ms, _ := e.svc.MembershipsForUser(ctx, lisa.ID); len(ms) != 1 || ms[0].Role != domain.RoleMember || ms[0].OrgSlug != "homelab" {
+		t.Fatalf("lisa's membership: %+v", ms)
+	}
+	gone := e.do("GET", "/invite/"+token, nil, false, false)
+	if gone.code != 410 {
+		t.Fatalf("used link: %d", gone.code)
+	}
+	gone.has(t, `<h1>This invite has expired</h1>`, `<dt>org</dt><dd>homelab</dd><dt>invited by</dt><dd>Jaro</dd><dt>role</dt><dd>member</dd>`, `A link that was already used shows this page too.`, `href="/login">Go to sign in</a>`)
+	if r := e.do("POST", "/invite/"+token, url.Values{"username": {"x"}, "password": {"a-long-passphrase"}}, false, false); r.code != 410 {
+		t.Fatalf("used link post: %d", r.code)
+	}
+	if r := e.do("GET", "/invite/iv_nope", nil, false, false); r.code != 404 {
+		t.Fatalf("unknown link: %d", r.code)
+	}
+	e.get(root, false).has(t, `<h2 class="vk-listhead">Invites <span>1 used</span></h2>`, `vk-srow vk-srow--muted"><span class="vk-srow__lead"><span class="vk-avatar" aria-hidden="true">L</span>`, `vk-srow__cell--mono">joined as lisa</span><span class="vk-srow__actions"></span>`, `<span class="vk-srow__title">Lisa de Boer</span>`, `Members<span class="vk-tab__n">3</span>`)
+
+	// revoked and expired links; Remove tidies them
+	second := e.post(root+"/invites", url.Values{"inv_for": {"Marloes"}, "inv_role": {"viewer"}}, false)
+	_, rest, _ = strings.Cut(second.body, `<code class="vk-ping__url">http://localhost:8080/invite/`)
+	token2, _, _ := strings.Cut(rest, "<")
+	invites, _ := e.svc.ListInvites(ctx, e.scope)
+	var marloes string
+	for _, inv := range invites {
+		if inv.Note == "Marloes" {
+			marloes = inv.ID
+		}
+	}
+	if r := e.post(root+"/invites/"+marloes+"/revoke", nil, false); r.code != 303 {
+		t.Fatalf("revoke: %d", r.code)
+	}
+	if r := e.do("GET", "/invite/"+token2, nil, false, false); r.code != 410 {
+		t.Fatalf("revoked link: %d", r.code)
+	}
+	e.get(root, false).has(t, `Invites <span>1 expired · 1 used</span>`, `vk-srow__cell--mono">revoked `, `action="/o/homelab/admin/members/invites/`+marloes+`/remove"`)
+	third := e.post(root+"/invites", url.Values{"inv_for": {"Old"}, "inv_role": {"viewer"}}, false)
+	_, rest, _ = strings.Cut(third.body, `<code class="vk-ping__url">http://localhost:8080/invite/`)
+	token3, _, _ := strings.Cut(rest, "<")
+	e.now = e.now.Add(8 * 24 * time.Hour)
+	if r := e.do("GET", "/invite/"+token3, nil, false, false); r.code != 410 || !strings.Contains(r.body, "ran out on") {
+		t.Fatalf("expired link: %d", r.code)
+	}
+	e.get(root, false).has(t, `Invites <span>2 expired · 1 used</span>`, `vk-srow__cell--mono">expired `)
+	if r := e.post(root+"/invites/"+marloes+"/remove", nil, false); r.code != 303 {
+		t.Fatalf("remove invite: %d", r.code)
+	}
+
+	// roles: a change answers with the row; the last owner cannot be demoted or removed
+	changed := e.post(root+"/"+bob.ID+"/role", url.Values{"role": {"admin"}}, true)
+	if changed.code != 200 || !strings.HasPrefix(changed.body, `<div class="vk-srow">`) || !strings.Contains(changed.body, `<option value="admin" selected>admin</option>`) || strings.Contains(changed.body, "<html") {
+		t.Fatalf("role change: %d %s", changed.code, changed.body)
+	}
+	if ms, _ := e.svc.MembershipsForUser(ctx, bob.ID); ms[0].Role != domain.RoleAdmin {
+		t.Fatalf("bob's role: %+v", ms)
+	}
+	if r := e.post(root+"/"+j.ID+"/role", url.Values{"role": {"viewer"}}, true); r.code != 422 || !strings.Contains(r.body, "last owner") {
+		t.Fatalf("demote last owner: %d %s", r.code, r.body)
+	}
+	if r := e.post(root+"/"+j.ID+"/remove", nil, false); r.code != 422 || !strings.Contains(r.body, "last owner") {
+		t.Fatalf("remove last owner: %d", r.code)
+	}
+	if r := e.post(root+"/"+lisa.ID+"/remove", nil, false); r.code != 303 {
+		t.Fatalf("remove lisa: %d", r.code)
+	}
+	if ms, _ := e.svc.MembershipsForUser(ctx, lisa.ID); len(ms) != 0 {
+		t.Fatalf("lisa still a member: %+v", ms)
+	}
+
+	// owner actions: delete refused while projects exist; transfer makes bob owner and j admin
+	if r := e.post(root+"/delete-org", nil, false); r.code != 422 || !strings.Contains(r.body, "its projects first") {
+		t.Fatalf("delete with projects: %d", r.code)
+	}
+	if r := e.post(root+"/transfer", url.Values{"new_owner": {j.ID}}, false); r.code != 422 || !strings.Contains(r.body, "you are the owner already") {
+		t.Fatalf("transfer to self: %d", r.code)
+	}
+	moved := e.post(root+"/transfer", url.Values{"new_owner": {bob.ID}}, false)
+	if moved.code != 303 || !strings.Contains(moved.hdr.Get("Location"), "flash=") {
+		t.Fatalf("transfer: %d %s", moved.code, moved.body)
+	}
+	after := e.get(moved.hdr.Get("Location"), false)
+	after.has(t, `Ownership of homelab went to Bob Jansen. You stay on as admin.`, `aria-label="Role for Jaro" disabled`, `<option value="admin" selected>admin</option>`, `aria-label="Role for Bob Jansen" hx-post=`, `<option value="owner" selected>owner</option>`)
+	if strings.Contains(after.body, "Owner actions") {
+		t.Error("an admin gets no owner actions")
+	}
+
+	// another org's members routes are 404 for this session, as are its invites
+	for _, p := range []string{"/o/acme/admin/members", "/o/acme/admin/members?invite=1"} {
+		if r := e.get(p, false); r.code != 404 {
+			t.Fatalf("%s: %d", p, r.code)
+		}
+	}
+	if r := e.post("/o/acme/admin/members/invites", url.Values{"inv_for": {"x"}, "inv_role": {"member"}}, false); r.code != 404 {
+		t.Fatalf("acme invite: %d", r.code)
+	}
+	if r := e.post("/o/acme/admin/members/"+bob.ID+"/role", url.Values{"role": {"owner"}}, true); r.code != 404 {
+		t.Fatalf("acme role: %d", r.code)
+	}
+	if r := e.post("/o/acme/admin/members/transfer", url.Values{"new_owner": {bob.ID}}, false); r.code != 404 {
+		t.Fatalf("acme transfer: %d", r.code)
+	}
+}

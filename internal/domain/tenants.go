@@ -31,13 +31,90 @@ type Project struct {
 
 // User is a local or proxy-authenticated person.
 type User struct {
-	ID            string
-	Subject       string
-	Email         string
-	DisplayName   string
-	HasPassword   bool
+	ID          string
+	Subject     string
+	Email       string
+	DisplayName string
+	HasPassword bool
+	// Source is local, proxy or oidc: where the account came from.
+	Source        string
 	InstanceAdmin bool
+	DisabledAt    *time.Time
 	CreatedAt     time.Time
+}
+
+// Disabled reports whether sign-in is blocked.
+func (u *User) Disabled() bool { return u.DisabledAt != nil }
+
+// Name is what other people see: the display name, else the subject.
+func (u *User) Name() string {
+	if u.DisplayName != "" {
+		return u.DisplayName
+	}
+	return u.Subject
+}
+
+// Member is one person's role in an org, with what the members list shows.
+type Member struct {
+	UserID      string
+	Subject     string
+	Email       string
+	DisplayName string
+	Role        Role
+	// Source is local, header or oidc: how the membership came about.
+	Source string
+	// UserSource is where the account itself came from.
+	UserSource string
+	Disabled   bool
+	LastSeenAt *time.Time
+}
+
+// Name is what the row shows.
+func (m Member) Name() string {
+	if m.DisplayName != "" {
+		return m.DisplayName
+	}
+	return m.Subject
+}
+
+// Invite states.
+const (
+	InviteOpen    = "open"
+	InviteExpired = "expired"
+	InviteUsed    = "used"
+	InviteRevoked = "revoked"
+)
+
+// InviteTTL is how long a link works.
+const InviteTTL = 7 * 24 * time.Hour
+
+// Invite is a one-time link into an org as a new local account.
+type Invite struct {
+	ID        string
+	OrgID     string
+	OrgSlug   string
+	OrgName   string
+	Role      Role
+	Note      string
+	CreatedBy string // the inviter's name for display
+	CreatedAt time.Time
+	ExpiresAt time.Time
+	UsedAt    *time.Time
+	UsedBy    string // the subject that joined
+	RevokedAt *time.Time
+}
+
+// State says whether the link still works at now.
+func (i *Invite) State(now time.Time) string {
+	switch {
+	case i.UsedAt != nil:
+		return InviteUsed
+	case i.RevokedAt != nil:
+		return InviteRevoked
+	case !now.Before(i.ExpiresAt):
+		return InviteExpired
+	}
+	return InviteOpen
 }
 
 // Membership ties a user to an org with a role.

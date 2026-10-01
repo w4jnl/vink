@@ -1,0 +1,15 @@
+{{define "content"}}<main class="vk-auth">
+<div class="vk-auth__brand">{{mark 22}}<span>vink</span></div>
+<form class="vk-auth__card" action="{{.Action}}" method="post">
+<input type="hidden" name="_csrf" value="{{.CSRF}}">
+<h1>Join {{.Org}}</h1>
+<p><b>{{.Inviter}}</b> invited you to {{.Org}} as a <b>{{.Role}}</b>. The link works once and expires {{.Expires}}.</p>
+{{if .Error}}{{notice "error" "" .Error ""}}{{end}}
+{{field (dict "ID" "username" "Label" "Username" "Value" .Values.username "Mono" true "Hint" "Letters, digits, dots and dashes." "Error" .Errors.username "Autocomplete" "username" "Attrs" (attrs "autofocus" "" "required" ""))}}
+{{field (dict "ID" "display_name" "Label" "Name" "Value" .Values.display_name "Autocomplete" "name")}}
+{{field (dict "ID" "password" "Label" "Password" "Type" "password" "Hint" "12 characters or more." "Error" .Errors.password "Autocomplete" "new-password" "Attrs" (attrs "required" ""))}}
+{{button (dict "Label" "Create account" "Variant" "primary" "Type" "submit" "Block" true)}}
+<p>Already have an account here? <a class="vk-link" href="/login">Sign in</a>, then open the link again.</p>
+</form>
+<p class="vk-auth__foot">vink {{.Version}} · w4j.nl</p>
+</main>{{end}}
