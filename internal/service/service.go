@@ -92,6 +92,7 @@ type Service struct {
 	metrics         *metrics.Metrics
 	agentCache      agentCache
 	agentPresence   func(agentID string) bool
+	agentSince      func(agentID string) (time.Time, bool)
 }
 
 // New wires a service. The clock is time.Now unless SetClock is called.

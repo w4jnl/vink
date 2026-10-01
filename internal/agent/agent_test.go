@@ -102,7 +102,7 @@ func TestAgentAgainstGateway(t *testing.T) {
 		t.Fatal(err)
 	}
 	m, err := svc.CreateMonitor(ctx, member, &domain.Monitor{Slug: "web", Kind: domain.KindHTTP, Pull: &domain.PullSpec{
-		Location: "site=dc1", Interval: domain.MustDuration("10s"), FailureThreshold: 1,
+		Location: "site=dc1", Interval: domain.MustDuration("30s"), FailureThreshold: 1,
 		Confirm: domain.Confirm{Retries: 1, Delay: domain.Duration(10 * time.Millisecond)},
 		HTTP:    &domain.HTTPCheck{URL: target.URL, ExpectBody: &domain.ExpectBody{Contains: "fine"}},
 	}})
@@ -138,7 +138,7 @@ func TestAgentAgainstGateway(t *testing.T) {
 	// the next attempt is near; the confirm retry runs, then down
 	fail.Store(true)
 	if _, err := svc.UpdateMonitor(ctx, member, "web", &domain.Monitor{Name: "Web", Pull: &domain.PullSpec{
-		Location: "site=dc1", Interval: domain.MustDuration("10s"), FailureThreshold: 1,
+		Location: "site=dc1", Interval: domain.MustDuration("30s"), FailureThreshold: 1,
 		Confirm: domain.Confirm{Retries: 1, Delay: domain.Duration(10 * time.Millisecond)},
 		HTTP:    &domain.HTTPCheck{URL: target.URL + "/again", ExpectBody: &domain.ExpectBody{Contains: "fine"}},
 	}}); err != nil {

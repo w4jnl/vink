@@ -162,6 +162,9 @@ func describePull(kind domain.Kind, spec *domain.PullSpec) pullHints {
 	if spec == nil {
 		return h
 	}
+	if spec.Remote() {
+		h.Interval = "30s or more when an agent runs it."
+	}
 	retries := spec.Confirm.Retries
 	if retries > 0 {
 		h.Failures = fmt.Sprintf("A failed check is retried %d×, %s apart, before it counts. ", retries, spec.Confirm.Delay)
@@ -170,6 +173,9 @@ func describePull(kind domain.Kind, spec *domain.PullSpec) pullHints {
 	}
 	h.Failures += fmt.Sprintf("Down after %d counted %s, up after %d %s.", spec.FailureThreshold, plural2(spec.FailureThreshold, "failure", "failures"), spec.RecoveryThreshold, plural2(spec.RecoveryThreshold, "success", "successes"))
 	var parts []string
+	if loc := spec.ParsedLocation(); !loc.IsLocal() {
+		parts = append(parts, "from "+loc.String())
+	}
 	if kind == domain.KindHTTP && spec.HTTP != nil {
 		parts = append(parts, spec.HTTP.Method)
 	}

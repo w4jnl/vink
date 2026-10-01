@@ -46,6 +46,7 @@ type conn struct {
 	ws     *websocket.Conn
 	ctx    context.Context
 	cancel context.CancelFunc
+	since  time.Time
 
 	writeMu sync.Mutex
 	sent    map[string]string // monitor id → spec version handed over
@@ -60,6 +61,7 @@ func New(svc *service.Service, log *slog.Logger) *Gateway {
 		conns: map[string]*conn{}, wake: make(chan struct{}, 1),
 	}
 	svc.SetAgentPresence(g.Connected)
+	svc.SetAgentSince(g.ConnectedSince)
 	return g
 }
 
@@ -72,6 +74,17 @@ func (g *Gateway) Connected(agentID string) bool {
 	defer g.mu.Unlock()
 	_, ok := g.conns[agentID]
 	return ok
+}
+
+// ConnectedSince is when the agent's current socket opened.
+func (g *Gateway) ConnectedSince(agentID string) (time.Time, bool) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	c, ok := g.conns[agentID]
+	if !ok {
+		return time.Time{}, false
+	}
+	return c.since, true
 }
 
 // ConnectedCount is how many agents are connected.
@@ -103,7 +116,7 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	ws.SetReadLimit(1 << 20)
 	ctx, cancel := context.WithCancel(r.Context())
-	c := &conn{agent: agent, ws: ws, ctx: ctx, cancel: cancel, sent: map[string]string{}}
+	c := &conn{agent: agent, ws: ws, ctx: ctx, cancel: cancel, sent: map[string]string{}, since: g.now()}
 	defer cancel()
 
 	hello, err := g.read(c, 15*time.Second)

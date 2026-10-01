@@ -42,6 +42,8 @@ type adminData struct {
 	Tabs       []ui.Tab
 	Lede       string
 	ComingSoon string
+	// Drawer is the agent drawer when one is open; the page then splits.
+	Drawer *agentDrawer
 }
 
 func (h *Web) orgAdminHome(c *reqCtx) error {
@@ -63,10 +65,17 @@ func (h *Web) adminData(c *reqCtx, tab string) (adminData, error) {
 			n++
 		}
 	}
+	agents, err := h.svc.ListAgents(c.r.Context(), c.scope)
+	if err != nil {
+		return d, err
+	}
 	for _, t := range orgTabs {
 		tab := ui.Tab{ID: t.ID, Label: t.Label, Href: c.orgPath() + "/" + t.ID}
-		if t.ID == "projects" {
+		switch t.ID {
+		case "projects":
 			tab.Count = ui.Count(n)
+		case "agents":
+			tab.Count = ui.Count(len(agents))
 		}
 		d.Tabs = append(d.Tabs, tab)
 	}
@@ -79,7 +88,6 @@ func (h *Web) adminData(c *reqCtx, tab string) (adminData, error) {
 		d.ComingSoon = "The projects tab arrives later in phase 2."
 	case "agents":
 		d.Lede = "Agents run pull checks from networks vink cannot reach. An agent dials out to vink over WebSocket, keeps nothing on disk and never listens on a port."
-		d.ComingSoon = "Agents arrive later in phase 2."
 	}
 	return d, nil
 }
@@ -92,6 +100,9 @@ func (h *Web) orgAdminTab(c *reqCtx) error {
 	}
 	if !known {
 		return domain.NotFound("settings tab")
+	}
+	if tab == "agents" {
+		return h.agentsList(c)
 	}
 	d, err := h.adminData(c, tab)
 	if err != nil {

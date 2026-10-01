@@ -535,6 +535,8 @@ type formData struct {
 	TimeoutHint         string
 	FailuresHint        string
 	AdvancedSummary     string
+	Agents              []ui.Option
+	AgentHint           string
 	AdvancedOpen        bool
 	YAMLOpen            bool
 	YAML                string
@@ -577,6 +579,7 @@ func (h *Web) newForm(c *reqCtx, kind string) formData {
 	}
 	if domain.Kind(kind).IsPull() {
 		f.SlugHint = "Part of the address. Empty derives it from the name."
+		f.Agents, f.AgentHint = h.agentOptions(c)
 	}
 	f.Timezones = h.timezoneOptions(c, "")
 	return f
@@ -587,7 +590,7 @@ func formDefaults(kind domain.Kind) map[string]string {
 	v := map[string]string{
 		"name": "", "slug": "", "tags": "",
 		"schedule": "", "schedule_type": "period", "timezone": "", "grace": "5m", "max_runtime": "", "methods": "any", "failure_threshold": "1", "recovery_threshold": "1", "body_limit": "",
-		"url": "", "expect_status": "200-299", "interval": "60s", "timeout": "10s", "method": "GET", "headers": "", "retries": "2", "retry_delay": "5s",
+		"url": "", "expect_status": "200-299", "interval": "60s", "timeout": "10s", "location": "local", "method": "GET", "headers": "", "retries": "2", "retry_delay": "5s",
 		"body_match": "none", "contains": "", "not_contains": "", "jsonpath": "", "equals": "", "follow_redirects": "1", "verify_tls": "1", "ca_pem": "",
 		"host": "", "port": "", "send": "", "expect": "", "dns_name": "", "dns_type": "A", "resolver": "", "servername": "", "warn_days": "14", "crit_days": "3", "count": "3", "loss_threshold": "0.67",
 	}
@@ -636,7 +639,7 @@ func (h *Web) formFromMonitor(c *reqCtx, m *domain.Monitor) formData {
 	}
 	if s := m.Pull; s != nil {
 		fillPullValues(f.Values, m.Kind, s)
-		f.AdvancedOpen = pullAdvancedOpen(m.Kind, s)
+		f.AdvancedOpen = pullAdvancedOpen(m.Kind, s) || s.Remote()
 	}
 	f.Timezones = h.timezoneOptions(c, f.Values["timezone"])
 	return f
@@ -646,6 +649,13 @@ func (h *Web) formFromMonitor(c *reqCtx, m *domain.Monitor) formData {
 func fillPullValues(v map[string]string, kind domain.Kind, s *domain.PullSpec) {
 	v["interval"], v["timeout"] = s.Interval.String(), s.Timeout.String()
 	v["failure_threshold"], v["recovery_threshold"] = strconv.Itoa(s.FailureThreshold), strconv.Itoa(s.RecoveryThreshold)
+	v["location"] = "local"
+	switch loc := s.ParsedLocation(); {
+	case loc.Agent != "":
+		v["location"], v["agent"] = "agent", loc.Agent
+	case len(loc.Labels) > 0:
+		v["location"], v["labels"] = "labels", domain.LabelsString(loc.Labels)
+	}
 	v["retries"], v["retry_delay"] = strconv.Itoa(s.Confirm.Retries), s.Confirm.Delay.String()
 	switch {
 	case kind == domain.KindHTTP && s.HTTP != nil:
@@ -850,6 +860,18 @@ func parsePull(values map[string][]string, f *formData, m *domain.Monitor, get f
 	if f.Values["retries"] == "0" && spec.Confirm.Delay == 0 {
 		spec.Confirm.Delay = domain.DefaultConfirmDelay
 	}
+	switch get("location") {
+	case "agent":
+		if get("agent") == "" {
+			f.Errors["agent"] = "Pick an agent."
+		}
+		spec.Location = "agent:" + get("agent")
+	case "labels":
+		if get("labels") == "" {
+			f.Errors["labels"] = "Give at least one label, like site=dc1."
+		}
+		spec.Location = get("labels")
+	}
 	explicit := len(values["pull_form"]) > 0 // checkboxes only mean "off" once the pull form posted them
 	switch m.Kind {
 	case domain.KindHTTP:
@@ -938,7 +960,7 @@ func parsePull(values map[string][]string, f *formData, m *domain.Monitor, get f
 }
 
 // advancedPullFields live inside the Advanced disclosure of pull forms.
-var advancedPullFields = []string{"method", "headers", "retries", "retry_delay", "failure_threshold", "recovery_threshold", "contains", "not_contains", "jsonpath", "equals", "ca_pem", "send", "expect", "warn_days", "crit_days", "loss_threshold"}
+var advancedPullFields = []string{"location", "agent", "labels", "method", "headers", "retries", "retry_delay", "failure_threshold", "recovery_threshold", "contains", "not_contains", "jsonpath", "equals", "ca_pem", "send", "expect", "warn_days", "crit_days", "loss_threshold"}
 
 // fillHints computes the sentences and the YAML for the current values.
 func (h *Web) fillHints(c *reqCtx, f *formData, m *domain.Monitor) {
@@ -991,6 +1013,12 @@ func applyValidation(f *formData, err error) bool {
 	}
 	for _, fe := range ve.Errors {
 		field := formField(fe.Field, f.Values["body_match"])
+		if fe.Field == "location" {
+			field = "agent"
+			if f.Values["location"] == "labels" {
+				field = "labels"
+			}
+		}
 		if _, exists := f.Errors[field]; !exists {
 			f.Errors[field] = capitalise(fe.Msg) + "."
 		}
@@ -1084,6 +1112,7 @@ func (h *Web) newMonitor(c *reqCtx) error {
 				}
 			}
 			m = parseMonitorForm(valuesOf(f.Values), &f)
+			f.Errors = map[string]string{} // a kind or location switch is not a submit
 		}
 		h.fillHints(c, &f, m)
 	} else {
@@ -1202,4 +1231,17 @@ func valuesOf(v map[string]string) map[string][]string {
 		out[k] = []string{s}
 	}
 	return out
+}
+
+// agentOptions lists the org's agents for the Run from select.
+func (h *Web) agentOptions(c *reqCtx) ([]ui.Option, string) {
+	agents, err := h.svc.AgentChoices(c.r.Context(), c.scope)
+	if err != nil || len(agents) == 0 {
+		return nil, "No agents yet. An org admin adds them in the org settings."
+	}
+	opts := make([]ui.Option, 0, len(agents))
+	for _, a := range agents {
+		opts = append(opts, ui.Option{Value: a.Name, Label: a.Name + " · " + string(a.State(h.svc.AgentConnected(a.ID)))})
+	}
+	return opts, "If the agent goes offline the monitor turns late, not down."
 }

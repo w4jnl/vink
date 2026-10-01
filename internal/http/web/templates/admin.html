@@ -1,7 +1,33 @@
-{{define "content"}}<div class="vk-page vk-page--full" id="page"><main class="vk-main" id="admin">
+{{define "content"}}<div class="vk-page{{if not .Drawer}} vk-page--full{{end}}" id="page"><main class="vk-main" id="admin">
 <div class="vk-main__head"><h1>{{.Org}}</h1><span class="vk-muted vk-mono">org settings</span></div>
 {{tabs .Tabs .Tab "Org settings"}}
-<div id="tab">{{template "admin-tab" .}}</div>
-</main></div>{{end}}
+<div id="tab">{{if eq .Tab "agents"}}{{template "admin-agents" .}}{{else}}{{template "admin-tab" .}}{{end}}</div>
+</main>{{if .Drawer}}<aside class="vk-drawer" id="drawer">{{template "agent-drawer" .Drawer}}</aside>{{end}}</div>{{end}}
 
 {{define "admin-tab"}}<div class="vk-tabhead"><p class="vk-lede">{{.Lede}}</p></div><div class="vk-empty"><h3>Not yet</h3><p>{{.ComingSoon}}</p></div>{{end}}
+
+{{define "admin-agents"}}<div class="vk-tabhead"><p class="vk-lede">{{.Lede}}</p>{{if not .Panel}}{{button (dict "Label" "Add agent" "Href" (print .TabPath "?add=1"))}}{{end}}</div>
+{{if .Quota}}<p class="vk-quota"><span>Quota set by the instance admin</span>{{.Quota}}</p>{{end}}
+{{if .Flash}}{{notice "ok" "" .Flash ""}}{{end}}
+{{if .Created}}{{notice .Created.Tone .Created.Title .Created.Text .Created.HTML}}{{end}}
+{{if .Panel}}{{template "agent-panel" .Panel}}{{end}}
+<div class="vk-srows">{{range .Rows}}{{settingsrow (dict "Title" .Name "Sub" .Sub "Muted" .Muted "Href" .Href "Current" .Current "Cells" .Cells "Actions" .Actions)}}{{else}}{{if not .Panel}}<div class="vk-empty"><h3>No agents yet</h3><p>Add one for a network vink cannot reach. It gets a token and a command to run there.</p></div>{{end}}{{end}}</div>{{end}}
+
+{{define "agent-panel"}}<form id="agent-form" class="vk-sr" method="post" action="{{.Action}}"><input type="hidden" name="_csrf" value="{{.CSRF}}"></form>{{panel "Add agent" "" (partial "agent-fields" .) (partial "agent-actions" .) "agent-panel"}}{{end}}
+
+{{define "agent-fields"}}{{if .Error}}{{notice "error" "" .Error ""}}{{end}}
+{{fieldrow (list (field (dict "ID" "name" "Label" "Name" "Value" .Values.name "Mono" true "Placeholder" "dc2-probe" "Hint" "Lowercase letters, digits and dashes; monitors can name it." "Error" .Errors.name "Attrs" (attrs "form" "agent-form" "required" ""))) (field (dict "ID" "labels" "Label" "Labels" "Value" .Values.labels "Mono" true "Placeholder" "site=dc2,zone=dmz" "Hint" "key=value pairs; a monitor can pick agents by label." "Error" .Errors.labels "Attrs" (attrs "form" "agent-form")))) false}}
+<p class="vk-field__hint">The token is shown once, with the command to run on the agent's host.</p>{{end}}
+
+{{define "agent-actions"}}{{button (dict "Label" "Create agent" "Variant" "primary" "Type" "submit" "Attrs" (attrs "form" "agent-form"))}}{{button (dict "Label" "Cancel" "Href" .CancelPath)}}{{end}}
+
+{{define "agent-drawer"}}<div class="vk-drawer__head"><h1 class="vk-drawer__title">{{.Name}}</h1>
+<div class="vk-inline vk-inline--flush">{{.State}}{{range .Tags}}{{tag .}}{{end}}</div>
+<div class="vk-drawer__actions">{{if not .Labels}}{{button (dict "Label" "Edit labels" "Href" .LabelsPath)}}{{end}}<form method="post" action="{{.RevokePath}}"><input type="hidden" name="_csrf" value="{{.CSRF}}">{{button (dict "Label" "Revoke token" "Variant" "danger" "Confirm" "Really revoke?" "Type" "submit")}}</form></div></div>
+{{if .Labels}}{{template "agent-labels-panel" .Labels}}{{end}}
+{{if .Notice}}{{notice .Notice.Tone .Notice.Title .Notice.Text ""}}{{end}}
+<section><h2>Connection</h2><dl class="vk-kv">{{range .KV}}<dt>{{index . 0}}</dt><dd>{{index . 1}}</dd>{{end}}</dl></section>
+<section><h2>Assigned monitors <span class="vk-muted vk-mono">{{.Count}}</span></h2>{{if .Monitors}}<div class="vk-list">{{range .Monitors}}{{monitorrow .}}{{end}}</div>{{range .More}}<p class="vk-drawer__more"><a class="vk-link" href="{{.Href}}">{{.Text}}</a></p>{{end}}{{else}}<p class="vk-field__hint">No monitor runs from this agent yet.</p>{{end}}
+<p class="vk-field__hint vk-gap-2">{{.Hint}}</p></section>{{end}}
+
+{{define "agent-labels-panel"}}<form id="labels-form" class="vk-sr" method="post" action="{{.Action}}"><input type="hidden" name="_csrf" value="{{.CSRF}}"></form>{{panel "Labels" "" (field (dict "ID" "labels" "Label" "Labels" "Value" .Values.labels "Mono" true "Placeholder" "site=dc2,zone=dmz" "Hint" "Monitors that pick agents by label follow the change at once." "Error" .Errors.labels "Attrs" (attrs "form" "labels-form"))) (print (button (dict "Label" "Save labels" "Variant" "primary" "Type" "submit" "Attrs" (attrs "form" "labels-form"))) (button (dict "Label" "Cancel" "Href" .CancelPath))) "labels-panel"}}{{end}}

@@ -15,6 +15,7 @@ import (
 	"github.com/w4jnl/vink/internal/auth"
 	"github.com/w4jnl/vink/internal/checks"
 	"github.com/w4jnl/vink/internal/config"
+	"github.com/w4jnl/vink/internal/db"
 	"github.com/w4jnl/vink/internal/db/dbtest"
 	"github.com/w4jnl/vink/internal/domain"
 	"github.com/w4jnl/vink/internal/http/middleware"
@@ -204,7 +205,7 @@ func TestTopBarMenusAndOrgShell(t *testing.T) {
 	if shell.code != 200 {
 		t.Fatalf("org shell: %d %s", shell.code, shell.body)
 	}
-	shell.has(t, `<h1>homelab</h1><span class="vk-muted vk-mono">org settings</span>`, `aria-label="Org settings"`, `aria-current="page">Projects<span class="vk-tab__n">1</span>`, `href="/o/homelab/admin/agents">Agents</a>`, `homelab / <b>prod</b>`, `class="vk-top__link" href="/o/homelab/p/prod">Monitors</a>`)
+	shell.has(t, `<h1>homelab</h1><span class="vk-muted vk-mono">org settings</span>`, `aria-label="Org settings"`, `aria-current="page">Projects<span class="vk-tab__n">1</span>`, `href="/o/homelab/admin/agents">Agents<span class="vk-tab__n">0</span></a>`, `homelab / <b>prod</b>`, `class="vk-top__link" href="/o/homelab/p/prod">Monitors</a>`)
 	if strings.Contains(shell.body, `vk-top__link" href="/o/homelab/p/prod" aria-current`) {
 		t.Error("no section is current on an org page")
 	}
@@ -942,5 +943,163 @@ func TestForeignProjectIs404AndStatic(t *testing.T) {
 	p := e.get("/static/"+e.web.static.Hash()+"/vink.js", false)
 	if p.code != 200 || !strings.Contains(p.body, "htmx:config:request") {
 		t.Fatalf("static: %d", p.code)
+	}
+}
+
+func TestAgentsTabDrawerAndRunFrom(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	root := "/o/homelab/admin/agents"
+
+	// empty tab, then the add panel
+	tab := e.get(root, false)
+	if tab.code != 200 {
+		t.Fatalf("agents tab: %d", tab.code)
+	}
+	tab.has(t, `aria-current="page">Agents<span class="vk-tab__n">0</span>`, `href="/o/homelab/admin/agents?add=1">Add agent</a>`, `<h3>No agents yet</h3>`, `vk-page vk-page--full`)
+	if strings.Contains(tab.body, "vk-quota") {
+		t.Error("no quota line without a quota")
+	}
+	panel := e.get(root+"?add=1", false)
+	panel.has(t, `<section class="vk-panel" id="agent-panel"><div class="vk-panel__head"><h2>Add agent</h2></div>`, `id="name" name="name"`, `id="labels" name="labels"`, `>Create agent</button>`)
+	if strings.Contains(panel.body, "?add=1\">Add agent") {
+		t.Error("the Add agent button hides while the panel is open")
+	}
+
+	// validation, then a create that shows the token once
+	bad := e.post(root, url.Values{"name": {"DC 2"}, "labels": {"site=dc2"}}, false)
+	if bad.code != 422 || !strings.Contains(bad.body, `id="name-msg"`) {
+		t.Fatalf("bad name: %d", bad.code)
+	}
+	badLabels := e.post(root, url.Values{"name": {"dc2-probe"}, "labels": {"nope"}}, false)
+	if badLabels.code != 422 || !strings.Contains(badLabels.body, "key=value pairs") {
+		t.Fatalf("bad labels: %d", badLabels.code)
+	}
+	created := e.post(root, url.Values{"name": {"dc2-probe"}, "labels": {"site=dc2, zone=dmz"}}, false)
+	if created.code != 200 {
+		t.Fatalf("create: %d %s", created.code, created.body)
+	}
+	created.has(t, `<b class="vk-notice__title">Agent dc2-probe created.</b> Run this on its host. The token is shown once; vink keeps only a hash.</p><div class="vk-codebox"><pre class="vk-code">vink agent --server ws://localhost:8080 \`, `--token vat_`, `--labels site=dc2,zone=dmz</pre><button type="button" class="vk-btn vk-copy" data-copy="vink agent`,
+		`<a class="vk-srow__link" href="/o/homelab/admin/agents/dc2-probe">dc2-probe</a></span><span class="vk-srow__sub" title="site=dc2 · zone=dmz">site=dc2 · zone=dmz</span>`,
+		`<span class="vk-state vk-state--new"><i class="vk-glyph vk-glyph--new" aria-hidden="true"></i>waiting</span>`, `vk-srow__cell--mono">—</span>`, `>0 monitors</span>`, `vk-srow__cell--mono">never</span>`,
+		`action="/o/homelab/admin/agents/dc2-probe/revoke"`, `data-confirm="Really revoke?">Revoke</button>`, `vk-srow vk-srow--muted`, `Agents<span class="vk-tab__n">1</span>`)
+	_, rest, _ := strings.Cut(created.body, "--token ")
+	token, _, _ := strings.Cut(rest, " ")
+	if !strings.Contains(created.body, "vk-notice vk-notice--ok") || strings.Contains(e.get(root, false).body, token) {
+		t.Error("the token shows once")
+	}
+	dup := e.post(root, url.Values{"name": {"dc2-probe"}}, false)
+	if dup.code != 422 || !strings.Contains(dup.body, "An agent with this name exists.") {
+		t.Fatalf("duplicate: %d", dup.code)
+	}
+
+	// the quota line and the quota error
+	one := int64(1)
+	if err := e.svc.DB().Write().SetOrgQuotas(ctx, db.SetOrgQuotasParams{QuotaAgents: &one, ID: e.org.ID}); err != nil {
+		t.Fatal(err)
+	}
+	e.get(root, false).has(t, `<p class="vk-quota"><span>Quota set by the instance admin</span><span class="vk-usage"><meter class="vk-usage__meter" min="0" max="1" value="1"`, `1 / 1 agents`)
+	quota := e.post(root, url.Values{"name": {"second"}}, false)
+	if quota.code != 422 || !strings.Contains(quota.body, "ask the instance admin for more") {
+		t.Fatalf("quota: %d %s", quota.code, quota.body)
+	}
+
+	// the drawer: waiting, connection facts, no monitors yet
+	drawer := e.get(root+"/dc2-probe", false)
+	if drawer.code != 200 {
+		t.Fatalf("drawer: %d", drawer.code)
+	}
+	drawer.has(t, `<div class="vk-page" id="page">`, `<aside class="vk-drawer" id="drawer">`, `<h1 class="vk-drawer__title">dc2-probe</h1>`, `vk-state--pill"><i class="vk-glyph vk-glyph--new" aria-hidden="true"></i>waiting</span><span class="vk-tag">site=dc2</span><span class="vk-tag">zone=dmz</span>`,
+		`href="/o/homelab/admin/agents/dc2-probe?labels=1">Edit labels</a>`, `data-confirm="Really revoke?">Revoke token</button>`, `<dl class="vk-kv"><dt>last seen</dt><dd>never</dd><dt>token</dt><dd>vat_`, `Assigned monitors <span class="vk-muted vk-mono">0</span>`, `No monitor runs from this agent yet.`,
+		`<div class="vk-srow vk-srow--muted" aria-current="true">`, `names dc2-probe, or labels only this agent has.`)
+	if r := e.get(root+"/nope", false); r.code != 404 {
+		t.Fatalf("unknown agent: %d", r.code)
+	}
+
+	// labels: the form in the drawer, a bad value, a save
+	e.get(root+"/dc2-probe?labels=1", false).has(t, `<section class="vk-panel" id="labels-panel"><div class="vk-panel__head"><h2>Labels</h2></div>`, `name="labels"`, `value="site=dc2,zone=dmz"`, `>Save labels</button>`)
+	if r := e.post(root+"/dc2-probe/labels", url.Values{"labels": {"bad key=x"}}, false); r.code != 422 || !strings.Contains(r.body, "label name") {
+		t.Fatalf("bad labels: %d %s", r.code, r.body)
+	}
+	if r := e.post(root+"/dc2-probe/labels", url.Values{"labels": {"site=dc3"}}, false); r.code != 303 || r.hdr.Get("Location") != root+"/dc2-probe" {
+		t.Fatalf("save labels: %d %s", r.code, r.hdr.Get("Location"))
+	}
+	e.get(root+"/dc2-probe", false).has(t, `<span class="vk-tag">site=dc3</span>`)
+
+	// Run from in the monitor form: the group, the agent select with its
+	// state, the interval floor, a monitor created on the agent
+	form := e.get(projPath+"/m/new?kind=http", false)
+	form.has(t, `<h3>Run from</h3>`, `aria-label="Run from"`, `name="location" value="local" checked`, `name="location" value="agent"`, `name="location" value="labels"`)
+	if strings.Contains(form.body, `id="agent"`) {
+		t.Error("no agent select on a local check")
+	}
+	e.get(projPath+"/m/new?kind=http&location=agent", true).has(t, `<select class="vk-input vk-input--mono" id="agent" name="agent"`, `<option value="dc2-probe">dc2-probe · waiting</option>`, `If the agent goes offline the monitor turns late, not down.`)
+	e.get(projPath+"/m/new?kind=http&location=labels", true).has(t, `id="labels" name="labels"`, `The least loaded agent with all of these labels runs it.`)
+	short := e.post(projPath+"/m/new", url.Values{"kind": {"http"}, "name": {"Intranet"}, "url": {"https://intranet.internal"}, "interval": {"10s"}, "location": {"agent"}, "agent": {"dc2-probe"}}, true)
+	if short.code != 422 || !strings.Contains(short.body, "at least 30s when an agent runs the check") {
+		t.Fatalf("interval floor: %d %s", short.code, short.body)
+	}
+	nobody := e.post(projPath+"/m/new", url.Values{"kind": {"http"}, "name": {"Intranet"}, "url": {"https://intranet.internal"}, "location": {"agent"}}, true)
+	if nobody.code != 422 || !strings.Contains(nobody.body, "Pick an agent.") {
+		t.Fatalf("no agent picked: %d", nobody.code)
+	}
+	ok := e.post(projPath+"/m/new", url.Values{"kind": {"http"}, "name": {"Intranet"}, "url": {"https://intranet.internal"}, "interval": {"60s"}, "location": {"agent"}, "agent": {"dc2-probe"}}, true)
+	if ok.code != 200 && ok.code != 204 {
+		t.Fatalf("create on agent: %d %s", ok.code, ok.body)
+	}
+	m, err := e.svc.MonitorBySlug(ctx, e.scope, "intranet")
+	if err != nil || m.Pull.Location != "agent:dc2-probe" {
+		t.Fatalf("created: %+v %v", m, err)
+	}
+	edit := e.get(projPath+"/m/intranet/edit", false)
+	edit.has(t, `name="location" value="agent" checked`, `<option value="dc2-probe" selected>dc2-probe · waiting</option>`, `30s or more when an agent runs it.`, `from agent:dc2-probe · GET`)
+	labelsMon := e.post(projPath+"/m/new", url.Values{"kind": {"tcp"}, "name": {"LDAP"}, "host": {"ldap.internal"}, "port": {"389"}, "interval": {"60s"}, "location": {"labels"}, "labels": {"site=dc3"}}, true)
+	if labelsMon.code != 200 && labelsMon.code != 204 {
+		t.Fatalf("create by labels: %d %s", labelsMon.code, labelsMon.body)
+	}
+	if m, _ := e.svc.MonitorBySlug(ctx, e.scope, "ldap"); m == nil || m.Pull.Location != "site=dc3" {
+		t.Fatalf("by labels: %+v", m)
+	}
+
+	// the drawer with monitors waiting for the agent, then late after the sweep
+	e.get(root+"/dc2-probe", false).has(t, `>0 monitors</span>`, `Assigned monitors <span class="vk-muted vk-mono">0</span>`)
+	if _, err := e.svc.AssignAgents(ctx, e.org.ID); err != nil {
+		t.Fatal(err)
+	}
+	agent, _ := e.svc.Agent(ctx, domain.Scope{OrgID: e.org.ID, Role: domain.RoleAdmin, UserID: e.scope.UserID}, "dc2-probe")
+	online := true
+	e.svc.SetAgentPresence(func(id string) bool { return online && id == agent.ID })
+	e.svc.SetAgentSince(func(string) (time.Time, bool) { return e.now.Add(-3 * time.Hour), true })
+	if _, err := e.svc.AssignAgents(ctx, e.org.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.svc.TouchAgent(ctx, agent.ID, "10.20.0.14", "0.4.1"); err != nil {
+		t.Fatal(err)
+	}
+	connected := e.get(root+"/dc2-probe", false)
+	connected.has(t, `vk-state--up vk-state--pill"><i class="vk-glyph vk-glyph--up" aria-hidden="true"></i>connected</span>`, `<dt>from</dt><dd>10.20.0.14</dd><dt>version</dt><dd>0.4.1</dd>`, `<dt>connected</dt><dd>3 h, since 11:00</dd>`,
+		`Assigned monitors <span class="vk-muted vk-mono">2</span>`, `<span class="vk-row__slug">intranet</span>`, `<span class="vk-row__slug">ldap</span>`, `no checks yet`, `>2 monitors</span>`, `seen just now`)
+	online = false
+	e.now = e.now.Add(5 * time.Minute)
+	if n, err := e.svc.SweepOfflineAgents(ctx, e.now, 2*time.Minute); err != nil || n != 2 {
+		t.Fatalf("sweep: %d %v", n, err)
+	}
+	offline := e.get(root+"/dc2-probe", false)
+	offline.has(t, `vk-state--late vk-state--pill"><i class="vk-glyph vk-glyph--late" aria-hidden="true"></i>offline <span class="vk-state__since">for 5 min</span></span>`,
+		`<b class="vk-notice__title">2 monitors are late.</b> Their checks stopped with the agent at 14:00. They stay late with reason agent offline; an agent going away never makes a monitor down.`,
+		`vk-row__data vk-row__data--late" title="">agent offline 5 min</span>`, `vk-state--late"><i class="vk-glyph vk-glyph--late" aria-hidden="true"></i>offline <span class="vk-state__since">5 min</span>`, `seen 5 min ago`)
+
+	// revoke: a flash, the row gone, the monitors released
+	revoked := e.post(root+"/dc2-probe/revoke", nil, false)
+	if revoked.code != 303 || !strings.Contains(revoked.hdr.Get("Location"), root+"?flash=") {
+		t.Fatalf("revoke: %d %s", revoked.code, revoked.hdr.Get("Location"))
+	}
+	after := e.get(revoked.hdr.Get("Location"), false)
+	after.has(t, `Agent dc2-probe revoked.`, `<h3>No agents yet</h3>`)
+	if r := e.get(root+"/dc2-probe", false); r.code != 404 {
+		t.Fatalf("after revoke: %d", r.code)
+	}
+	if m, _ := e.svc.MonitorBySlug(ctx, e.scope, "intranet"); m.AgentID != "" {
+		t.Fatalf("released: %+v", m)
 	}
 }

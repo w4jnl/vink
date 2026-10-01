@@ -249,3 +249,49 @@ func (s *Service) AdoptAgentLabels(ctx context.Context, orgID, agentID string, l
 	s.log.Info("agent labels adopted", "org_id", orgID, "agent", row.Name, "labels", domain.LabelsString(probe.Labels))
 	return agentFromRow(row), nil
 }
+
+// AgentChoices lists the org's agents for a project member picking where
+// a check runs: names and states, nothing secret.
+func (s *Service) AgentChoices(ctx context.Context, sc domain.Scope) ([]*domain.Agent, error) {
+	if err := requireProject(sc); err != nil {
+		return nil, err
+	}
+	rows, err := s.db.Read().ListAgents(ctx, sc.OrgID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*domain.Agent, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, agentFromRow(r))
+	}
+	return out, nil
+}
+
+// AgentMonitorCounts says how many monitors each agent of the org holds.
+func (s *Service) AgentMonitorCounts(ctx context.Context, sc domain.Scope) (map[string]int, error) {
+	if err := requireOrgAdmin(sc); err != nil {
+		return nil, err
+	}
+	rows, err := s.db.Read().ListRemoteMonitors(ctx, sc.OrgID)
+	if err != nil {
+		return nil, err
+	}
+	counts := map[string]int{}
+	for _, r := range rows {
+		if r.AgentID != nil && *r.AgentID != "" {
+			counts[*r.AgentID]++
+		}
+	}
+	return counts, nil
+}
+
+// SetAgentSince installs the gateway's record of when each agent connected.
+func (s *Service) SetAgentSince(fn func(agentID string) (time.Time, bool)) { s.agentSince = fn }
+
+// AgentConnectedSince is when the agent's current socket opened.
+func (s *Service) AgentConnectedSince(id string) (time.Time, bool) {
+	if s.agentSince == nil {
+		return time.Time{}, false
+	}
+	return s.agentSince(id)
+}

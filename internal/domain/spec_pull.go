@@ -14,8 +14,10 @@ import (
 
 // Defaults for pull checks, from the design document.
 const (
-	DefaultInterval       = Duration(60 * time.Second)
-	MinInterval           = Duration(10 * time.Second)
+	DefaultInterval = Duration(60 * time.Second)
+	MinInterval     = Duration(10 * time.Second)
+	// MinAgentInterval is the floor when an agent runs the check.
+	MinAgentInterval      = Duration(30 * time.Second)
 	MaxInterval           = Duration(24 * time.Hour)
 	DefaultCheckTimeout   = Duration(10 * time.Second)
 	DefaultPullThreshold  = 3
@@ -307,8 +309,10 @@ func (s PullSpec) Validate(kind Kind) error {
 	if s.Confirm.Delay < 0 || s.Confirm.Delay > MaxConfirmDelay {
 		ve.Addf("confirm.delay", "must be between 0 and %s", MaxConfirmDelay)
 	}
-	if _, err := ParseLocation(s.Location); err != nil {
+	if loc, err := ParseLocation(s.Location); err != nil {
 		ve.Add("location", err.Error())
+	} else if !loc.IsLocal() && s.Interval < MinAgentInterval {
+		ve.Addf("interval", "must be at least %s when an agent runs the check", MinAgentInterval)
 	}
 	blocks := map[Kind]bool{KindHTTP: s.HTTP != nil, KindTCP: s.TCP != nil, KindDNS: s.DNS != nil, KindTLS: s.TLS != nil, KindICMP: s.ICMP != nil}
 	for k, set := range blocks {
