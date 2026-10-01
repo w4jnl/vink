@@ -1,0 +1,43 @@
+# Demo data for the README screenshots and the GIF. Neutral names, example.com and local targets
+# only. scripts/demo/seed.sh applies it to a throwaway instance; never point it at a real server.
+# Draft written from docs/design.md: validate with `vink apply -f scripts/demo/vink.yaml --dry-run`
+# and fix any field the code names differently (the code wins, not this file).
+version: 1
+project: {slug: homelab, name: Homelab, timezone: Europe/Amsterdam}
+
+channels:
+  # a local receiver started by seed.sh, so deliveries succeed without network
+  - {name: ops-webhook, kind: webhook, url: "http://127.0.0.1:18081/hook"}
+
+routes:
+  - {match_tags: [prod], channels: [ops-webhook], on: [down, up], repeat_every: 4h}
+  - {match_tags: [], channels: [ops-webhook], on: [down, up]}
+
+maintenance:
+  - {name: weekly patching, match_tags: [prod], rrule: "FREQ=WEEKLY;BYDAY=SU", from: "02:00", to: "04:00"}
+
+monitors:
+  # heartbeats
+  - {slug: nightly-backup, name: Nightly backup, kind: heartbeat, schedule: {cron: "0 3 * * *"}, grace: 30m, max_runtime: 2h, tags: [backup, prod]}
+  - {slug: db-dump, name: Database dump, kind: heartbeat, schedule: {cron: "30 2 * * *"}, grace: 1h, tags: [backup]}
+  - {slug: cert-renew, name: Certificate renewal, kind: heartbeat, schedule: {period: 1d}, grace: 2h, tags: [tls]}
+  - {slug: photo-sync, name: Photo sync, kind: heartbeat, schedule: {period: 1m}, grace: 30m, tags: [nas]}
+  - {slug: offsite-copy, name: Offsite copy, kind: heartbeat, schedule: {cron: "0 5 * * 0"}, grace: 6h, tags: [backup]}
+
+  # pull checks against the local target server that seed.sh starts on 127.0.0.1:18080
+  - slug: api-health
+    name: Public API
+    kind: http
+    tags: [api, prod]
+    interval: 30s
+    timeout: 5s
+    http:
+      url: http://127.0.0.1:18080/healthz
+      expect_status: [200]
+      expect_body: {jsonpath: {path: "$.status", equals: "ok"}}
+  - {slug: web, name: Website, kind: http, tags: [web, prod], interval: 60s, http: {url: "http://127.0.0.1:18080/"}}
+  - {slug: postgres, name: Postgres, kind: tcp, tags: [db, prod], interval: 30s, tcp: {host: 127.0.0.1, port: 18080}}
+  - {slug: dns-home, name: Home DNS, kind: dns, tags: [net], interval: 5m, dns: {name: example.com, type: A}}
+
+status_pages:
+  - {slug: homelab, title: Homelab status, match_tags: [prod, backup], public: true}
