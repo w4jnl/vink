@@ -193,7 +193,53 @@ func (s *Service) SetMembership(ctx context.Context, sc domain.Scope, userID, or
 	if _, err := s.db.Read().GetOrg(ctx, orgID); err != nil {
 		return notFoundIfNoRows(err, "org")
 	}
+	if role != domain.RoleOwner {
+		if err := s.keepLastOwner(ctx, userID, orgID); err != nil {
+			return err
+		}
+	}
 	return s.db.Write().UpsertMembership(ctx, db.UpsertMembershipParams{UserID: userID, OrgID: orgID, Role: string(role), Source: "local", CreatedAt: domain.Millis(s.now())})
+}
+
+// RemoveMembership ends a user's role in an org. The last owner stays.
+func (s *Service) RemoveMembership(ctx context.Context, sc domain.Scope, userID, orgID string) error {
+	if !sc.InstanceAdmin && (sc.OrgID != orgID || !sc.CanAdminOrg()) {
+		return domain.ErrForbidden
+	}
+	if err := s.keepLastOwner(ctx, userID, orgID); err != nil {
+		return err
+	}
+	n, err := s.db.Write().DeleteMembership(ctx, db.DeleteMembershipParams{UserID: userID, OrgID: orgID})
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return domain.NotFound("membership")
+	}
+	s.log.Info("membership removed", "org_id", orgID, "user_id", userID, "actor", sc.Actor)
+	return nil
+}
+
+// keepLastOwner refuses to demote or remove the only owner of an org.
+func (s *Service) keepLastOwner(ctx context.Context, userID, orgID string) error {
+	cur, err := s.db.Read().GetMembership(ctx, db.GetMembershipParams{UserID: userID, OrgID: orgID})
+	if err != nil || cur.Role != string(domain.RoleOwner) {
+		return nil // not a member, or not an owner: nothing to protect
+	}
+	members, err := s.db.Read().ListMembershipsForOrg(ctx, orgID)
+	if err != nil {
+		return err
+	}
+	owners := 0
+	for _, m := range members {
+		if m.Role == string(domain.RoleOwner) {
+			owners++
+		}
+	}
+	if owners <= 1 {
+		return (&domain.ValidationError{Errors: []domain.FieldError{{Field: "role", Msg: "the last owner of an org cannot be demoted or removed; make someone else an owner first"}}}).OrNil()
+	}
+	return nil
 }
 
 // MembershipsForUser lists the user's org roles.

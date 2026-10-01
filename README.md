@@ -154,6 +154,7 @@ An agent quiet for `[agents] offline_after` (2 min) turns its monitors late with
 
 ## Operating
 
+- People and orgs: `vink admin org create acme --name Acme`, `vink admin user create bob --org acme --role member --password-stdin`, and for someone who already has an account `vink admin user grant bob --org acme --role admin` or `vink admin user revoke bob --org acme`. The last owner of an org stays. In proxy mode a group named `vink:<org>:<role>` does the same on its own.
 - `vink serve --print-config` shows the effective configuration. `docs/deploy/vink.toml.example` lists every key; each is also an environment variable, `VINK_SERVER_LISTEN` for `[server] listen`.
 - `docs/deploy/` holds a hardened systemd unit (`vink.service`, `DynamicUser` and `StateDirectory=vink`), the agent's unit (`vink-agent.service`), `compose.yaml`, a Nomad job (`vink.nomad.hcl`), and the reverse-proxy snippets `traefik-authelia.yaml` and `apache-kerberos.conf`. The container image is `ghcr.io/w4jnl/vink`, built `FROM scratch` with the binary and CA certificates; it serves, runs an agent or acts as the CLI by its arguments.
 - Behind a reverse proxy that authenticates people, turn on `[auth.proxy]` and map groups named `vink:<org>:<role>` to roles; the deploy snippets show the headers, the shared secret and which paths stay open.

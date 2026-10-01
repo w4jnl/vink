@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -233,5 +234,51 @@ func TestBootstrap(t *testing.T) {
 	}
 	if _, err := f.svc.Bootstrap(ctx, BootstrapInput{OrgSlug: "again", Subject: "x", Password: "xpasswordxx"}); !errors.Is(err, domain.ErrConflict) {
 		t.Fatalf("second bootstrap: %v", err)
+	}
+}
+
+func TestMembershipsKeepTheLastOwner(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	alice, err := f.svc.CreateLocalUser(ctx, f.admin, "alice", "", "", "correct horse", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bob, err := f.svc.CreateLocalUser(ctx, f.admin, "bob", "", "", "correct horse", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.svc.SetMembership(ctx, f.admin, alice.ID, f.org.ID, domain.RoleOwner); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.svc.SetMembership(ctx, f.admin, bob.ID, f.org.ID, domain.RoleMember); err != nil {
+		t.Fatal(err)
+	}
+	// alice is the only owner: she can neither be demoted nor removed
+	if err := f.svc.SetMembership(ctx, f.admin, alice.ID, f.org.ID, domain.RoleAdmin); err == nil || !strings.Contains(err.Error(), "last owner") {
+		t.Fatalf("demote last owner: %v", err)
+	}
+	if err := f.svc.RemoveMembership(ctx, f.admin, alice.ID, f.org.ID); err == nil || !strings.Contains(err.Error(), "last owner") {
+		t.Fatalf("remove last owner: %v", err)
+	}
+	// a second owner frees her
+	if err := f.svc.SetMembership(ctx, f.admin, bob.ID, f.org.ID, domain.RoleOwner); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.svc.SetMembership(ctx, f.admin, alice.ID, f.org.ID, domain.RoleViewer); err != nil {
+		t.Fatalf("demote with another owner: %v", err)
+	}
+	if err := f.svc.RemoveMembership(ctx, f.admin, alice.ID, f.org.ID); err != nil {
+		t.Fatalf("remove: %v", err)
+	}
+	if err := f.svc.RemoveMembership(ctx, f.admin, alice.ID, f.org.ID); !errors.Is(err, domain.ErrNotFound) {
+		t.Fatalf("remove twice: %v", err)
+	}
+	if ms, _ := f.svc.MembershipsForUser(ctx, alice.ID); len(ms) != 0 {
+		t.Fatalf("alice still has memberships: %+v", ms)
+	}
+	// only org admins of that org or instance admins may
+	if err := f.svc.RemoveMembership(ctx, f.member, bob.ID, f.org.ID); !errors.Is(err, domain.ErrForbidden) {
+		t.Fatalf("member removing: %v", err)
 	}
 }

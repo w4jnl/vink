@@ -308,7 +308,7 @@ One binary, three personalities: `vink serve` runs the server, `vink agent` runs
 | `vink serve [--config vink.toml]` | starts the server; runs migrations first; refuses to start if the DB is newer than the binary |
 | `vink migrate up` · `down` · `status` · `new <name>` · `dump` | dbmate wrapper, no network; `dump` writes `db/schema.sql`, which is sqlc's schema input |
 | `vink admin init --org homelab --user j --password-stdin` | bootstrap on an empty DB: instance admin, first org, first project, prints the ping key and an rw API key |
-| `vink admin org create` · `org ls` · `user ls` · `user promote` · `backup` | instance-admin operations, run on the server host against the DB file (no network) |
+| `vink admin org create` · `org ls` · `user ls` · `user create` · `user promote` · `user grant <user> --org <slug> --role <role>` · `user revoke <user> --org <slug>` · `backup` | instance-admin operations, run on the server host against the DB file (no network); grant and revoke manage an existing user's role in an org, and the last owner of an org can be neither demoted nor removed |
 | `vink agent --server wss://vink.example.com --token … [--labels site=dc1]` | phase 2; connects out, runs assigned checks |
 | `vink ctx add homelab --server https://vink.w4j.nl --key …` · `vink ctx use homelab` · `vink ctx ls` | contexts; `VINK_SERVER` / `VINK_KEY` env override for CI |
 | `vink ls [--tag prod] [--state down]` | monitor table: slug, kind, state, since, next due, last latency |

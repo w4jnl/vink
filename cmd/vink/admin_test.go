@@ -195,3 +195,48 @@ func TestAdminOrgKeys(t *testing.T) {
 		t.Fatalf("revoke twice: %d %s", code, errs)
 	}
 }
+
+func TestAdminUserGrantAndRevoke(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "vink.db")
+	runCLI := func(stdin string, args ...string) (string, string, int) {
+		var out, errb bytes.Buffer
+		code := run(context.Background(), append([]string{"--color", "never"}, args...), strings.NewReader(stdin), &out, &errb)
+		return out.String(), errb.String(), code
+	}
+	if _, errs, code := runCLI("hunter2hunter2\n", "admin", "init", "--db", dbPath, "--org", "homelab", "--user", "j", "--password-stdin"); code != 0 {
+		t.Fatalf("init: %s", errs)
+	}
+	if _, errs, code := runCLI("", "admin", "org", "create", "--db", dbPath, "acme", "--name", "Acme"); code != 0 {
+		t.Fatalf("org create: %s", errs)
+	}
+	if _, errs, code := runCLI("bobpassword1\n", "admin", "user", "create", "--db", dbPath, "bob", "--password-stdin"); code != 0 {
+		t.Fatalf("user create: %s", errs)
+	}
+	out, errs, code := runCLI("", "admin", "user", "grant", "--db", dbPath, "bob", "--org", "acme", "--role", "admin")
+	if code != 0 || !strings.Contains(out, "bob is now admin in acme") {
+		t.Fatalf("grant: %d %s %s", code, out, errs)
+	}
+	if _, errs, code := runCLI("", "admin", "user", "grant", "--db", dbPath, "bob", "--org", "acme", "--role", "boss"); code == 0 || !strings.Contains(errs, "owner, admin, member or viewer") {
+		t.Fatalf("bad role: %d %s", code, errs)
+	}
+	if _, errs, code := runCLI("", "admin", "user", "grant", "--db", dbPath, "nobody", "--org", "acme"); code == 0 || errs == "" {
+		t.Fatalf("unknown user: %d %s", code, errs)
+	}
+	if _, errs, code := runCLI("", "admin", "user", "grant", "--db", dbPath, "bob", "--org", "nope"); code == 0 || errs == "" {
+		t.Fatalf("unknown org: %d %s", code, errs)
+	}
+	// j is homelab's only owner
+	if _, errs, code := runCLI("", "admin", "user", "revoke", "--db", dbPath, "j", "--org", "homelab"); code == 0 || !strings.Contains(errs, "last owner") {
+		t.Fatalf("last owner: %d %s", code, errs)
+	}
+	if _, errs, code := runCLI("", "admin", "user", "grant", "--db", dbPath, "j", "--org", "homelab", "--role", "viewer"); code == 0 || !strings.Contains(errs, "last owner") {
+		t.Fatalf("demote last owner: %d %s", code, errs)
+	}
+	out, errs, code = runCLI("", "admin", "user", "revoke", "--db", dbPath, "bob", "--org", "acme")
+	if code != 0 || !strings.Contains(out, "bob is no longer in acme") {
+		t.Fatalf("revoke: %d %s %s", code, out, errs)
+	}
+	if _, errs, code := runCLI("", "admin", "user", "revoke", "--db", dbPath, "bob", "--org", "acme"); code == 0 || errs == "" {
+		t.Fatalf("revoke twice: %d %s", code, errs)
+	}
+}

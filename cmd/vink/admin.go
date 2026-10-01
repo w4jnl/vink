@@ -384,7 +384,62 @@ func newAdminUserCmd(f *serverFlags) *cobra.Command {
 	create.Flags().StringVar(&orgSlug, "org", "", "org to add the user to")
 	create.Flags().StringVar(&role, "role", "member", "role in that org: owner, admin, member or viewer")
 	create.Flags().BoolVar(&passwordStdin, "password-stdin", false, "read the password from stdin")
-	cmd.AddCommand(ls, promote, create)
+
+	var grantOrg, grantRole string
+	grant := &cobra.Command{
+		Use:   "grant <user> --org <slug> --role <role>",
+		Short: "Give an existing user a role in an org, or change it",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return f.withService(cmd, func(svc *service.Service, _ *config.Config) error {
+				ctx := cmd.Context()
+				u, err := svc.UserBySubject(ctx, args[0])
+				if err != nil {
+					return err
+				}
+				org, err := svc.OrgBySlug(ctx, grantOrg)
+				if err != nil {
+					return err
+				}
+				if err := svc.SetMembership(ctx, adminScope, u.ID, org.ID, domain.Role(grantRole)); err != nil {
+					return err
+				}
+				fmt.Fprintf(cmd.OutOrStdout(), "%s is now %s in %s\n", u.Subject, grantRole, org.Slug)
+				return nil
+			})
+		},
+	}
+	grant.Flags().StringVar(&grantOrg, "org", "", "org slug (required)")
+	grant.Flags().StringVar(&grantRole, "role", "member", "owner, admin, member or viewer")
+	_ = grant.MarkFlagRequired("org")
+
+	var revokeOrg string
+	revoke := &cobra.Command{
+		Use:   "revoke <user> --org <slug>",
+		Short: "Remove a user from an org; the last owner stays",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return f.withService(cmd, func(svc *service.Service, _ *config.Config) error {
+				ctx := cmd.Context()
+				u, err := svc.UserBySubject(ctx, args[0])
+				if err != nil {
+					return err
+				}
+				org, err := svc.OrgBySlug(ctx, revokeOrg)
+				if err != nil {
+					return err
+				}
+				if err := svc.RemoveMembership(ctx, adminScope, u.ID, org.ID); err != nil {
+					return err
+				}
+				fmt.Fprintf(cmd.OutOrStdout(), "%s is no longer in %s\n", u.Subject, org.Slug)
+				return nil
+			})
+		},
+	}
+	revoke.Flags().StringVar(&revokeOrg, "org", "", "org slug (required)")
+	_ = revoke.MarkFlagRequired("org")
+	cmd.AddCommand(ls, promote, create, grant, revoke)
 	return cmd
 }
 
