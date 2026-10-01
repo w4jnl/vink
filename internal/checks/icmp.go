@@ -53,6 +53,7 @@ func (ICMP) Check(ctx context.Context, spec *domain.PullSpec, env Env) Result {
 	}
 	defer func() { _ = pc.Close() }()
 	dst := &net.UDPAddr{IP: ip}
+	env.Out.Observe("icmp", ip.String())
 	id := os.Getpid() & 0xffff
 	perPacket := spec.Timeout.Std() / time.Duration(i.Count)
 	if perPacket < 200*time.Millisecond {

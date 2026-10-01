@@ -77,6 +77,10 @@ type Outbound struct {
 	Proxy               string `toml:"proxy"`
 	CAPem               string `toml:"ca_pem"`
 	AllowPrivateTargets bool   `toml:"allow_private_targets"`
+	// EgressLog, when set, appends one line per connection vink opens
+	// (time, kind, target): the proof for an air-gapped install that
+	// nothing leaves. Empty means no log.
+	EgressLog string `toml:"egress_log"`
 }
 
 type Log struct {

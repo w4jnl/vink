@@ -20,7 +20,7 @@ GOLANGCI   := $(call tool,golangci-lint)
 AIR        := $(call tool,air)
 GORELEASER := $(call tool,goreleaser)
 
-.PHONY: build dev generate generate-check migrate lint fmt test e2e tools check-tenancy golden release-check clean
+.PHONY: build dev generate generate-check migrate lint fmt test e2e tools check-tenancy check-egress golden release-check clean
 
 build:
 	CGO_ENABLED=0 go build -trimpath -ldflags "$(LDFLAGS)" -o $(BIN)/vink ./cmd/vink
@@ -40,7 +40,7 @@ migrate:
 	go run ./cmd/vink migrate up --db $(DB)
 	go run ./cmd/vink migrate dump --db $(DB) --out db/schema.sql
 
-lint: check-tenancy
+lint: check-tenancy check-egress
 	@unformatted="$$(gofmt -l .)"; if [ -n "$$unformatted" ]; then echo "gofmt:"; echo "$$unformatted"; exit 1; fi
 	go vet ./...
 	$(GOLANGCI) run
@@ -56,6 +56,9 @@ e2e:
 
 check-tenancy:
 	@scripts/check-tenancy.sh
+
+check-egress:
+	@scripts/check-egress.sh
 
 golden:
 	node internal/http/web/gen_golden.mjs

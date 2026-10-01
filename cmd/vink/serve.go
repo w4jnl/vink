@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -86,8 +87,13 @@ func runServe(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 	svcCfg.BaseURL = strings.TrimRight(cfg.Server.BaseURL, "/")
 	svcCfg.MinInterval = cfg.Checks.MinInterval
 	svc := service.New(d, bus, log, svcCfg)
+	observe, closeEgress, err := egressLogger(cfg.Outbound.EgressLog, log)
+	if err != nil {
+		return err
+	}
+	defer closeEgress()
 	registry, err := notify.NewRegistry(notify.Options{
-		Proxy: cfg.Outbound.Proxy, CAPem: cfg.Outbound.CAPem, AllowPrivateTargets: cfg.Outbound.AllowPrivateTargets, Timeout: 10 * time.Second,
+		Proxy: cfg.Outbound.Proxy, CAPem: cfg.Outbound.CAPem, AllowPrivateTargets: cfg.Outbound.AllowPrivateTargets, Timeout: 10 * time.Second, Observe: observe,
 		SMTP: notify.SMTPConfig{Host: cfg.SMTP.Host, Port: cfg.SMTP.Port, Username: cfg.SMTP.Username, Password: cfg.SMTP.Password, From: cfg.SMTP.From, TLS: cfg.SMTP.TLS},
 	})
 	if err != nil {
@@ -95,7 +101,7 @@ func runServe(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 	}
 	svc.SetNotifier(registry)
 	checker, err := checks.NewRegistry(checks.Options{
-		Outbound:  outbound.Options{Proxy: cfg.Outbound.Proxy, CAPem: cfg.Outbound.CAPem, AllowPrivateTargets: cfg.Outbound.AllowPrivateTargets},
+		Outbound:  outbound.Options{Proxy: cfg.Outbound.Proxy, CAPem: cfg.Outbound.CAPem, AllowPrivateTargets: cfg.Outbound.AllowPrivateTargets, Observe: observe},
 		UserAgent: "vink/" + version.Version,
 	})
 	if err != nil {
@@ -169,4 +175,23 @@ func runServe(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 	}
 	log.Info("stopped")
 	return nil
+}
+
+// egressLogger appends one line per outbound connection to path, for the
+// no-egress audit; an empty path means no logging.
+func egressLogger(path string, log *slog.Logger) (observe func(kind, target string), closeFn func(), err error) {
+	if path == "" {
+		return nil, func() {}, nil
+	}
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+	if err != nil {
+		return nil, nil, fmt.Errorf("outbound.egress_log: %w", err)
+	}
+	var mu sync.Mutex
+	log.Info("egress log on", "path", path)
+	return func(kind, target string) {
+		mu.Lock()
+		defer mu.Unlock()
+		_, _ = fmt.Fprintf(f, "%s %s %s\n", time.Now().UTC().Format(time.RFC3339), kind, target)
+	}, func() { _ = f.Close() }, nil
 }

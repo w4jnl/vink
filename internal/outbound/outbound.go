@@ -28,6 +28,9 @@ type Options struct {
 	AllowPrivateTargets bool
 	// DialTimeout bounds one connection attempt (default 10 s).
 	DialTimeout time.Duration
+	// Observe, when set, is told about every connection vink opens:
+	// kind is dial or icmp, target the address. The egress audit uses it.
+	Observe func(kind, target string)
 }
 
 // DialFunc opens one connection.
@@ -37,6 +40,9 @@ type DialFunc func(ctx context.Context, network, addr string) (net.Conn, error)
 type Env struct {
 	// Dial connects with the private-target guard applied.
 	Dial DialFunc
+	// DialTrusted connects without the guard, for destinations the
+	// operator configured (the SMTP relay); it is still observed.
+	DialTrusted DialFunc
 	// Transport carries the dialer, the proxy and the CA bundle. Callers
 	// that need different TLS settings clone it.
 	Transport *http.Transport
@@ -48,6 +54,8 @@ type Env struct {
 	AllowPrivateTargets bool
 	// ProxyFor returns the proxy for a request, or nil.
 	ProxyFor func(*http.Request) (*url.URL, error)
+	// Observe records an outbound attempt; never nil.
+	Observe func(kind, target string)
 }
 
 // New builds the environment.
@@ -56,8 +64,16 @@ func New(o Options) (*Env, error) {
 	if timeout <= 0 {
 		timeout = 10 * time.Second
 	}
-	e := &Env{Resolver: net.DefaultResolver, AllowPrivateTargets: o.AllowPrivateTargets}
-	base := (&net.Dialer{Timeout: timeout}).DialContext
+	e := &Env{Resolver: net.DefaultResolver, AllowPrivateTargets: o.AllowPrivateTargets, Observe: o.Observe}
+	if e.Observe == nil {
+		e.Observe = func(string, string) {}
+	}
+	raw := (&net.Dialer{Timeout: timeout}).DialContext
+	base := func(ctx context.Context, network, addr string) (net.Conn, error) {
+		e.Observe("dial", network+" "+addr)
+		return raw(ctx, network, addr)
+	}
+	e.DialTrusted = base
 	if o.AllowPrivateTargets {
 		e.Dial = base
 	} else {

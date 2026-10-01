@@ -24,14 +24,16 @@ type Options struct {
 	SMTP SMTPConfig
 	// UserAgent identifies vink to receivers.
 	UserAgent string
+	// Observe is handed to the outbound environment (see outbound.Options).
+	Observe func(kind, target string)
 }
 
 // newHTTPClient builds the one client every HTTP notifier uses, on the
-// shared outbound environment.
-func newHTTPClient(o Options) (*http.Client, error) {
-	env, err := outbound.New(outbound.Options{Proxy: o.Proxy, CAPem: o.CAPem, AllowPrivateTargets: o.AllowPrivateTargets})
+// shared outbound environment, and returns that environment for SMTP.
+func newHTTPClient(o Options) (*http.Client, *outbound.Env, error) {
+	env, err := outbound.New(outbound.Options{Proxy: o.Proxy, CAPem: o.CAPem, AllowPrivateTargets: o.AllowPrivateTargets, Observe: o.Observe})
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	timeout := o.Timeout
 	if timeout <= 0 {
@@ -45,7 +47,7 @@ func newHTTPClient(o Options) (*http.Client, error) {
 			}
 			return nil
 		},
-	}, nil
+	}, env, nil
 }
 
 // userAgent is the header every HTTP notifier sends.

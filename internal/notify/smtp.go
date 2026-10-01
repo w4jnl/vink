@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/w4jnl/vink/internal/domain"
+	"github.com/w4jnl/vink/internal/outbound"
 )
 
 // SMTPConfig is the instance-level transport from vink.toml.
@@ -129,28 +130,35 @@ func envelopeAddress(from string) string {
 	return from
 }
 
-// dialSMTP connects with implicit TLS, STARTTLS or plain, then
+// smtpDialer connects through the outbound environment (its CA pool and
+// egress log; the relay is operator config, so the private-target guard
+// does not apply) with implicit TLS, STARTTLS or plain, then
 // authenticates when a username is set.
-func dialSMTP(ctx context.Context, cfg SMTPConfig) (*smtp.Client, error) {
+func smtpDialer(env *outbound.Env) func(ctx context.Context, cfg SMTPConfig) (*smtp.Client, error) {
+	return func(ctx context.Context, cfg SMTPConfig) (*smtp.Client, error) {
+		return dialSMTP(ctx, cfg, env)
+	}
+}
+
+func dialSMTP(ctx context.Context, cfg SMTPConfig, env *outbound.Env) (*smtp.Client, error) {
 	port := cfg.Port
 	if port == 0 {
 		port = 587
 	}
 	addr := net.JoinHostPort(cfg.Host, strconv.Itoa(port))
-	d := &net.Dialer{Timeout: 10 * time.Second}
-	var (
-		conn net.Conn
-		err  error
-	)
-	tlsCfg := &tls.Config{ServerName: cfg.Host, MinVersion: tls.VersionTLS12}
+	tlsCfg := &tls.Config{ServerName: cfg.Host, MinVersion: tls.VersionTLS12, RootCAs: env.RootCAs}
 	mode := strings.ToLower(cfg.TLS)
-	if mode == "tls" {
-		conn, err = (&tls.Dialer{NetDialer: d, Config: tlsCfg}).DialContext(ctx, "tcp", addr)
-	} else {
-		conn, err = d.DialContext(ctx, "tcp", addr)
-	}
+	conn, err := env.DialTrusted(ctx, "tcp", addr)
 	if err != nil {
 		return nil, fmt.Errorf("connect %s: %w", addr, err)
+	}
+	if mode == "tls" {
+		tc := tls.Client(conn, tlsCfg)
+		if err := tc.HandshakeContext(ctx); err != nil {
+			_ = conn.Close()
+			return nil, fmt.Errorf("connect %s: %w", addr, err)
+		}
+		conn = tc
 	}
 	if deadline, ok := ctx.Deadline(); ok {
 		_ = conn.SetDeadline(deadline)
