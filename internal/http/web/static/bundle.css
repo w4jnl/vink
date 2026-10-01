@@ -120,6 +120,7 @@ a.vk-btn { text-decoration: none; box-sizing: border-box; }
 .vk-code { margin: 0; padding: var(--space-3) var(--space-4); border-radius: var(--radius-sm); background: var(--surface-sunk); color: var(--ink); font: 400 12.5px/18px var(--font-mono); white-space: pre; overflow-x: auto; }
 .vk-code b { font-weight: 400; color: var(--accent); }
 .vk-code i { font-style: normal; color: var(--ink-muted); }
+.vk-empty .vk-code { white-space: pre-wrap; overflow-wrap: anywhere; overflow: visible; }
 
 /* Page scaffolding used by the showcase pages */
 /* TopBar: mark, project switcher with its sections, search, user */
