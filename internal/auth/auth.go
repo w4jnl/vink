@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 
@@ -147,11 +148,18 @@ func (a *Authenticator) fromProxy(r *http.Request) (*Principal, error) {
 	}
 	peer := net.ParseIP(host)
 	refused := func(reason string) (*Principal, error) {
-		// Only when a proxy header is present at all: a direct request
-		// without identity is the normal case and not worth a line.
-		if r.Header.Get(a.cfg.Proxy.UserHeader) != "" || r.Header.Get(a.cfg.Proxy.SecretHeader) != "" {
-			a.log.Debug("proxy identity refused", "reason", reason, "peer", host, "path", r.URL.Path)
+		if r.Header.Get(a.cfg.Proxy.UserHeader) == "" && r.Header.Get(a.cfg.Proxy.SecretHeader) == "" {
+			// No proxy header at all: say which headers did arrive, so a
+			// proxy that forwards nothing shows up at once.
+			names := make([]string, 0, len(r.Header))
+			for name := range r.Header {
+				names = append(names, name)
+			}
+			sort.Strings(names)
+			a.log.Debug("proxy mode on, but the request carries no identity", "peer", host, "path", r.URL.Path, "expects", a.cfg.Proxy.UserHeader+" and "+a.cfg.Proxy.SecretHeader, "headers", strings.Join(names, ","))
+			return nil, nil
 		}
+		a.log.Debug("proxy identity refused", "reason", reason, "peer", host, "path", r.URL.Path)
 		return nil, nil
 	}
 	if peer == nil || !a.trustedPeer(peer) {
