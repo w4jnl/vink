@@ -1,3 +1,4 @@
+<!-- The Claude Code prompts vink was built from, phase by phase; kept for the record, not maintained. -->
 # Kickoff prompt for Claude Code
 
 Unpack this folder as the repo root, `git init`, then start `claude` in it. Use plan mode for the first message, then paste:

@@ -2,7 +2,7 @@
 
 The target design for every signed-in page, the create form, settings, and the sign-in and access pages. Each screen is a static HTML file built from `../components/bundle.js`, so its markup is exactly what the Go templates must render; `*-dark.png` and `*-light.png` show both themes. Open an `.html` file in a browser to inspect it; add `data-theme="light"` or `"dark"` on `<html>` to force a theme.
 
-The same screens are on the Claude Design canvas "vink screens" (dark row, light row), linked for click-through in Play.
+The people, hosts, keys and incidents in the screens are made up.
 
 | Screen | Route | Shows | Components |
 | --- | --- | --- | --- |
