@@ -1209,7 +1209,8 @@ func TestSwitcherListsOrgsWithoutProjects(t *testing.T) {
 	}
 	// the chooser offers to add the first project
 	chooser := e.get("/projects", false)
-	chooser.has(t, `<a class="vk-row" href="/o/empty/admin/projects?add=1"><span class="vk-row__name"><span>Add the first project</span><span class="vk-row__slug">empty</span></span><span class="vk-row__data">no projects yet</span></a>`, `homelab / prod`)
+	chooser.has(t, `<div class="vk-srow vk-srow--muted"><div class="vk-srow__main"><span class="vk-srow__title"><a class="vk-srow__link" href="/o/empty/admin/projects?add=1">Add the first project</a></span><span class="vk-srow__sub" title="empty">empty</span></div><span class="vk-srow__cell vk-srow__cell--m">no projects yet</span>`,
+		`<span class="vk-srow__title"><a class="vk-srow__link" href="/o/homelab/p/prod">Production</a></span><span class="vk-srow__sub" title="homelab / prod">homelab / prod</span></div><span class="vk-srow__cell vk-srow__cell--s">admin</span>`)
 
 	// a viewer whose only org has no projects lands on the chooser, not the no-access page
 	v, _ := e.svc.CreateLocalUser(ctx, admin, "v", "v@example.com", "V", "correct horse", false)
@@ -1223,7 +1224,7 @@ func TestSwitcherListsOrgsWithoutProjects(t *testing.T) {
 		t.Fatalf("viewer home: %d %s", r.code, r.hdr.Get("Location"))
 	}
 	r := e.get("/projects", false)
-	r.has(t, `empty has no projects yet. Ask an org admin to add one.`)
+	r.has(t, `<span class="vk-srow__title">empty</span><span class="vk-srow__sub vk-srow__sub--prose" title="No projects yet. Ask an org admin to add one.">No projects yet. Ask an org admin to add one.</span>`)
 	if strings.Contains(r.body, "New project") || strings.Contains(r.body, "Add the first project") {
 		t.Error("a viewer gets no add links")
 	}

@@ -8,6 +8,7 @@ import (
 
 	"github.com/w4jnl/vink/internal/auth"
 	"github.com/w4jnl/vink/internal/domain"
+	"github.com/w4jnl/vink/internal/http/web/ui"
 	"github.com/w4jnl/vink/internal/service"
 )
 
@@ -45,12 +46,14 @@ func (h *Web) home(c *reqCtx) error {
 type projectRow struct {
 	Name, Slug, OrgSlug, Path string
 	Role                      domain.Role
+	Cells                     []ui.Cell
 }
 
 // emptyOrg is an org the viewer is in that has no project yet; AddPath is
 // set when the viewer may add one.
 type emptyOrg struct {
 	Slug, AddPath string
+	Cells         []ui.Cell
 }
 
 type projectsData struct {
@@ -72,13 +75,13 @@ func (h *Web) projects(c *reqCtx) error {
 	seen := map[string]bool{}
 	for _, p := range list {
 		seen[p.OrgSlug] = true
-		data.Projects = append(data.Projects, projectRow{Name: p.Name, Slug: p.Slug, OrgSlug: p.OrgSlug, Path: "/o/" + p.OrgSlug + "/p/" + p.Slug, Role: p.Role})
+		data.Projects = append(data.Projects, projectRow{Name: p.Name, Slug: p.Slug, OrgSlug: p.OrgSlug, Path: "/o/" + p.OrgSlug + "/p/" + p.Slug, Role: p.Role, Cells: []ui.Cell{{Text: string(p.Role), Size: "s"}}})
 	}
 	for _, o := range orgs {
 		if seen[o.Slug] {
 			continue
 		}
-		e := emptyOrg{Slug: o.Slug}
+		e := emptyOrg{Slug: o.Slug, Cells: []ui.Cell{{Text: "no projects yet", Size: "m"}}}
 		if c.principal.InstanceAdmin || o.Role.AtLeast(domain.RoleAdmin) {
 			e.AddPath = "/o/" + o.Slug + "/admin/projects?add=1"
 		}
