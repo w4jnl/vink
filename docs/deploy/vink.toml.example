@@ -69,6 +69,24 @@ default_org = ""                       # give every authenticated person viewer 
 logout_url = ""
 # group_map = { "CN=Monitoring Admins" = "corp:admin" }
 
+[auth.oidc]                            # native OpenID Connect (Keycloak, Authentik, Entra, ...), authorization code with PKCE
+enabled = false
+issuer = ""                            # e.g. "https://auth.example.com/realms/w4j"; discovery is fetched from it
+client_id = ""
+client_secret = ""                     # or "env:VINK_OIDC_SECRET"; empty for a public client
+scopes = ["openid", "profile", "email", "groups"]
+display_name = "single sign-on"        # the sign-in page says "Continue with <display_name>"
+auto_redirect = false                  # with local accounts off, /login goes straight to the provider
+username_claim = "preferred_username"  # becomes the username; falls back to sub
+groups_claim = "groups"
+strip_realm = false
+lowercase = true
+group_pattern = "^vink:(?P<org>[a-z0-9-]+):(?P<role>owner|admin|member|viewer)$"
+instance_admin_group = "vink:admin"
+default_org = ""
+logout_url = ""                        # the provider's end-session URL, when signing out of vink should sign out there too
+# group_map = { "CN=Monitoring Admins" = "corp:admin" }
+
 [checks]
 workers = 32            # concurrent pull check attempts
 min_interval = "10s"    # floor for a pull monitor's interval on this instance

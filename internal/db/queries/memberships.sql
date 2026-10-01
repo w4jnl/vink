@@ -21,6 +21,9 @@ ORDER BY u.subject;
 -- name: DeleteMembership :execrows
 DELETE FROM memberships WHERE user_id = ? AND org_id = ?;
 
+-- name: DeleteMembershipsBySource :exec
+DELETE FROM memberships WHERE user_id = ? AND source = ?;
+
 -- name: DeleteHeaderMembershipsForUser :exec
 DELETE FROM memberships WHERE user_id = ? AND source = 'header';
 

@@ -18,6 +18,7 @@ internal/checks/icmp.go:ICMP has no dial; the send is reported through Observe
 internal/notify/httpclient.go:a client on the environment transport
 internal/agent/agent.go:the agent dials its own vink server through the environment transport
 internal/cli/client.go:the CLI talks to the vink server the user configured
+internal/auth/oidc.go:a client on the environment transport, to the issuer the operator configured
 '
 
 status=0

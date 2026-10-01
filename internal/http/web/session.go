@@ -3,6 +3,7 @@ package web
 import (
 	"errors"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/w4jnl/vink/internal/auth"
@@ -91,25 +92,100 @@ type loginData struct {
 	User  string
 	Next  string
 	Error string
+	Local bool
+	OIDC  *oidcLogin
+	// OIDCError is the provider's error code, shown in mono.
+	OIDCError string
+}
+
+type oidcLogin struct {
+	Name, Host, StartPath string
+}
+
+func (h *Web) loginData(c *reqCtx, next string) loginData {
+	data := loginData{base: h.baseFor(c, "Sign in", ""), Next: next, Local: h.authn.LocalEnabled()}
+	data.Fill = true
+	if h.authn.OIDCEnabled() {
+		o := &oidcLogin{Name: h.authn.OIDCDisplayName(), StartPath: auth.OIDCStartURL(next)}
+		if u, err := url.Parse(h.authn.OIDCIssuer()); err == nil {
+			o.Host = u.Host
+		}
+		data.OIDC = o
+	}
+	return data
 }
 
 func (h *Web) loginForm(c *reqCtx) error {
-	if !h.authn.LocalEnabled() {
-		return domain.NotFound("local sign-in")
+	if !h.authn.LocalEnabled() && !h.authn.OIDCEnabled() {
+		return domain.NotFound("sign-in")
 	}
+	next := safeNext(c.r.URL.Query().Get("next"))
 	if c.principal != nil {
-		http.Redirect(c.w, c.r, safeNext(c.r.URL.Query().Get("next")), http.StatusSeeOther)
+		http.Redirect(c.w, c.r, next, http.StatusSeeOther)
 		return nil
 	}
-	data := loginData{base: h.baseFor(c, "Sign in", ""), Next: safeNext(c.r.URL.Query().Get("next"))}
-	data.Fill = true
-	switch c.r.URL.Query().Get("code") {
+	q := c.r.URL.Query()
+	if h.authn.OIDCAutoRedirect() && q.Get("oidc_error") == "" && q.Get("code") == "" {
+		http.Redirect(c.w, c.r, auth.OIDCStartURL(next), http.StatusSeeOther)
+		return nil
+	}
+	data := h.loginData(c, next)
+	switch q.Get("code") {
 	case "locked":
 		data.Error = "Too many wrong codes. Sign in again."
 	case "expired":
 		data.Error = "The sign-in timed out. Start again."
 	}
+	data.OIDCError = q.Get("oidc_error")
 	return h.render(c, http.StatusOK, "login", "layout", data)
+}
+
+// oidcStart sends the browser to the provider.
+func (h *Web) oidcStart(c *reqCtx) error {
+	if !h.authn.OIDCEnabled() {
+		return domain.NotFound("sign-in")
+	}
+	if c.principal != nil {
+		http.Redirect(c.w, c.r, safeNext(c.r.URL.Query().Get("next")), http.StatusSeeOther)
+		return nil
+	}
+	to, err := h.authn.OIDCStart(c.w, c.r, safeNext(c.r.URL.Query().Get("next")))
+	if err != nil {
+		h.log.Error("oidc start", "err", err)
+		http.Redirect(c.w, c.r, "/login?oidc_error=provider_unreachable", http.StatusSeeOther)
+		return nil
+	}
+	http.Redirect(c.w, c.r, to, http.StatusSeeOther)
+	return nil
+}
+
+// oidcCallback finishes the sign-in; every failure lands on /login as one
+// notice with the code.
+func (h *Web) oidcCallback(c *reqCtx) error {
+	if !h.authn.OIDCEnabled() {
+		return domain.NotFound("sign-in")
+	}
+	_, next, err := h.authn.OIDCCallback(c.w, c.r)
+	if err != nil {
+		code := "failed"
+		var oe auth.OIDCError
+		switch {
+		case errors.As(err, &oe):
+			code = oe.Code
+		case errors.Is(err, domain.ErrNotFound):
+			code = "expired"
+		default:
+			h.log.Error("oidc callback", "err", err)
+		}
+		http.Redirect(c.w, c.r, "/login?oidc_error="+url.QueryEscape(code), http.StatusSeeOther)
+		return nil
+	}
+	if h.authn.TOTPRequired() {
+		// never for provider accounts; their second factor is the provider's
+		next = safeNext(next)
+	}
+	http.Redirect(c.w, c.r, safeNext(next), http.StatusSeeOther)
+	return nil
 }
 
 func (h *Web) login(c *reqCtx) error {
@@ -127,8 +203,8 @@ func (h *Web) login(c *reqCtx) error {
 		return nil
 	}
 	if err != nil {
-		data := loginData{base: h.baseFor(c, "Sign in", ""), User: user, Next: next}
-		data.Fill = true
+		data := h.loginData(c, next)
+		data.User = user
 		status := http.StatusUnauthorized
 		switch {
 		case errors.Is(err, domain.ErrRateLimited):
@@ -216,7 +292,11 @@ func (h *Web) logout(c *reqCtx) error {
 		http.Redirect(c.w, c.r, h.authn.LogoutURL(), http.StatusSeeOther)
 		return nil
 	}
-	if h.authn.LocalEnabled() {
+	if c.principal.User.Source == "oidc" && h.authn.OIDCLogoutURL() != "" {
+		http.Redirect(c.w, c.r, h.authn.OIDCLogoutURL(), http.StatusSeeOther)
+		return nil
+	}
+	if h.authn.LocalEnabled() || h.authn.OIDCEnabled() {
 		http.Redirect(c.w, c.r, "/login", http.StatusSeeOther)
 		return nil
 	}

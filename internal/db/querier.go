@@ -68,6 +68,7 @@ type Querier interface {
 	DeleteLoginChallenge(ctx context.Context, id string) error
 	DeleteMaintenance(ctx context.Context, arg DeleteMaintenanceParams) (int64, error)
 	DeleteMembership(ctx context.Context, arg DeleteMembershipParams) (int64, error)
+	DeleteMembershipsBySource(ctx context.Context, arg DeleteMembershipsBySourceParams) error
 	DeleteMonitor(ctx context.Context, arg DeleteMonitorParams) (int64, error)
 	// tenancy: root (retention job)
 	DeleteObservationsBefore(ctx context.Context, at int64) (int64, error)

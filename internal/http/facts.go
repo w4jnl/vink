@@ -46,8 +46,19 @@ func (d Deps) serverFacts(ctx context.Context) web.ServerFacts {
 	if cfg.Auth.Proxy.Enabled {
 		proxy = "on, from " + joinAnd(cfg.Auth.Proxy.TrustedCIDRs)
 	}
-	f.SignIn = [][2]string{{"local accounts", local}, {"proxy", proxy}, {"oidc", "off"},
-		{"admin group", cfg.Auth.Proxy.InstanceAdminGroup}, {"sessions", timefmt.Span(service.SessionTTL) + ", sliding"}}
+	oidcFact := "off"
+	if cfg.Auth.OIDC.Enabled {
+		oidcFact = "on, " + cfg.Auth.OIDC.Issuer
+	}
+	adminGroup := cfg.Auth.Proxy.InstanceAdminGroup
+	if !cfg.Auth.Proxy.Enabled && cfg.Auth.OIDC.Enabled {
+		adminGroup = cfg.Auth.OIDC.InstanceAdminGroup
+	}
+	if cfg.Auth.Local.Enabled {
+		local = "on, two-factor " + cfg.Auth.Local.TOTP
+	}
+	f.SignIn = [][2]string{{"local accounts", local}, {"proxy", proxy}, {"oidc", oidcFact},
+		{"admin group", adminGroup}, {"sessions", timefmt.Span(service.SessionTTL) + ", sliding"}}
 
 	outbound := "none"
 	if cfg.Outbound.Proxy != "" {

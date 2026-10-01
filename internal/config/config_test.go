@@ -206,3 +206,17 @@ func TestProxyModeNeedsTrustedCIDRs(t *testing.T) {
 		t.Fatalf("with a cidr: %v", err)
 	}
 }
+
+func TestOIDCNeedsIssuerAndClient(t *testing.T) {
+	c := Default()
+	c.Auth.OIDC.Enabled = true
+	err := c.Validate()
+	if err == nil || !strings.Contains(err.Error(), "auth.oidc.issuer") || !strings.Contains(err.Error(), "auth.oidc.client_id") {
+		t.Fatalf("validate: %v", err)
+	}
+	c.Auth.OIDC.Issuer, c.Auth.OIDC.ClientID = "https://auth.example.com/realms/w4j", "vink"
+	c.Auth.Local.Enabled, c.Auth.Proxy.Enabled = false, false
+	if err := c.Validate(); err != nil {
+		t.Fatalf("oidc alone must do: %v", err)
+	}
+}

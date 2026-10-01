@@ -8,6 +8,7 @@ import (
 	"context"
 	"crypto/subtle"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net"
 	"net/http"
@@ -15,11 +16,13 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/w4jnl/vink/internal/config"
 	"github.com/w4jnl/vink/internal/domain"
 	"github.com/w4jnl/vink/internal/http/middleware"
+	"github.com/w4jnl/vink/internal/outbound"
 	"github.com/w4jnl/vink/internal/ratelimit"
 	"github.com/w4jnl/vink/internal/service"
 )
@@ -83,12 +86,20 @@ type Authenticator struct {
 	loginIP   *ratelimit.Limiter
 	loginUser *ratelimit.Limiter
 	now       func() time.Time
+	baseURL   string
+	// proxyRules and oidcRules map each provider's groups to roles.
+	proxyRules groupRules
+	oidcRules  groupRules
+	outbound   *outbound.Env
+	oidcMu     sync.Mutex
+	oidc       *oidcState
+	usedStates map[string]time.Time
 }
 
 // New builds an authenticator. baseURL decides whether cookies are Secure.
 func New(svc *service.Service, cfg config.Auth, baseURL string, log *slog.Logger) (*Authenticator, error) {
 	a := &Authenticator{
-		svc: svc, cfg: cfg, log: log,
+		svc: svc, cfg: cfg, log: log, baseURL: baseURL,
 		loginIP: ratelimit.New(10, 10), loginUser: ratelimit.New(5, 5),
 		now: func() time.Time { return time.Now().UTC() },
 	}
@@ -108,6 +119,14 @@ func New(svc *service.Service, cfg config.Auth, baseURL string, log *slog.Logger
 			return nil, err
 		}
 		a.groupRe = re
+		a.proxyRules = groupRules{re: re, adminGroup: cfg.Proxy.InstanceAdminGroup, groupMap: cfg.Proxy.GroupMap, defaultOrg: cfg.Proxy.DefaultOrg}
+	}
+	if cfg.OIDC.Enabled {
+		re, err := regexp.Compile(cfg.OIDC.GroupPattern)
+		if err != nil {
+			return nil, fmt.Errorf("auth.oidc.group_pattern: %w", err)
+		}
+		a.oidcRules = groupRules{re: re, adminGroup: cfg.OIDC.InstanceAdminGroup, groupMap: cfg.OIDC.GroupMap, defaultOrg: cfg.OIDC.DefaultOrg}
 	}
 	return a, nil
 }
@@ -144,7 +163,7 @@ func (a *Authenticator) Identify(r *http.Request) (*Principal, error) {
 			return p, nil
 		}
 	}
-	if a.cfg.Local.Enabled {
+	if a.cfg.Local.Enabled || a.cfg.OIDC.Enabled {
 		return a.fromSession(r)
 	}
 	return nil, nil
@@ -241,46 +260,9 @@ func splitGroups(raw, sep string) []string {
 	return out
 }
 
-// mapGroups turns group names into org roles: the explicit group_map
-// first, then the group_pattern regex; the highest role per org wins.
+// mapGroups applies the proxy's group rules.
 func (a *Authenticator) mapGroups(groups []string) (map[string]domain.Role, bool) {
-	roles := map[string]domain.Role{}
-	admin := false
-	grant := func(org string, role domain.Role) {
-		if !role.Valid() || org == "" {
-			return
-		}
-		if cur, ok := roles[org]; !ok || role.Level() > cur.Level() {
-			roles[org] = role
-		}
-	}
-	for _, g := range groups {
-		if a.cfg.Proxy.InstanceAdminGroup != "" && g == a.cfg.Proxy.InstanceAdminGroup {
-			admin = true
-			continue
-		}
-		if mapped, ok := a.cfg.Proxy.GroupMap[g]; ok {
-			org, role, found := strings.Cut(mapped, ":")
-			if found {
-				grant(org, domain.Role(role))
-			}
-			continue
-		}
-		if a.groupRe == nil {
-			continue
-		}
-		m := a.groupRe.FindStringSubmatch(g)
-		if m == nil {
-			continue
-		}
-		grant(m[a.groupRe.SubexpIndex("org")], domain.Role(m[a.groupRe.SubexpIndex("role")]))
-	}
-	if a.cfg.Proxy.DefaultOrg != "" {
-		if _, ok := roles[a.cfg.Proxy.DefaultOrg]; !ok {
-			roles[a.cfg.Proxy.DefaultOrg] = domain.RoleViewer
-		}
-	}
-	return roles, admin
+	return mapGroupRules(a.proxyRules, groups)
 }
 
 func (a *Authenticator) fromSession(r *http.Request) (*Principal, error) {

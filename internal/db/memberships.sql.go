@@ -47,6 +47,20 @@ func (q *Queries) DeleteMembership(ctx context.Context, arg DeleteMembershipPara
 	return result.RowsAffected()
 }
 
+const deleteMembershipsBySource = `-- name: DeleteMembershipsBySource :exec
+DELETE FROM memberships WHERE user_id = ? AND source = ?
+`
+
+type DeleteMembershipsBySourceParams struct {
+	UserID string
+	Source string
+}
+
+func (q *Queries) DeleteMembershipsBySource(ctx context.Context, arg DeleteMembershipsBySourceParams) error {
+	_, err := q.db.ExecContext(ctx, deleteMembershipsBySource, arg.UserID, arg.Source)
+	return err
+}
+
 const getMembership = `-- name: GetMembership :one
 SELECT user_id, org_id, role, source, created_at FROM memberships WHERE user_id = ? AND org_id = ?
 `

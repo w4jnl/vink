@@ -178,6 +178,12 @@ func (s *Service) SetInstanceAdmin(ctx context.Context, sc domain.Scope, subject
 // EnsureProxyUser creates a proxy-authenticated user on first sight and
 // keeps email and name current.
 func (s *Service) EnsureProxyUser(ctx context.Context, subject, email, name string) (*domain.User, error) {
+	return s.EnsureExternalUser(ctx, subject, email, name, "proxy")
+}
+
+// EnsureExternalUser is EnsureProxyUser for any identity provider: source
+// is proxy or oidc.
+func (s *Service) EnsureExternalUser(ctx context.Context, subject, email, name, source string) (*domain.User, error) {
 	row, err := s.db.Read().GetUserBySubject(ctx, subject)
 	if err == nil {
 		if (email != "" && row.Email != email) || (name != "" && row.DisplayName != name) {
@@ -201,16 +207,32 @@ func (s *Service) EnsureProxyUser(ctx context.Context, subject, email, name stri
 		name = subject
 	}
 	created, err := s.db.Write().CreateUser(ctx, db.CreateUserParams{
-		ID: domain.NewID(), Subject: subject, Email: email, DisplayName: name, PasswordHash: nil, IsInstanceAdmin: false, Source: "proxy", CreatedAt: domain.Millis(s.now()),
+		ID: domain.NewID(), Subject: subject, Email: email, DisplayName: name, PasswordHash: nil, IsInstanceAdmin: false, Source: source, CreatedAt: domain.Millis(s.now()),
 	})
 	if err != nil {
 		if db.IsUniqueViolation(err) {
-			return s.EnsureProxyUser(ctx, subject, email, name)
+			return s.EnsureExternalUser(ctx, subject, email, name, source)
 		}
 		return nil, err
 	}
-	s.log.Info("user created from proxy identity", "subject", subject)
+	s.log.Info("user created from identity provider", "subject", subject, "source", source)
 	return userFromRow(created), nil
+}
+
+// SetDerivedInstanceAdmin sets the flag an identity provider's group
+// decides, for proxy and OIDC accounts; a change is logged.
+func (s *Service) SetDerivedInstanceAdmin(ctx context.Context, u *domain.User, admin bool) error {
+	if u.InstanceAdmin == admin {
+		return nil
+	}
+	sc := domain.Scope{Actor: "", UserID: ""}
+	return s.db.Tx(ctx, func(q *db.Queries) error {
+		if _, err := q.SetInstanceAdmin(ctx, db.SetInstanceAdminParams{IsInstanceAdmin: admin, ID: u.ID}); err != nil {
+			return err
+		}
+		u.InstanceAdmin = admin
+		return s.record(ctx, q, sc, audit.Entry{Action: "user.instance_admin", Target: u.Subject, TargetID: u.ID, Detail: map[string]any{"admin": admin, "group": true}})
+	})
 }
 
 // SetMembership grants role in orgID with source local. Org admins of that
@@ -322,6 +344,12 @@ func (s *Service) MembershipsForUser(ctx context.Context, userID string) ([]doma
 // to roles (org slug to role). Local memberships are untouched. Unknown
 // org slugs are ignored. It writes only when something differs.
 func (s *Service) SyncHeaderMemberships(ctx context.Context, userID string, roles map[string]domain.Role) error {
+	return s.SyncDerivedMemberships(ctx, userID, roles, "header")
+}
+
+// SyncDerivedMemberships is SyncHeaderMemberships for any provider:
+// source is header or oidc.
+func (s *Service) SyncDerivedMemberships(ctx context.Context, userID string, roles map[string]domain.Role, source string) error {
 	current, err := s.MembershipsForUser(ctx, userID)
 	if err != nil {
 		return err
@@ -340,7 +368,7 @@ func (s *Service) SyncHeaderMemberships(ctx context.Context, userID string, role
 	same := true
 	seen := 0
 	for _, m := range current {
-		if m.Source != "header" {
+		if m.Source != source {
 			continue
 		}
 		seen++
@@ -352,11 +380,11 @@ func (s *Service) SyncHeaderMemberships(ctx context.Context, userID string, role
 		return nil
 	}
 	return s.db.Tx(ctx, func(q *db.Queries) error {
-		if err := q.DeleteHeaderMembershipsForUser(ctx, userID); err != nil {
+		if err := q.DeleteMembershipsBySource(ctx, db.DeleteMembershipsBySourceParams{UserID: userID, Source: source}); err != nil {
 			return err
 		}
 		for orgID, role := range want {
-			if err := q.UpsertMembership(ctx, db.UpsertMembershipParams{UserID: userID, OrgID: orgID, Role: string(role), Source: "header", CreatedAt: domain.Millis(s.now())}); err != nil {
+			if err := q.UpsertMembership(ctx, db.UpsertMembershipParams{UserID: userID, OrgID: orgID, Role: string(role), Source: source, CreatedAt: domain.Millis(s.now())}); err != nil {
 				return err
 			}
 		}

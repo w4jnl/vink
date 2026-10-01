@@ -95,6 +95,35 @@ type Metrics struct {
 type Auth struct {
 	Local AuthLocal `toml:"local"`
 	Proxy AuthProxy `toml:"proxy"`
+	OIDC  AuthOIDC  `toml:"oidc"`
+}
+
+// AuthOIDC is native OpenID Connect: the authorization-code flow with
+// PKCE against one issuer, producing the same subject + groups as proxy
+// mode.
+type AuthOIDC struct {
+	Enabled      bool     `toml:"enabled"`
+	Issuer       string   `toml:"issuer"`
+	ClientID     string   `toml:"client_id"`
+	ClientSecret string   `toml:"client_secret" redact:"true"`
+	Scopes       []string `toml:"scopes"`
+	// DisplayName is the provider as the sign-in page names it.
+	DisplayName string `toml:"display_name"`
+	// AutoRedirect sends /login straight to the provider when local
+	// accounts are off.
+	AutoRedirect bool `toml:"auto_redirect"`
+	// UsernameClaim is the claim that becomes the subject; sub otherwise.
+	UsernameClaim string `toml:"username_claim"`
+	GroupsClaim   string `toml:"groups_claim"`
+	StripRealm    bool   `toml:"strip_realm"`
+	Lowercase     bool   `toml:"lowercase"`
+	// The group mapping, as in auth.proxy.
+	GroupPattern       string            `toml:"group_pattern"`
+	InstanceAdminGroup string            `toml:"instance_admin_group"`
+	DefaultOrg         string            `toml:"default_org"`
+	GroupMap           map[string]string `toml:"group_map"`
+	// LogoutURL is where an OIDC session signs out at the provider, or "".
+	LogoutURL string `toml:"logout_url"`
 }
 
 type AuthLocal struct {
@@ -155,6 +184,10 @@ func Default() *Config {
 		Log:       Log{Level: "info", Format: "json"},
 		Auth: Auth{
 			Local: AuthLocal{Enabled: true, TOTP: "optional"},
+			OIDC: AuthOIDC{
+				Scopes: []string{"openid", "profile", "email", "groups"}, DisplayName: "single sign-on", UsernameClaim: "preferred_username", GroupsClaim: "groups", Lowercase: true,
+				GroupPattern: `^vink:(?P<org>[a-z0-9-]+):(?P<role>owner|admin|member|viewer)$`, InstanceAdminGroup: "vink:admin",
+			},
 			Proxy: AuthProxy{ //nolint:gosec // G101: header names, not credentials
 				TrustedCIDRs:       []string{"127.0.0.1/32", "::1/128"},
 				SecretHeader:       "X-Auth-Proxy-Secret",
@@ -284,8 +317,19 @@ func (c *Config) Validate() error {
 	default:
 		fail("log.format must be json or text, got %q", c.Log.Format)
 	}
-	if !c.Auth.Local.Enabled && !c.Auth.Proxy.Enabled {
-		fail("auth: enable auth.local or auth.proxy, otherwise nobody can sign in")
+	if !c.Auth.Local.Enabled && !c.Auth.Proxy.Enabled && !c.Auth.OIDC.Enabled {
+		fail("auth: enable auth.local, auth.proxy or auth.oidc, otherwise nobody can sign in")
+	}
+	if c.Auth.OIDC.Enabled {
+		if !strings.HasPrefix(c.Auth.OIDC.Issuer, "https://") && !strings.HasPrefix(c.Auth.OIDC.Issuer, "http://") {
+			fail("auth.oidc.issuer must be the provider's https URL, got %q", c.Auth.OIDC.Issuer)
+		}
+		if c.Auth.OIDC.ClientID == "" {
+			fail("auth.oidc.client_id must be set when auth.oidc is enabled")
+		}
+		if c.Auth.OIDC.UsernameClaim == "" || c.Auth.OIDC.GroupsClaim == "" {
+			fail("auth.oidc.username_claim and groups_claim must not be empty")
+		}
 	}
 	switch c.Auth.Local.TOTP {
 	case "optional", "required":

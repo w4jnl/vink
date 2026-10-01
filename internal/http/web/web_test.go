@@ -15,6 +15,7 @@ import (
 
 	"github.com/w4jnl/vink/internal/audit"
 	"github.com/w4jnl/vink/internal/auth"
+	"github.com/w4jnl/vink/internal/auth/oidctest"
 	"github.com/w4jnl/vink/internal/checks"
 	"github.com/w4jnl/vink/internal/config"
 	"github.com/w4jnl/vink/internal/db"
@@ -87,6 +88,9 @@ func newEnvAuth(t *testing.T, authCfg config.Auth) *env {
 	e.web.Mount(mux)
 	e.srv = middleware.Chain(e.web.CustomDomains(mux), middleware.RequestID)
 
+	if !authCfg.Local.Enabled {
+		return e
+	}
 	rec := httptest.NewRecorder()
 	p, err := authn.Login(rec, httptest.NewRequest("POST", "/login", nil), "j", "correct horse")
 	if err != nil {
@@ -1940,5 +1944,63 @@ func TestTOTPRequiredGate(t *testing.T) {
 	e.get("/account?setup=1", false).has(t, `<h2>Set up two-factor sign-in</h2>`)
 	if r := e.get("/logout", false); r.code != 303 || r.hdr.Get("Location") != "/login" {
 		t.Fatalf("logout through the gate: %d", r.code)
+	}
+}
+
+func TestOIDCSignInPage(t *testing.T) {
+	p := oidctest.New(t)
+	p.Claims = map[string]any{"preferred_username": "alice", "groups": []string{"vink:homelab:member"}}
+	cfg := config.Default().Auth
+	p.Configure(&cfg)
+	e := newEnvAuth(t, cfg)
+
+	// the page leads with the provider and keeps the local form below the divider
+	page := e.doWith("GET", "/login", nil)
+	page.has(t, `<h1>Sign in</h1>`, `<a class="vk-btn vk-btn--primary vk-btn--block" href="/auth/oidc/start">Continue with Keycloak</a>`, `<p>You sign in at `+p.Host()+` and come straight back.</p>`,
+		`<div class="vk-or" role="separator"><span>or use a local account</span></div>`, `id="username" name="username"`, `<button type="submit" class="vk-btn vk-btn--block">Sign in</button>`, `<p>Local accounts are for break-glass and service users.</p>`)
+	e.doWith("GET", "/login?oidc_error=access_denied", nil).has(t, `<b class="vk-notice__title">Sign-in through Keycloak failed.</b> The provider answered</p><span class="vk-mono">access_denied</span>.`)
+
+	// start, the provider, the callback, the session
+	st := e.doWith("GET", "/auth/oidc/start?next=/account", nil)
+	flight := cookieNamed(st.hdr, auth.OIDCCookie)
+	if st.code != 303 || !strings.HasPrefix(st.hdr.Get("Location"), p.Server.URL+"/auth?") || flight == nil {
+		t.Fatalf("start: %d %s", st.code, st.hdr.Get("Location"))
+	}
+	if r := e.doWith("GET", "/auth/oidc/callback?code=x&state=forged", nil, flight); r.code != 303 || r.hdr.Get("Location") != "/login?oidc_error=state_mismatch" {
+		t.Fatalf("forged state: %d %s", r.code, r.hdr.Get("Location"))
+	}
+	done := e.doWith("GET", p.Visit(t, st.hdr.Get("Location")), nil, flight)
+	sess := cookieNamed(done.hdr, auth.CookieName)
+	if done.code != 303 || done.hdr.Get("Location") != "/account" || sess == nil {
+		t.Fatalf("callback: %d %s", done.code, done.hdr.Get("Location"))
+	}
+	acc := e.doWith("GET", "/account", nil, sess)
+	acc.has(t, `<span class="vk-muted vk-mono">alice · oidc account</span>`, `Comes from the identity provider.`, `<h2>Sessions <span>1</span></h2>`)
+	for _, s := range []string{"<h2>Password</h2>", "Two-factor sign-in"} {
+		if strings.Contains(acc.body, s) {
+			t.Errorf("oidc account offers %q", s)
+		}
+	}
+	if r := e.doWith("GET", "/auth/oidc/callback?code=x&state=forged", nil); r.code != 303 || r.hdr.Get("Location") != "/login?oidc_error=expired" {
+		t.Fatalf("callback without a flight: %d %s", r.code, r.hdr.Get("Location"))
+	}
+
+	// local accounts off: the button is the card, or /login goes straight to the provider
+	cfg.Local.Enabled = false
+	e2 := newEnvAuth(t, cfg)
+	only := e2.doWith("GET", "/login", nil)
+	if only.code != 200 || strings.Contains(only.body, `name="username"`) || !strings.Contains(only.body, `Continue with Keycloak`) {
+		t.Fatalf("oidc only: %d", only.code)
+	}
+	if r := e2.doWith("GET", projPath, nil); r.code != 303 || !strings.HasPrefix(r.hdr.Get("Location"), "/login?next=") {
+		t.Fatalf("anonymous with oidc only: %d %s", r.code, r.hdr.Get("Location"))
+	}
+	cfg.OIDC.AutoRedirect = true
+	e3 := newEnvAuth(t, cfg)
+	if r := e3.doWith("GET", "/login?next=/account", nil); r.code != 303 || r.hdr.Get("Location") != "/auth/oidc/start?next=%2Faccount" {
+		t.Fatalf("auto redirect: %d %s", r.code, r.hdr.Get("Location"))
+	}
+	if r := e3.doWith("GET", "/login?oidc_error=access_denied", nil); r.code != 200 {
+		t.Fatalf("error page must not loop: %d", r.code)
 	}
 }

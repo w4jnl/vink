@@ -4,10 +4,15 @@
 <input type="hidden" name="next" value="{{.Next}}">
 <h1>Sign in</h1>
 {{if .Error}}{{notice "error" "" .Error ""}}{{end}}
-{{field (dict "ID" "username" "Label" "Username" "Value" .User "Autocomplete" "username" "Attrs" (attrs "autofocus" "" "required" ""))}}
+{{if .OIDCError}}{{notice "error" (print "Sign-in through " .OIDC.Name " failed.") "The provider answered" (print "<span class=\"vk-mono\">" .OIDCError "</span>." | html)}}{{end}}
+{{if .OIDC}}<a class="vk-btn vk-btn--primary vk-btn--block" href="{{.OIDC.StartPath}}">Continue with {{.OIDC.Name}}</a>
+<p>You sign in at {{.OIDC.Host}} and come straight back.</p>
+{{if .Local}}{{divider "or use a local account"}}{{end}}{{end}}
+{{if .Local}}{{field (dict "ID" "username" "Label" "Username" "Value" .User "Autocomplete" "username" "Attrs" (attrs "autofocus" "" "required" ""))}}
 {{field (dict "ID" "password" "Label" "Password" "Type" "password" "Autocomplete" "current-password" "Attrs" (attrs "required" ""))}}
-{{button (dict "Label" "Sign in" "Variant" "primary" "Type" "submit" "Block" true)}}
-<p>Local accounts only. With single sign-on, the proxy signs you in and this page does not appear.</p>
+{{if .OIDC}}{{button (dict "Label" "Sign in" "Type" "submit" "Block" true)}}
+<p>Local accounts are for break-glass and service users.</p>{{else}}{{button (dict "Label" "Sign in" "Variant" "primary" "Type" "submit" "Block" true)}}
+<p>Local accounts only. With single sign-on, the proxy signs you in and this page does not appear.</p>{{end}}{{end}}
 </form>
 <p class="vk-auth__foot">vink {{.Version}} · w4j.nl</p>
 </main>{{end}}

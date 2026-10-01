@@ -90,6 +90,7 @@ func NewTemplates(static *Static) (*Templates, error) {
 		"notice":        func(tone, title, text string, extra any) ui.HTML { return ui.Notice(tone, title, text, toHTML(extra)) },
 		"qr":            func(svg any, label, caption string) ui.HTML { return ui.Qr(toHTML(svg), label, caption) },
 		"recoverycodes": ui.RecoveryCodes,
+		"divider":       ui.Divider,
 		"code":          ui.Code,
 		"panel": func(title, note string, body, actions any, id string) ui.HTML {
 			return ui.Panel(title, note, toHTML(body), toHTML(actions), id)

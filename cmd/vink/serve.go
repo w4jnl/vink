@@ -120,6 +120,13 @@ func runServe(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 	if err != nil {
 		return fmt.Errorf("auth: %w", err)
 	}
+	if cfg.Auth.OIDC.Enabled {
+		authEnv, err := outbound.New(outbound.Options{Proxy: cfg.Outbound.Proxy, CAPem: cfg.Outbound.CAPem, AllowPrivateTargets: true, Observe: observe})
+		if err != nil {
+			return fmt.Errorf("auth outbound: %w", err)
+		}
+		authn.SetOutbound(authEnv)
+	}
 
 	gw := agentgw.New(svc, logging.Sub(log, "agents"))
 	gw.OfflineAfter = cfg.Agents.OfflineAfter.Std()

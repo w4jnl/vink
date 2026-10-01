@@ -62,6 +62,8 @@ func (h *Web) Mount(mux *http.ServeMux) {
 	mux.Handle("GET /login", h.public(h.loginForm))
 	mux.Handle("POST /login", h.public(h.login))
 	mux.Handle("POST /logout", h.user(h.logout))
+	mux.Handle("GET /auth/oidc/start", h.public(h.oidcStart))
+	mux.Handle("GET /auth/oidc/callback", h.public(h.oidcCallback))
 	mux.Handle("GET /login/code", h.public(h.codeForm))
 	mux.Handle("POST /login/code", h.public(h.code))
 	mux.Handle("GET /logout", h.user(h.logout))
@@ -241,7 +243,7 @@ var errCSRF = errors.New("the form token is missing or stale; reload the page an
 // anonymous sends people to the login form in local mode and shows the
 // proxy-denied page in proxy-only mode.
 func (h *Web) anonymous(c *reqCtx) error {
-	if h.authn.LocalEnabled() {
+	if h.authn.LocalEnabled() || h.authn.OIDCEnabled() {
 		if c.r.Method != http.MethodGet {
 			return domain.ErrUnauthorized
 		}
