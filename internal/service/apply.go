@@ -487,3 +487,121 @@ func timesEqual(a, b *time.Time) bool {
 	}
 	return a.Equal(*b)
 }
+
+// requireOrgFile says who may export or apply a whole org: an org key, or
+// a person who administers the org. A project key never acts for the org.
+func requireOrgFile(sc domain.Scope) error {
+	switch {
+	case sc.OrgID == "":
+		return domain.ErrForbidden
+	case sc.IsKey():
+		if !sc.IsOrgKey() {
+			return domain.ErrForbidden
+		}
+		return nil
+	case !sc.InstanceAdmin && !sc.CanAdminOrg():
+		return domain.ErrForbidden
+	}
+	return nil
+}
+
+// ExportOrg writes every project of the org as one file; secrets need
+// write access, as for a project export.
+func (s *Service) ExportOrg(ctx context.Context, sc domain.Scope, secrets bool) (*apply.OrgFile, error) {
+	if err := requireOrgFile(sc); err != nil {
+		return nil, err
+	}
+	if secrets && !sc.CanEdit() {
+		return nil, domain.ErrForbidden
+	}
+	org, err := s.OrgByID(ctx, sc.OrgID)
+	if err != nil {
+		return nil, err
+	}
+	projects, err := s.ListProjects(ctx, sc)
+	if err != nil {
+		return nil, err
+	}
+	out := &apply.OrgFile{Version: 1, Org: org.Slug, Projects: []apply.ProjectEntry{}}
+	for _, p := range projects {
+		psc := sc
+		psc.ProjectID = p.ID
+		f, err := s.Export(ctx, psc, secrets)
+		if err != nil {
+			return nil, err
+		}
+		out.Projects = append(out.Projects, apply.EntryFrom(f))
+	}
+	return out, nil
+}
+
+// ApplyOrg brings every project named in the file to it, in one
+// transaction: a project that does not exist is created, projects the
+// file does not name are left alone, and no project is ever deleted.
+func (s *Service) ApplyOrg(ctx context.Context, sc domain.Scope, f *apply.OrgFile, o ApplyOptions) (*apply.OrgDiff, error) {
+	if err := requireOrgFile(sc); err != nil {
+		return nil, err
+	}
+	if !sc.CanEdit() {
+		return nil, domain.ErrForbidden
+	}
+	org, err := s.OrgByID(ctx, sc.OrgID)
+	if err != nil {
+		return nil, err
+	}
+	if f.Org != "" && f.Org != org.Slug {
+		return nil, validation("org", fmt.Sprintf("the file is for %s, this org is %s", f.Org, org.Slug))
+	}
+	seen := map[string]bool{}
+	for i, e := range f.Projects {
+		if !domain.ValidSlug(e.Slug) {
+			return nil, validation(fmt.Sprintf("projects[%d].slug", i), "must be lowercase letters, digits and dashes")
+		}
+		if seen[e.Slug] {
+			return nil, validation(fmt.Sprintf("projects[%d].slug", i), e.Slug+" is listed twice")
+		}
+		seen[e.Slug] = true
+	}
+	diff := &apply.OrgDiff{DryRun: o.DryRun, Org: org.Slug, Projects: []apply.ProjectDiff{}}
+	var touched []string
+	err = s.db.Tx(ctx, func(q *db.Queries) error {
+		tx := s.inTx(q)
+		for i, e := range f.Projects {
+			project, err := tx.ProjectBySlug(ctx, sc.OrgID, e.Slug)
+			created := false
+			if errors.Is(err, domain.ErrNotFound) {
+				name, tz := e.Name, e.Timezone
+				if tz == "" {
+					tz = "UTC"
+				}
+				project, err = tx.CreateProject(ctx, sc, sc.OrgID, e.Slug, name, tz)
+				created = true
+			}
+			if err != nil {
+				return prefixField(err, fmt.Sprintf("projects[%d].", i))
+			}
+			psc := sc
+			psc.ProjectID = project.ID
+			pd := apply.ProjectDiff{Slug: e.Slug, Created: created, Diff: apply.Diff{DryRun: o.DryRun, Created: []string{}, Updated: []string{}, Recreated: []string{}, Deleted: []string{}, Unchanged: []string{}}}
+			if err := tx.applyFile(ctx, psc, e.File(), o, &pd.Diff); err != nil {
+				return prefixField(err, fmt.Sprintf("projects[%d].", i))
+			}
+			diff.Projects = append(diff.Projects, pd)
+			touched = append(touched, project.ID)
+		}
+		if o.DryRun {
+			return errDryRun
+		}
+		return nil
+	})
+	if err != nil && !errors.Is(err, errDryRun) {
+		return nil, err
+	}
+	if !o.DryRun {
+		s.log.Info("apply org", "org_id", sc.OrgID, "projects", len(diff.Projects), "changes", diff.Changes(), "actor", sc.Actor)
+		for _, id := range touched {
+			s.bus.Publish(engineChanged(id))
+		}
+	}
+	return diff, nil
+}

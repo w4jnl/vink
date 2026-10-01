@@ -416,13 +416,16 @@ func Decode(data []byte) (any, error) {
 }
 
 var (
-	compiled *jsonschema.Schema
+	compiled = map[string]*jsonschema.Schema{}
 	printer  = message.NewPrinter(language.English)
 )
 
-func schema() (*jsonschema.Schema, error) {
-	if compiled != nil {
-		return compiled, nil
+// schema compiles one branch of the document schema: project_file or
+// org_file. Validating the branch the document asks for keeps the
+// errors about that shape alone.
+func schema(branch string) (*jsonschema.Schema, error) {
+	if sch, ok := compiled[branch]; ok {
+		return sch, nil
 	}
 	var doc any
 	if err := json.Unmarshal(schemaJSON, &doc); err != nil {
@@ -432,17 +435,32 @@ func schema() (*jsonschema.Schema, error) {
 	if err := c.AddResource("apply-schema.json", doc); err != nil {
 		return nil, err
 	}
-	sch, err := c.Compile("apply-schema.json")
+	sch, err := c.Compile("apply-schema.json#/$defs/" + branch)
 	if err != nil {
 		return nil, err
 	}
-	compiled = sch
+	compiled[branch] = sch
 	return sch, nil
 }
 
-// Validate checks a decoded document against the schema.
+// IsOrgDocument reports whether a decoded document is an org file: it
+// lists projects rather than describing one.
+func IsOrgDocument(doc any) bool {
+	m, ok := doc.(map[string]any)
+	if !ok {
+		return false
+	}
+	_, has := m["projects"]
+	return has
+}
+
+// Validate checks a decoded document against the schema of its shape.
 func Validate(doc any) error {
-	sch, err := schema()
+	branch := "project_file"
+	if IsOrgDocument(doc) {
+		branch = "org_file"
+	}
+	sch, err := schema(branch)
 	if err != nil {
 		return err
 	}
@@ -478,11 +496,15 @@ func summarise(ve *jsonschema.ValidationError) string {
 }
 
 // Parse decodes YAML or JSON into a File. With check, the document is
-// validated against the schema first.
+// validated against the schema first. An org file is refused: use
+// ParseOrg, or ParseAny when either shape may arrive.
 func Parse(data []byte, check bool) (*File, error) {
 	doc, err := Decode(data)
 	if err != nil {
 		return nil, err
+	}
+	if IsOrgDocument(doc) {
+		return nil, errors.New("this is an org file (it lists projects); apply it with an org key")
 	}
 	if check {
 		if err := Validate(doc); err != nil {
@@ -519,4 +541,129 @@ func Encode(f *File) ([]byte, error) {
 		return nil, err
 	}
 	return buf.Bytes(), nil
+}
+
+// OrgFile is the apply document of a whole org: one entry per project,
+// each the same shape as a project file. `vink export --org` writes it
+// and an org key applies it.
+type OrgFile struct {
+	Version  int            `json:"version" yaml:"version"`
+	Org      string         `json:"org" yaml:"org"`
+	Projects []ProjectEntry `json:"projects" yaml:"projects"`
+}
+
+// ProjectEntry is one project inside an org file.
+type ProjectEntry struct {
+	Slug        string        `json:"slug" yaml:"slug"`
+	Name        string        `json:"name,omitempty" yaml:"name,omitempty"`
+	Timezone    string        `json:"timezone,omitempty" yaml:"timezone,omitempty"`
+	Channels    []Channel     `json:"channels,omitempty" yaml:"channels,omitempty"`
+	Routes      []Route       `json:"routes,omitempty" yaml:"routes,omitempty"`
+	Maintenance []Maintenance `json:"maintenance,omitempty" yaml:"maintenance,omitempty"`
+	Monitors    []Monitor     `json:"monitors,omitempty" yaml:"monitors,omitempty"`
+	StatusPages []StatusPage  `json:"status_pages,omitempty" yaml:"status_pages,omitempty"`
+}
+
+// File is the entry as a project file, the shape the project apply takes.
+func (e ProjectEntry) File() *File {
+	return &File{
+		Version: 1, Project: &Project{Slug: e.Slug, Name: e.Name, Timezone: e.Timezone},
+		Channels: e.Channels, Routes: e.Routes, Maintenance: e.Maintenance, Monitors: e.Monitors, StatusPages: e.StatusPages,
+	}
+}
+
+// EntryFrom turns an exported project file into an org file entry.
+func EntryFrom(f *File) ProjectEntry {
+	e := ProjectEntry{Channels: f.Channels, Routes: f.Routes, Maintenance: f.Maintenance, Monitors: f.Monitors, StatusPages: f.StatusPages}
+	if f.Project != nil {
+		e.Slug, e.Name, e.Timezone = f.Project.Slug, f.Project.Name, f.Project.Timezone
+	}
+	return e
+}
+
+// ParseOrg decodes an org file, validated against the schema when check
+// is set. A project file is refused.
+func ParseOrg(data []byte, check bool) (*OrgFile, error) {
+	doc, err := Decode(data)
+	if err != nil {
+		return nil, err
+	}
+	if !IsOrgDocument(doc) {
+		return nil, errors.New("this is a project file; an org file lists projects")
+	}
+	if check {
+		if err := Validate(doc); err != nil {
+			return nil, err
+		}
+	}
+	raw, err := json.Marshal(doc)
+	if err != nil {
+		return nil, err
+	}
+	var f OrgFile
+	if err := json.NewDecoder(bytes.NewReader(raw)).Decode(&f); err != nil {
+		return nil, fmt.Errorf("parse: %w", err)
+	}
+	if f.Version == 0 {
+		f.Version = 1
+	}
+	if f.Version != 1 {
+		return nil, fmt.Errorf("version %d is not supported; this vink writes version 1", f.Version)
+	}
+	return &f, nil
+}
+
+// ParseAny decodes either shape; exactly one of the results is set.
+func ParseAny(data []byte, check bool) (*File, *OrgFile, error) {
+	doc, err := Decode(data)
+	if err != nil {
+		return nil, nil, err
+	}
+	if IsOrgDocument(doc) {
+		o, err := ParseOrg(data, check)
+		return nil, o, err
+	}
+	f, err := Parse(data, check)
+	return f, nil, err
+}
+
+// EncodeOrg writes the org file as YAML.
+func EncodeOrg(f *OrgFile) ([]byte, error) {
+	var buf bytes.Buffer
+	enc := yaml.NewEncoder(&buf)
+	enc.SetIndent(2)
+	if err := enc.Encode(f); err != nil {
+		return nil, err
+	}
+	if err := enc.Close(); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+// OrgDiff is what an org apply did, per project.
+type OrgDiff struct {
+	DryRun   bool          `json:"dry_run"`
+	Org      string        `json:"org"`
+	Projects []ProjectDiff `json:"projects"`
+}
+
+// ProjectDiff is one project's diff inside an org apply; Created says
+// the project itself was created.
+type ProjectDiff struct {
+	Slug    string `json:"slug"`
+	Created bool   `json:"project_created"`
+	Diff
+}
+
+// Changes counts what is not unchanged across every project.
+func (d *OrgDiff) Changes() int {
+	n := 0
+	for _, p := range d.Projects {
+		n += p.Changes()
+		if p.Created {
+			n++
+		}
+	}
+	return n
 }
