@@ -295,7 +295,9 @@ type drawerData struct {
 	YAML                    string
 }
 
-type obsRow struct{ State, Clock, Abs, Text, Right string }
+// obsRow is one line of the drawer's observation list; Title is the
+// hover text on the middle column, the user agent of a ping.
+type obsRow struct{ State, Clock, Abs, Text, Title, Right string }
 
 type eventRow struct{ State, Ago, Abs, Text string }
 
@@ -404,6 +406,11 @@ func obsRowFor(o *domain.Observation, loc *time.Location, match string) obsRow {
 	} else if o.HasBody {
 		row.Right = "body"
 	}
+	// where the ping came from: the job's host once the proxy is trusted
+	if o.RemoteAddr != "" {
+		row.Text += " · from " + o.RemoteAddr
+	}
+	row.Title = o.UserAgent
 	return row
 }
 

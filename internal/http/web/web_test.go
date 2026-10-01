@@ -369,13 +369,14 @@ func TestDrawerAndActions(t *testing.T) {
 	tgt, _ := e.svc.ResolvePing(ctx, e.project.PingKey, "nightly", "", false)
 	_, _, _ = e.svc.RecordPing(ctx, tgt, service.PingObservation{Signal: domain.SignalStart, RunID: "r1"})
 	e.now = e.now.Add(4 * time.Minute)
-	_, _, _ = e.svc.RecordPing(ctx, tgt, service.PingObservation{Signal: domain.SignalOK, RunID: "r1", Body: []byte("x")})
+	_, _, _ = e.svc.RecordPing(ctx, tgt, service.PingObservation{Signal: domain.SignalOK, RunID: "r1", Body: []byte("x"), RemoteAddr: "192.168.30.5", UserAgent: "curl/8.4.0"})
 	full := e.get(projPath+"/m/nightly", false)
 	if full.code != 200 {
 		t.Fatalf("drawer page: %d", full.code)
 	}
 	full.has(t, `<title>Nightly · vink</title>`, `class="vk-page" id="page"`, `<aside class="vk-drawer" id="drawer">`, `aria-current="true"`, `vk-drawer__title">Nightly`, e.project.PingKey+"/<b>nightly</b>", "every 1h · grace 5m · due in", "Last 24 hours", `vk-obs`, "4m0s", "new → up · first ok",
-		`data-drawer-close`, `>Edit<`, `>Pause<`, "As YAML", "slug", `vk-codebox`)
+		`data-drawer-close`, `>Edit<`, `>Pause<`, "As YAML", "slug", `vk-codebox`,
+		`<span title="curl/8.4.0">ok · from 192.168.30.5</span><span>4m0s</span>`, `<span>start</span><span></span>`)
 	partial := e.get(projPath+"/m/nightly", true)
 	if !strings.HasPrefix(partial.body, `<div id="drawer-body"`) || strings.Contains(partial.body, "<html") {
 		t.Errorf("htmx drawer must be the partial only")
