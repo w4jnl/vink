@@ -1,8 +1,10 @@
 {{define "content"}}<div class="vk-page{{if not .Drawer}} vk-page--full{{end}}" id="page"><main class="vk-main" id="admin">
 <div class="vk-main__head"><h1>{{.Org}}</h1><span class="vk-muted vk-mono">org settings</span></div>
 {{tabs .Tabs .Tab "Org settings"}}
-<div id="tab">{{if eq .Tab "agents"}}{{template "admin-agents" .}}{{else if eq .Tab "projects"}}{{template "admin-projects" .}}{{else if eq .Tab "members"}}{{template "admin-members" .}}{{else}}{{template "admin-tab" .}}{{end}}</div>
+<div id="tab">{{if eq .Tab "agents"}}{{template "admin-agents" .}}{{else if eq .Tab "projects"}}{{template "admin-projects" .}}{{else if eq .Tab "members"}}{{template "admin-members" .}}{{else if eq .Tab "audit"}}{{template "admin-audit" .}}{{else}}{{template "admin-tab" .}}{{end}}</div>
 </main>{{if .Drawer}}<aside class="vk-drawer" id="drawer">{{template "agent-drawer" .Drawer}}</aside>{{end}}</div>{{end}}
+
+{{define "admin-audit"}}<div class="vk-tabhead"><p class="vk-lede">{{.Lede}}</p></div>{{template "audit-log" .Audit}}{{end}}
 
 {{define "admin-tab"}}<div class="vk-tabhead"><p class="vk-lede">{{.Lede}}</p></div><div class="vk-empty"><h3>Not yet</h3><p>{{.ComingSoon}}</p></div>{{end}}
 

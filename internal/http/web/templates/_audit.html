@@ -1,0 +1,7 @@
+{{define "audit-log"}}<form class="vk-filterbar" method="get" action="{{.Path}}" hx-get="{{.Path}}" hx-target="#tab" hx-trigger="submit, change" hx-push-url="true"><input type="hidden" name="kind" value="{{.Kinds}}"><div class="vk-chips">{{range .Chips}}{{chip .}}{{end}}</div><div class="vk-actions">{{.Select}}{{.Period}}</div></form>
+{{range .Groups}}<h2 class="vk-listhead">{{.Label}} <span>{{.Date}}</span></h2>
+<div class="vk-audits">
+{{range .Rows}}{{.}}
+{{end}}</div>
+{{end}}{{if .Empty}}<div class="vk-empty"><h3>{{.Empty}}</h3><p>Changes, sign-ins and state flips land here as they happen.</p></div>{{end}}
+{{if .Older}}<div class="vk-actions">{{button (dict "Label" "Older" "Href" .Older)}}</div>{{end}}{{end}}

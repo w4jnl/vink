@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/w4jnl/vink/internal/audit"
 	"github.com/w4jnl/vink/internal/auth"
 	"github.com/w4jnl/vink/internal/checks"
 	"github.com/w4jnl/vink/internal/config"
@@ -1431,7 +1432,7 @@ func TestInstanceAdminPages(t *testing.T) {
 	}
 	orgs := e.get("/admin/orgs", false)
 	orgs.has(t, `<h1>Instance</h1><span class="vk-muted vk-mono">vink `, ` · localhost:8080</span>`,
-		`<nav class="vk-tabs" aria-label="Instance"><a class="vk-tab" href="/admin/orgs" aria-current="page">Orgs<span class="vk-tab__n">2</span></a><a class="vk-tab" href="/admin/users">Users<span class="vk-tab__n">2</span></a><a class="vk-tab" href="/admin/server">Server</a></nav>`,
+		`<nav class="vk-tabs" aria-label="Instance"><a class="vk-tab" href="/admin/orgs" aria-current="page">Orgs<span class="vk-tab__n">2</span></a><a class="vk-tab" href="/admin/users">Users<span class="vk-tab__n">2</span></a><a class="vk-tab" href="/admin/server">Server</a><a class="vk-tab" href="/admin/audit">Audit log</a></nav>`,
 		`Instance admins create orgs and set their quotas.`, `href="/admin/orgs?add=1">Add org</a>`,
 		`<a class="vk-srow__link" href="/o/homelab/admin/members">homelab</a></span><span class="vk-srow__sub" title="1 project · no owner">1 project · no owner</span></div><span class="vk-srow__cell vk-srow__cell--l"><span class="vk-usage"><span class="vk-usage__text">0 monitors · no quota</span></span></span>`,
 		`href="/o/acme/admin/members">acme</a>`, `href="/admin/orgs?edit=homelab">Edit</a>`, `<p class="vk-field__hint">Only an org without projects can be deleted.</p>`)
@@ -1569,4 +1570,140 @@ func TestInstanceAdminPages(t *testing.T) {
 	}
 	e.now = e.now.Add(48 * time.Hour)
 	e.get("/admin/server", false).has(t, `<b class="vk-notice__title">No backup for 2 d.</b>`)
+}
+
+func TestAuditLogPages(t *testing.T) {
+	e := newEnv(t)
+	ctx := audit.WithRequest(context.Background(), audit.Request{Via: audit.ViaWeb, RequestID: "01REQ", RemoteAddr: "10.0.4.12"})
+	admin := domain.Scope{InstanceAdmin: true, Role: domain.RoleOwner, Actor: "user:root"}
+	j, _ := e.svc.UserBySubject(ctx, "j")
+	jsc := domain.Scope{OrgID: e.org.ID, ProjectID: e.project.ID, UserID: j.ID, Role: domain.RoleAdmin, Actor: "user:j"}
+	bob, _ := e.svc.CreateLocalUser(ctx, admin, "bob", "bob@example.com", "Bob Jansen", "correct horse", false)
+	if err := e.svc.SetMembership(ctx, jsc, bob.ID, e.org.ID, domain.RoleMember); err != nil {
+		t.Fatal(err)
+	}
+	// a monitor made, changed and pinged: two change rows and a state flip
+	if _, err := e.svc.CreateMonitor(ctx, jsc, &domain.Monitor{Slug: "api", Name: "API", Kind: domain.KindHTTP, Pull: &domain.PullSpec{Interval: domain.MustDuration("120s"), HTTP: &domain.HTTPCheck{URL: "https://api.example.com"}}}); err != nil {
+		t.Fatal(err)
+	}
+	e.now = e.now.Add(time.Minute)
+	if _, err := e.svc.UpdateMonitor(ctx, jsc, "api", &domain.Monitor{Name: "API", Pull: &domain.PullSpec{Interval: domain.MustDuration("30s"), HTTP: &domain.HTTPCheck{URL: "https://api.example.com"}}}); err != nil {
+		t.Fatal(err)
+	}
+	e.monitor("nightly")
+	tgt, _ := e.svc.ResolvePing(ctx, e.project.PingKey, "nightly", "", false)
+	e.now = e.now.Add(time.Minute)
+	_, _, _ = e.svc.RecordPing(ctx, tgt, service.PingObservation{Signal: domain.SignalOK, RemoteAddr: "192.168.30.5"})
+	root := "/o/homelab/admin/audit"
+
+	// the org admin sees everything, newest first, in day groups
+	all := e.get(root, false)
+	if all.code != 200 {
+		t.Fatalf("audit tab: %d", all.code)
+	}
+	all.has(t, `<a class="vk-tab" href="/o/homelab/admin/audit" aria-current="page">Audit log</a></nav>`, `Everything that happened in homelab:`,
+		`<form class="vk-filterbar" method="get" action="/o/homelab/admin/audit" hx-get="/o/homelab/admin/audit" hx-target="#tab" hx-trigger="submit, change" hx-push-url="true"><input type="hidden" name="kind" value="">`,
+		`name="kind" value="changes">changes<span class="vk-chip__n">5</span>`, `name="kind" value="access">access<span class="vk-chip__n">3</span>`, `name="kind" value="state">state<span class="vk-chip__n">1</span>`,
+		`<select class="vk-input" name="project" aria-label="Project"><option value="" selected>All projects</option><option value="prod">prod</option></select>`,
+		`<select class="vk-input" name="actor" aria-label="Who"><option value="" selected>Anyone</option><option value="j">j</option><option value="test">test</option><option value="vink">vink</option></select>`,
+		`<div class="vk-seg vk-seg--mono" role="radiogroup" aria-label="Period">`, `<input type="radio" name="period" value="7d" checked>`,
+		`<h2 class="vk-listhead">Today <span>Sun 27 Sep</span></h2>`,
+		`<span class="vk-audit__time" title="Sun 27 Sep 14:02:00 CEST">14:02</span><span class="vk-audit__who"><i class="vk-glyph vk-glyph--up vk-audit__glyph" aria-hidden="true"></i><span>vink</span></span><span class="vk-audit__what"><code>nightly</code> is up</span><span class="vk-audit__scope"><span class="vk-tag">prod</span></span><span class="vk-audit__via">ping</span>`,
+		`<span class="vk-audit__what">changed monitor <code>api</code>: interval</span><span class="vk-audit__scope"><span class="vk-tag">prod</span></span><span class="vk-audit__via">web</span></summary><div class="vk-audit__body"><pre class="vk-diff">`,
+		`<span class="vk-diff__line vk-diff__line--del"><i aria-hidden="true">-</i>interval: `, `</span><span class="vk-diff__line vk-diff__line--add"><i aria-hidden="true">+</i>interval: 30s</span>`,
+		`<dl class="vk-kv"><dt>request</dt><dd>01REQ</dd><dt>from</dt><dd>10.0.4.12</dd></dl>`,
+		`<span class="vk-audit__what">added bob as member</span><span class="vk-audit__scope"><span class="vk-tag">homelab</span></span>`, `created project <code>prod</code>`,
+		`<span class="vk-avatar" aria-hidden="true">J</span><span>j</span>`)
+	if strings.Count(all.body, `<details class="vk-audit" open>`) != 1 {
+		t.Error("exactly the newest row with a body opens")
+	}
+
+	// filters are links: kind, who, project, period; a strange project is a 404
+	access := e.get(root+"?kind=access", false)
+	access.has(t, `<input type="hidden" name="kind" value="access">`, `aria-pressed="true" name="kind" value=""`, `added bob as member`)
+	if strings.Contains(access.body, "changed monitor") || strings.Contains(access.body, "is up") {
+		t.Error("access filter shows other kinds")
+	}
+	e.get(root+"?kind=changes,state&actor=j", false).has(t, `created monitor <code>api</code>`, `<option value="j" selected>j</option>`)
+	if r := e.get(root+"?project=nope", false); r.code != 404 {
+		t.Errorf("unknown project: %d", r.code)
+	}
+	if r := e.get(root+"?period=24h&project=prod", false); r.code != 200 || !strings.Contains(r.body, `value="24h" checked`) || !strings.Contains(r.body, `<option value="prod" selected>prod</option>`) {
+		t.Errorf("period and project: %d", r.code)
+	}
+	e.now = e.now.Add(26 * time.Hour)
+	if r := e.get(root+"?period=24h", false); !strings.Contains(r.body, `<h3>Nothing in the last 24 hours</h3>`) {
+		t.Error("empty period")
+	}
+	e.get(root, false).has(t, `<h2 class="vk-listhead">Yesterday <span>Sun 27 Sep</span></h2>`)
+	if r := e.get(root+"?kind=state", true); strings.Contains(r.body, "<html") || !strings.HasPrefix(r.body, `<div class="vk-tabhead">`) {
+		t.Error("htmx request renders the whole page")
+	}
+
+	// a member sees project rows only, and only this tab
+	rec := httptest.NewRecorder()
+	if _, err := e.authn.Login(rec, httptest.NewRequest("POST", "/login", nil), "bob", "correct horse"); err != nil {
+		t.Fatal(err)
+	}
+	jCookie := e.cookie
+	e.cookie = rec.Result().Cookies()[0]
+	mine := e.get(root, false)
+	if mine.code != 200 {
+		t.Fatalf("member audit: %d", mine.code)
+	}
+	mine.has(t, `<nav class="vk-tabs" aria-label="Org settings"><a class="vk-tab" href="/o/homelab/admin/audit" aria-current="page">Audit log</a></nav>`, `Everything that happened in your projects in homelab:`, `changed monitor <code>api</code>`, `<code>nightly</code> is up`)
+	for _, s := range []string{"added bob as member", "created the account", "signed in", `name="kind" value="access">access<span class="vk-chip__n">3</span>`} {
+		if strings.Contains(mine.body, s) {
+			t.Errorf("member sees %q", s)
+		}
+	}
+	if r := e.get("/o/homelab/admin/members", false); r.code != 403 {
+		t.Errorf("member on members: %d", r.code)
+	}
+	if r := e.get("/o/acme/admin/audit", false); r.code != 404 {
+		t.Errorf("another org's log: %d", r.code)
+	}
+	if r := e.get("/admin/audit", false); r.code != 404 {
+		t.Errorf("instance log as member: %d", r.code)
+	}
+	e.cookie = jCookie
+	if r := e.get("/o/acme/admin/audit", false); r.code != 404 {
+		t.Errorf("another org's log as org admin: %d", r.code)
+	}
+
+	// 50 rows a page, then Older
+	for i := 0; i < 60; i++ {
+		e.now = e.now.Add(time.Second)
+		_ = e.svc.RecordSignIn(ctx, j, "j", "password", true)
+	}
+	first := e.get(root+"?kind=access", false)
+	if strings.Count(first.body, `signed in with a password`) != 50 {
+		t.Fatalf("rows on the first page: %d", strings.Count(first.body, `signed in with a password`))
+	}
+	older := regexp.MustCompile(`href="(/o/homelab/admin/audit\?[^"]*before=[^"]*)">Older</a>`).FindStringSubmatch(first.body)
+	if older == nil {
+		t.Fatal("no Older link")
+	}
+	second := e.get(strings.ReplaceAll(older[1], "&amp;", "&"), false)
+	// 60 recorded here plus the two browser sign-ins above
+	if second.code != 200 || strings.Count(second.body, `signed in with a password`) != 12 || strings.Contains(second.body, ">Older</a>") {
+		t.Fatalf("second page: %d, %d rows", second.code, strings.Count(second.body, `signed in with a password`))
+	}
+
+	// the instance-wide list, with an org select and org/project tags
+	if err := e.svc.SetInstanceAdmin(ctx, admin, "j", true); err != nil {
+		t.Fatal(err)
+	}
+	inst := e.get("/admin/audit?kind=changes,state", false)
+	if inst.code != 200 {
+		t.Fatalf("instance audit: %d", inst.code)
+	}
+	inst.has(t, `aria-current="page">Audit log</a>`, `across orgs`, `<select class="vk-input" name="org" aria-label="Org"><option value="" selected>All orgs</option><option value="acme">acme</option><option value="homelab">homelab</option></select>`,
+		`<option value="prod">acme/prod</option><option value="prod">homelab/prod</option>`, `<span class="vk-tag">homelab/prod</span>`, `created project <code>prod</code>`)
+	if r := e.get("/admin/audit?org=acme&kind=changes", false); r.code != 200 || !strings.Contains(r.body, `<span class="vk-tag">acme/prod</span>`) || strings.Contains(r.body, "homelab/prod") {
+		t.Errorf("org filter: %d", r.code)
+	}
+	if r := e.get("/admin/audit?org=nope", false); r.code != 404 {
+		t.Errorf("unknown org: %d", r.code)
+	}
 }

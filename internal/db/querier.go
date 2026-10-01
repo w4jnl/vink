@@ -147,7 +147,8 @@ type Querier interface {
 	ListAllProjects(ctx context.Context) ([]ListAllProjectsRow, error)
 	// tenancy: root (the service scopes by org_id and project_id below)
 	// The log: admin actions from audit and state flips from events, newest
-	// first, 51 rows so the caller knows whether an older page exists.
+	// first, 51 rows so the caller knows whether an older page exists. Sign-ins
+	// carry no org; an org's log shows those of its members.
 	ListAudit(ctx context.Context, arg ListAuditParams) ([]ListAuditRow, error)
 	// tenancy: root (the service scopes by org_id and project_id)
 	ListAuditActors(ctx context.Context, arg ListAuditActorsParams) ([]string, error)

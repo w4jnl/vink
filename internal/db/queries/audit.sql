@@ -6,10 +6,11 @@ VALUES (sqlc.arg(id), sqlc.arg(at), sqlc.arg(actor), sqlc.arg(actor_kind), sqlc.
 -- name: ListAudit :many
 -- tenancy: root (the service scopes by org_id and project_id below)
 -- The log: admin actions from audit and state flips from events, newest
--- first, 51 rows so the caller knows whether an older page exists.
+-- first, 51 rows so the caller knows whether an older page exists. Sign-ins
+-- carry no org; an org's log shows those of its members.
 SELECT a.id, a.at, 'audit' AS source, a.actor, a.actor_kind, a.actor_id, a.org_id, a.project_id, a.act, a.target, a.target_id, a.spec_before, a.spec_after, a.detail, a.via, a.request_id, a.remote_addr
 FROM audit a
-WHERE (sqlc.arg(org_id) = '' OR a.org_id = sqlc.arg(org_id))
+WHERE (sqlc.arg(org_id) = '' OR a.org_id = sqlc.arg(org_id) OR (a.org_id IS NULL AND a.act LIKE 'user.sign%' AND a.target IN (SELECT u.subject FROM users u JOIN memberships m ON m.user_id = u.id WHERE m.org_id = sqlc.arg(org_id))))
   AND (sqlc.arg(project_id) = '' OR a.project_id = sqlc.arg(project_id))
   AND (sqlc.arg(org_only) = 0 OR a.project_id IS NULL)
   AND (sqlc.arg(project_only) = 0 OR a.project_id IS NOT NULL)
@@ -38,10 +39,10 @@ LIMIT 51;
 SELECT
   CAST(COALESCE(SUM(CASE WHEN act LIKE 'user.%' OR act LIKE 'member.%' OR act LIKE 'invite.%' OR act LIKE '%key.%' THEN 1 ELSE 0 END), 0) AS INTEGER) AS access,
   CAST(COALESCE(SUM(CASE WHEN act LIKE 'user.%' OR act LIKE 'member.%' OR act LIKE 'invite.%' OR act LIKE '%key.%' THEN 0 ELSE 1 END), 0) AS INTEGER) AS changes
-FROM audit
-WHERE (sqlc.arg(org_id) = '' OR org_id = sqlc.arg(org_id))
-  AND (sqlc.arg(project_id) = '' OR project_id = sqlc.arg(project_id))
-  AND (sqlc.arg(org_only) = 0 OR project_id IS NULL)
+FROM audit a
+WHERE (sqlc.arg(org_id) = '' OR a.org_id = sqlc.arg(org_id) OR (a.org_id IS NULL AND a.act LIKE 'user.sign%' AND a.target IN (SELECT u.subject FROM users u JOIN memberships m ON m.user_id = u.id WHERE m.org_id = sqlc.arg(org_id))))
+  AND (sqlc.arg(project_id) = '' OR a.project_id = sqlc.arg(project_id))
+  AND (sqlc.arg(org_only) = 0 OR a.project_id IS NULL)
   AND (sqlc.arg(project_only) = 0 OR project_id IS NOT NULL)
   AND at >= sqlc.arg(since);
 
@@ -54,9 +55,9 @@ WHERE (sqlc.arg(org_id) = '' OR p.org_id = sqlc.arg(org_id))
 
 -- name: ListAuditActors :many
 -- tenancy: root (the service scopes by org_id and project_id)
-SELECT DISTINCT actor FROM audit
-WHERE (sqlc.arg(org_id) = '' OR org_id = sqlc.arg(org_id))
-  AND (sqlc.arg(project_id) = '' OR project_id = sqlc.arg(project_id))
+SELECT DISTINCT a.actor FROM audit a
+WHERE (sqlc.arg(org_id) = '' OR a.org_id = sqlc.arg(org_id) OR (a.org_id IS NULL AND a.act LIKE 'user.sign%' AND a.target IN (SELECT u.subject FROM users u JOIN memberships m ON m.user_id = u.id WHERE m.org_id = sqlc.arg(org_id))))
+  AND (sqlc.arg(project_id) = '' OR a.project_id = sqlc.arg(project_id))
   AND at >= sqlc.arg(since)
 ORDER BY actor;
 

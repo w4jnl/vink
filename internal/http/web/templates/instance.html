@@ -3,8 +3,10 @@
 {{tabs .Tabs .Tab "Instance"}}
 <div id="tab"><div class="vk-tabhead"><p class="vk-lede">{{.Lede}}</p>{{if and (eq .Tab "orgs") (not .OrgPanel)}}{{button (dict "Label" "Add org" "Href" "/admin/orgs?add=1")}}{{end}}</div>
 {{if .Flash}}{{notice .Tone "" .Flash ""}}{{end}}
-{{if eq .Tab "orgs"}}{{template "instance-orgs" .}}{{else if eq .Tab "users"}}{{template "instance-users" .}}{{else}}{{template "instance-server" .}}{{end}}</div>
+{{if eq .Tab "orgs"}}{{template "instance-orgs" .}}{{else if eq .Tab "users"}}{{template "instance-users" .}}{{else if eq .Tab "audit"}}{{template "instance-audit" .}}{{else}}{{template "instance-server" .}}{{end}}</div>
 </main></div>{{end}}
+
+{{define "instance-audit"}}<div class="vk-tabhead"><p class="vk-lede">{{.Lede}}</p></div>{{if .Flash}}{{notice .Tone "" .Flash ""}}{{end}}{{template "audit-log" .Audit}}{{end}}
 
 {{define "instance-orgs"}}{{if .OrgPanel}}{{template "org-panel" .OrgPanel}}{{end}}
 <div class="vk-srows">{{range .OrgRows}}{{settingsrow (dict "Title" .Slug "Sub" .Sub "Href" .Href "Muted" .Muted "Cells" .Cells "Actions" .Actions)}}{{else}}<div class="vk-empty"><h3>No orgs</h3><p>Add one; its first owner invites the rest.</p></div>{{end}}</div>

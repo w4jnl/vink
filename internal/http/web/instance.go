@@ -19,7 +19,7 @@ import (
 // Instance admin: /admin/{orgs|users|server}, instance admins only. Anyone
 // else gets a 404, the way other tenants' pages do.
 
-var instanceTabs = []ui.Tab{{ID: "orgs", Label: "Orgs"}, {ID: "users", Label: "Users"}, {ID: "server", Label: "Server"}}
+var instanceTabs = []ui.Tab{{ID: "orgs", Label: "Orgs"}, {ID: "users", Label: "Users"}, {ID: "server", Label: "Server"}, {ID: "audit", Label: "Audit log"}}
 
 // ServerFacts are the read-only facts the Server tab shows; vink serve
 // fills them from its config and loops.
@@ -66,6 +66,8 @@ type instanceData struct {
 	// server
 	Backup *noteData
 	Facts  *ServerFacts
+	// audit
+	Audit *auditView
 }
 
 type orgRow struct {
@@ -131,6 +133,8 @@ func (h *Web) instanceData(c *reqCtx, tab string) (instanceData, error) {
 		d.Lede = "Instance admins create orgs and set their quotas. Everything inside an org is up to its owners and admins."
 	case "users":
 		d.Lede = "Everyone who has signed in or accepted an invite. Roles are set in each org; here you make instance admins, reset local sign-ins and disable accounts."
+	case "audit":
+		d.Lede = "Everything that happened on this instance, across orgs: changes made by people and API keys, sign-ins and access changes, and every state flip."
 	case "server":
 		d.Lede = `Read-only. Change these in vink.toml and restart; <span class="vk-mono">vink serve --print-config</span> prints the effective config with secrets redacted.`
 	}
@@ -170,6 +174,8 @@ func (h *Web) instanceTab(c *reqCtx) error {
 		return h.usersTab(c, http.StatusOK, panel)
 	case "server":
 		return h.serverTab(c)
+	case "audit":
+		return h.instanceAudit(c)
 	}
 	return domain.NotFound("page")
 }

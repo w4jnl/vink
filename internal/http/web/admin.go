@@ -11,7 +11,7 @@ import (
 // and owners. A member of another org gets a 404, a member of this org
 // without the role a 403.
 
-var orgTabs = []ui.Tab{{ID: "members", Label: "Members"}, {ID: "projects", Label: "Projects"}, {ID: "agents", Label: "Agents"}}
+var orgTabs = []ui.Tab{{ID: "members", Label: "Members"}, {ID: "projects", Label: "Projects"}, {ID: "agents", Label: "Agents"}, {ID: "audit", Label: "Audit log"}}
 
 // orgAdmin resolves the org from the path and binds an org scope.
 func (h *Web) orgAdmin(fn handlerFn) http.Handler {
@@ -32,6 +32,23 @@ func (h *Web) orgAdmin(fn handlerFn) http.Handler {
 	})
 }
 
+// orgMember resolves the org and binds the member's scope; every member
+// may pass, the handler decides what they see.
+func (h *Web) orgMember(fn handlerFn) http.Handler {
+	return h.user(func(c *reqCtx) error {
+		org, err := h.svc.OrgBySlug(c.r.Context(), c.r.PathValue("org"))
+		if err != nil {
+			return domain.NotFound("org")
+		}
+		sc, err := h.authn.OrgScope(c.principal, org)
+		if err != nil {
+			return err
+		}
+		c.org, c.scope = org, sc
+		return fn(c)
+	})
+}
+
 func (c *reqCtx) orgPath() string { return "/o/" + c.org.Slug + "/admin" }
 
 type adminData struct {
@@ -44,6 +61,8 @@ type adminData struct {
 	ComingSoon string
 	// Drawer is the agent drawer when one is open; the page then splits.
 	Drawer *agentDrawer
+	// Audit is the audit log tab.
+	Audit *auditView
 }
 
 func (h *Web) orgAdminHome(c *reqCtx) error {
@@ -64,6 +83,12 @@ func (h *Web) adminData(c *reqCtx, tab string) (adminData, error) {
 		if p.OrgSlug == c.org.Slug {
 			n++
 		}
+	}
+	// members and viewers get the audit tab alone; the rest is for admins
+	if !c.scope.CanAdminOrg() {
+		d.Tabs = []ui.Tab{{ID: "audit", Label: "Audit log", Href: c.orgPath() + "/audit"}}
+		d.Lede = auditLede(c.org.Slug, false)
+		return d, nil
 	}
 	agents, err := h.svc.ListAgents(c.r.Context(), c.scope)
 	if err != nil {
@@ -92,8 +117,17 @@ func (h *Web) adminData(c *reqCtx, tab string) (adminData, error) {
 		d.Lede = "A project holds monitors, channels, routes and keys. Roles in " + c.org.Slug + " apply to every project."
 	case "agents":
 		d.Lede = "Agents run pull checks from networks vink cannot reach. An agent dials out to vink over WebSocket, keeps nothing on disk and never listens on a port."
+	case "audit":
+		d.Lede = auditLede(c.org.Slug, true)
 	}
 	return d, nil
+}
+
+func auditLede(org string, all bool) string {
+	if !all {
+		return "Everything that happened in your projects in " + org + ": changes made by people and API keys, and every state flip."
+	}
+	return "Everything that happened in " + org + ": changes made by people and API keys, sign-ins and access changes, and every state flip."
 }
 
 func (h *Web) orgAdminTab(c *reqCtx) error {
