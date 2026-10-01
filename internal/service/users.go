@@ -219,6 +219,26 @@ func (s *Service) EnsureExternalUser(ctx context.Context, subject, email, name, 
 	return userFromRow(created), nil
 }
 
+// AdoptProviderUser moves a proxy account to OIDC on its first OIDC
+// sign-in: both are the same identity behind the provider, and a proxy
+// account has no password to protect. Local accounts are never adopted.
+func (s *Service) AdoptProviderUser(ctx context.Context, u *domain.User, source string) error {
+	if u.Source == source {
+		return nil
+	}
+	if u.Source == "local" {
+		return domain.ErrForbidden
+	}
+	return s.db.Tx(ctx, func(q *db.Queries) error {
+		if err := q.SetUserSource(ctx, db.SetUserSourceParams{Source: source, ID: u.ID}); err != nil {
+			return err
+		}
+		from := u.Source
+		u.Source = source
+		return s.record(ctx, q, domain.Scope{}, audit.Entry{Action: "user.source", Target: u.Subject, TargetID: u.ID, Detail: map[string]any{"from": from, "to": source}})
+	})
+}
+
 // SetDerivedInstanceAdmin sets the flag an identity provider's group
 // decides, for proxy and OIDC accounts; a change is logged.
 func (s *Service) SetDerivedInstanceAdmin(ctx context.Context, u *domain.User, admin bool) error {

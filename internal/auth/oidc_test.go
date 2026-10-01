@@ -167,6 +167,19 @@ func TestOIDCSignIn(t *testing.T) {
 	if _, _, _, err := callback(a, p.Visit(t, to), cookie); !errors.As(err, &oe) || oe.Code != "local_account" {
 		t.Fatalf("local collision: %v", err)
 	}
+	// a proxy account is the same identity: it moves to oidc on first sign-in
+	if _, err := e.svc.EnsureProxyUser(ctx, "pete", "pete@example.com", "Pete"); err != nil {
+		t.Fatal(err)
+	}
+	p.Claims["preferred_username"] = "pete"
+	to, cookie = start(t, a, "/")
+	principal, _, _, err = callback(a, p.Visit(t, to), cookie)
+	if err != nil || principal.User.Subject != "pete" || principal.User.Source != "oidc" {
+		t.Fatalf("proxy account adopted: %+v %v", principal, err)
+	}
+	if u, _ := e.svc.UserBySubject(ctx, "pete"); u.Source != "oidc" {
+		t.Fatalf("source in the database: %s", u.Source)
+	}
 
 	// sign-ins are in the log with their method
 	page, err := e.svc.AuditLog(ctx, admin, service.AuditFilter{})

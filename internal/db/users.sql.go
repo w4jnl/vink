@@ -358,6 +358,20 @@ func (q *Queries) SetUserPassword(ctx context.Context, arg SetUserPasswordParams
 	return err
 }
 
+const setUserSource = `-- name: SetUserSource :exec
+UPDATE users SET source = ? WHERE id = ?
+`
+
+type SetUserSourceParams struct {
+	Source string
+	ID     string
+}
+
+func (q *Queries) SetUserSource(ctx context.Context, arg SetUserSourceParams) error {
+	_, err := q.db.ExecContext(ctx, setUserSource, arg.Source, arg.ID)
+	return err
+}
+
 const updateUserProfile = `-- name: UpdateUserProfile :exec
 UPDATE users SET email = ?, display_name = ? WHERE id = ?
 `

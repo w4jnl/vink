@@ -244,6 +244,7 @@ type Querier interface {
 	// tenancy: root (instance admin)
 	SetUserDisabled(ctx context.Context, arg SetUserDisabledParams) error
 	SetUserPassword(ctx context.Context, arg SetUserPasswordParams) error
+	SetUserSource(ctx context.Context, arg SetUserSourceParams) error
 	SetUserTOTPLastStep(ctx context.Context, arg SetUserTOTPLastStepParams) error
 	// Account: two-factor secrets, recovery codes, sign-in challenges and a
 	// person's own sessions. All keyed by user, never by org.

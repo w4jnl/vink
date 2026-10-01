@@ -29,6 +29,9 @@ UPDATE users SET is_instance_admin = ? WHERE id = ?;
 SELECT u.*, (SELECT MAX(s.last_seen_at) FROM sessions s WHERE s.user_id = u.id) AS last_seen_at
 FROM users u ORDER BY u.subject;
 
+-- name: SetUserSource :exec
+UPDATE users SET source = ? WHERE id = ?;
+
 -- name: SetUserDisabled :exec
 -- tenancy: root (instance admin)
 UPDATE users SET disabled_at = ?, disabled_by = ? WHERE id = ?;

@@ -511,6 +511,8 @@ func auditText(e service.AuditEntry, now time.Time) ui.HTML {
 			s += "; " + strconv.Itoa(detailInt(e.Detail, "left")) + " left"
 		}
 		return ui.HTML(s)
+	case "user.source":
+		return ui.HTML("moved the account " + who + " from " + esc(detailString(e.Detail, "from")) + " to " + esc(detailString(e.Detail, "to")))
 	case "user.totp_on":
 		return ui.HTML("turned on two-factor sign-in")
 	case "user.totp_off":

@@ -231,11 +231,17 @@ func (a *Authenticator) OIDCCallback(w http.ResponseWriter, r *http.Request) (*P
 		_ = a.svc.RecordSignIn(ctx, user, user.Subject, "oidc", false)
 		return nil, "", OIDCError{Code: "disabled"}
 	}
-	if user.Source != "oidc" {
-		// a local or proxy account with this name is not the provider's to claim
-		a.log.Warn("oidc subject collides with another account", "subject", user.Subject, "source", user.Source)
+	if user.Source == "local" {
+		// a local account with this name is not the provider's to claim
+		a.log.Warn("oidc subject collides with a local account", "subject", user.Subject)
 		_ = a.svc.RecordSignIn(ctx, nil, claims.Subject, "oidc", false)
 		return nil, "", OIDCError{Code: "local_account"}
+	}
+	if user.Source == "proxy" {
+		// the same identity, seen through headers until now
+		if err := a.svc.AdoptProviderUser(ctx, user, "oidc"); err != nil {
+			return nil, "", err
+		}
 	}
 	if err := a.svc.SyncDerivedMemberships(ctx, user.ID, roles, "oidc"); err != nil {
 		return nil, "", err
