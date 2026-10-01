@@ -65,4 +65,4 @@ http:
 #   enabled = true
 #   trusted_cidrs = ["172.16.0.0/12"]
 #   secret = "env:VINK_PROXY_SECRET"
-#   logout_url = "https://auth.w4j.nl/logout"
+#   logout_url = "https://auth.w4j.nl/logout?rd=https://vink.w4j.nl"   # rd: where Authelia sends the person afterwards; without it they stay on its page

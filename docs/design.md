@@ -391,7 +391,7 @@ The UI is one list and one drawer per entity, rendered by the server, with htmx 
 - Users are created on first sight (`users.subject` = header value). Memberships are derived from groups on every request and written with `source = header`; a header-derived membership that no longer matches is deleted at the next login. Manually added memberships (`source = local`) are never touched.
 - Group → role mapping is a convention plus one regex: groups named `vink:<org-slug>:<role>` grant that role in that org; `vink:admin` grants instance admin. `auth.proxy.default_org` optionally gives every authenticated user `viewer` in one org (good for a single-tenant corporate install).
 - No identity header on a UI route while proxy mode is on → 403 with a plain page; there is no anonymous fallthrough and the local login form is hidden unless `auth.local.enabled = true`.
-- Logout links to `auth.proxy.logout_url`; the app has no session of its own in this mode.
+- Logout links to `auth.proxy.logout_url`; the app has no session of its own in this mode. The URL carries the provider's own return parameter (`?rd=<base_url>` for Authelia and oauth2-proxy, `?next=` for Authentik), otherwise the person stays on the provider's page after signing in again; `vink serve` warns at start when it is missing.
 
 **Local mode** (`auth.local.enabled = true`, default on a fresh install)
 
@@ -499,7 +499,7 @@ lowercase = true
 group_pattern = "^vink:(?P<org>[a-z0-9-]+):(?P<role>owner|admin|member|viewer)$"
 instance_admin_group = "vink:admin"
 default_org = ""
-logout_url = "https://auth.w4j.nl/logout"
+logout_url = "https://auth.w4j.nl/logout?rd=https://vink.w4j.nl"  # the return address is the provider's parameter: rd for Authelia and oauth2-proxy
 ```
 
 ## Notifiers and probe agents

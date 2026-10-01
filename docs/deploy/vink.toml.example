@@ -66,7 +66,7 @@ lowercase = true
 group_pattern = "^vink:(?P<org>[a-z0-9-]+):(?P<role>owner|admin|member|viewer)$"
 instance_admin_group = "vink:admin"
 default_org = ""                       # give every authenticated person viewer in this org
-logout_url = ""
+logout_url = ""                        # e.g. "https://auth.example.com/logout?rd=https://vink.example.com"; the rd (Authelia, oauth2-proxy) or next (Authentik) parameter brings people back
 # group_map = { "CN=Monitoring Admins" = "corp:admin" }
 
 [auth.oidc]                            # native OpenID Connect (Keycloak, Authentik, Entra, ...), authorization code with PKCE
@@ -84,7 +84,7 @@ lowercase = true
 group_pattern = "^vink:(?P<org>[a-z0-9-]+):(?P<role>owner|admin|member|viewer)$"
 instance_admin_group = "vink:admin"
 default_org = ""
-logout_url = ""                        # the provider's end-session URL, when signing out of vink should sign out there too
+logout_url = ""                        # the provider's end-session URL with its return parameter, e.g. ".../logout?post_logout_redirect_uri=https://vink.example.com&client_id=vink" for Keycloak
 # group_map = { "CN=Monitoring Admins" = "corp:admin" }
 
 [checks]

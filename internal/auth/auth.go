@@ -121,6 +121,12 @@ func New(svc *service.Service, cfg config.Auth, baseURL string, log *slog.Logger
 		a.groupRe = re
 		a.proxyRules = groupRules{re: re, adminGroup: cfg.Proxy.InstanceAdminGroup, groupMap: cfg.Proxy.GroupMap, defaultOrg: cfg.Proxy.DefaultOrg}
 	}
+	// a logout URL without a return address strands people at the provider
+	for _, l := range []struct{ key, url string }{{"auth.proxy.logout_url", cfg.Proxy.LogoutURL}, {"auth.oidc.logout_url", cfg.OIDC.LogoutURL}} {
+		if l.url != "" && !strings.Contains(l.url, "?") {
+			log.Warn("logout url has no return parameter; people stay on the provider's page after signing in again", "key", l.key, "url", l.url, "hint", "Authelia and oauth2-proxy take ?rd="+baseURL+", Keycloak ?post_logout_redirect_uri="+baseURL+"&client_id=...")
+		}
+	}
 	if cfg.OIDC.Enabled {
 		re, err := regexp.Compile(cfg.OIDC.GroupPattern)
 		if err != nil {
