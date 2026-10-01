@@ -328,7 +328,7 @@ The UI is one list and one drawer per entity, rendered by the server, with htmx 
 | `…/m/new` | create form: kind selector first, then only that kind's fields; advanced fields (thresholds, confirm, methods, body limit) behind one `Advanced` disclosure; `…/m/{slug}/edit` is the same form filled in. `POST …/m/preview` and `…/m/{slug}/preview` validate the form without saving and return the schedule and grace sentences, the `Advanced` summary and the YAML as `hx-partial`s |  |
 | `…/incidents` | open incidents on top with ack buttons, resolved below, filter by monitor/tag | polls every 15 s |
 | `…/settings/{tab}` with tab = channels, routes, maintenance, pages, keys | one tab per table; each tab is a list with inline add/edit forms; channel rows have a `Test` button | no polling |
-| `/o/{org}/admin` | members (role select), projects, agents; visible to org admins and owners |  |
+| `/o/{org}/admin/{tab}` with tab = members, projects, agents | org settings for org admins and owners: members (role select, phase 3), projects (quota line, add and edit panels, state counts per project), agents (add panel, the token and `vink agent` command shown once, rows with connected/offline/waiting); `…/agents/{name}` opens the agent drawer (labels, connection facts, assigned monitors, revoke) | no polling |
 | `/s/{slug}` | public status page: title, overall state banner, groups by first tag, per-monitor state + 90-day bar, open incidents; no top bar, no auth, cacheable 30 s | polls every 60 s |
 | `/login` | local accounts only; hidden when proxy auth is configured |  |
 
@@ -622,10 +622,10 @@ Phase 1 — pull checks (gate: replaces Uptime Kuma in the homelab)
 
 Phase 2 — closed network (gate: installs air-gapped from one binary)
 
-- [ ] `vink agent`, gateway, assignment, offline handling, labels; `agents` admin UI and CLI
-- [ ] `outbound.proxy` and CA everywhere; `allow_private_targets`; no-egress audit (a test that runs the server with a blocked network and asserts zero outbound attempts)
-- [ ] Importers: Healthchecks API export, Uptime Kuma backup JSON
-- [ ] Nomad job, compose, Apache/Kerberos and Traefik/Authelia docs verified against real deployments
+- [x] `vink agent`, gateway, assignment, offline handling, labels; `agents` admin UI and CLI
+- [x] `outbound.proxy` and CA everywhere; `allow_private_targets`; no-egress audit (a test that runs the server with a blocked network and asserts zero outbound attempts)
+- [x] Importers: Healthchecks API export, Uptime Kuma backup JSON
+- [ ] Nomad job, compose, Apache/Kerberos and Traefik/Authelia docs verified against real deployments (written and validated with `nomad job validate`, `docker compose config` and `goreleaser check`; real deployments pending)
 
 Phase 3 — multi-tenant polish (gate: second org onboarded without hand-holding)
 

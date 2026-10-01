@@ -57,7 +57,9 @@ func (s *Service) checkLocation(ctx context.Context, orgID string, m *domain.Mon
 // AssignAgents gives every remote monitor of the org to a connected agent
 // that matches its location: the one it already has when that agent is
 // still connected and still matches (sticky), otherwise the least loaded
-// candidate, or nobody. It returns what changed.
+// candidate. A monitor whose agent went quiet keeps it until another
+// agent can take it, so the sweep and the drawer can say "agent
+// offline" rather than "nobody". It returns what changed.
 func (s *Service) AssignAgents(ctx context.Context, orgID string) ([]Assignment, error) {
 	rows, err := s.db.Read().ListAgents(ctx, orgID)
 	if err != nil {
@@ -115,6 +117,11 @@ func (s *Service) AssignAgents(ctx context.Context, orgID string) ([]Assignment,
 		if want == m.AgentID {
 			continue
 		}
+		if want == "" && m.AgentID != "" {
+			if _, ok := connected[m.AgentID]; !ok {
+				continue // its agent is away; nobody else matches, so it waits for that agent
+			}
+		}
 		if err := s.db.Write().SetMonitorAgent(ctx, db.SetMonitorAgentParams{AgentID: ptrs(want), ID: m.ID}); err != nil {
 			return nil, err
 		}
@@ -147,19 +154,6 @@ func (s *Service) AgentMonitors(ctx context.Context, agentID string) ([]*domain.
 		out = append(out, m)
 	}
 	return out, nil
-}
-
-// AgentDisconnected releases the agent's monitors so another agent can
-// take them; the gateway calls it when the socket closes.
-func (s *Service) AgentDisconnected(ctx context.Context, agentID string) error {
-	n, err := s.db.Write().ClearAgentMonitors(ctx, ptrs(agentID))
-	if err != nil {
-		return err
-	}
-	if n > 0 {
-		s.log.Info("agent released monitors", "agent_id", agentID, "monitors", n)
-	}
-	return nil
 }
 
 // RecordAgentResult stores one result from an agent and runs the check

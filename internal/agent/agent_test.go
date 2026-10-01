@@ -188,8 +188,8 @@ func TestAgentAgainstGateway(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("agent did not stop")
 	}
-	waitFor(t, "released", func() bool {
+	waitFor(t, "gone but sticky", func() bool {
 		cur, _ := svc.MonitorBySlug(ctx, member, "web")
-		return !gw.Connected(agentRow.ID) && cur.AgentID == ""
+		return !gw.Connected(agentRow.ID) && cur.AgentID == agentRow.ID
 	})
 }

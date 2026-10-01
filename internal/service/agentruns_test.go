@@ -124,11 +124,8 @@ func TestAgentAssignmentResultsAndSweep(t *testing.T) {
 		t.Fatalf("events: %+v", events)
 	}
 
-	// dc1 drops: its monitors are released and dc2 picks up the dmz ones
+	// dc1 drops: dc2 picks up the dmz ones; by-name stays with dc1 (sticky)
 	online[dc1.ID] = false
-	if err := f.svc.AgentDisconnected(ctx, dc1.ID); err != nil {
-		t.Fatal(err)
-	}
 	changes, err = f.svc.AssignAgents(ctx, f.org.ID)
 	if err != nil || len(changes) != 2 {
 		t.Fatalf("dc1 gone: %+v %v", changes, err)
@@ -138,8 +135,8 @@ func TestAgentAssignmentResultsAndSweep(t *testing.T) {
 			t.Fatalf("dc1 gone: %+v", c)
 		}
 	}
-	if m, _ := f.svc.MonitorBySlug(ctx, f.member, "by-name"); m.AgentID != "" {
-		t.Fatalf("by-name must be unassigned, got %s", m.AgentID)
+	if m, _ := f.svc.MonitorBySlug(ctx, f.member, "by-name"); m.AgentID != dc1.ID {
+		t.Fatalf("by-name must stay with its quiet agent, got %q", m.AgentID)
 	}
 	_ = byLabel3
 

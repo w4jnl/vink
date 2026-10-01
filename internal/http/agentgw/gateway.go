@@ -168,10 +168,9 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if g.unregister(c) {
+		// Its monitors stay with it until another agent can take them;
+		// the reconcile moves what it can and the sweep marks the rest.
 		g.log.Info("agent disconnected", "agent", agent.Name)
-		if err := g.svc.AgentDisconnected(context.WithoutCancel(ctx), agent.ID); err != nil {
-			g.log.Error("agent release", "agent", agent.Name, "err", err)
-		}
 		g.kick()
 	}
 	_ = ws.Close(websocket.StatusNormalClosure, "bye")
