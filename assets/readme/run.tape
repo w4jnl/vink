@@ -13,10 +13,10 @@ Type "source /tmp/vink-demo/env && cd /tmp/vink-demo && export PATH=$PWD:$PATH &
 Show
 Sleep 500ms
 Type "vink ls" Enter
-Sleep 3s
-Type "vink run nightly-backup -- ./backup.sh" Enter
 Sleep 4s
-Type "vink ls" Enter
-Sleep 3s
-Type "vink logs nightly-backup -n 3" Enter
+Type "vink run nightly-backup -- ./backup.sh" Enter
 Sleep 5s
+Type "vink ls" Enter
+Sleep 4s
+Type "vink logs nightly-backup -n 3" Enter
+Sleep 6s

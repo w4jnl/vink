@@ -1,0 +1,94 @@
+# vink.toml: every key with its default, from `vink serve --print-config`. Every key is also an
+# environment variable, VINK_<SECTION>_<KEY> (VINK_SERVER_LISTEN, VINK_AUTH_LOCAL_TOTP, ...), and
+# the environment wins over the file. Pass the file with --config or point VINK_CONFIG_FILE at it.
+# A value written as "env:NAME" is read from that variable, so secrets stay out of the file.
+
+[server]
+listen = ":8080"                       # address the web UI, API and ping ingress listen on
+base_url = "http://localhost:8080"     # public address: ping URLs, links, cookies (Secure when https)
+trusted_proxies = []                   # CIDRs whose X-Forwarded-For is believed, e.g. ["10.0.0.0/8"]
+
+[ping]
+listen = ""                            # optional second listener for pings only, e.g. ":8081"
+base_url = ""                          # optional separate address for ping URLs
+body_limit = "64KB"                    # a ping body larger than this is truncated
+rate_per_monitor = 10                  # pings per minute per monitor
+rate_per_ip = 300                      # pings per minute per source address
+
+[db]
+path = "vink.db"                       # the SQLite file; the systemd unit uses /var/lib/vink/vink.db
+
+[retention]
+observations_days = 90                 # observations older than this are pruned nightly
+bodies_days = 14                       # stored ping bodies older than this are pruned nightly
+
+[checks]
+workers = 32                           # concurrent pull check attempts
+min_interval = "10s"                   # floor for a pull monitor's interval (30s through an agent)
+
+[agents]
+offline_after = "2m"                   # an agent quiet this long turns its monitors late
+
+[outbound]
+proxy = ""                             # http(s) proxy for checks, notifiers and OIDC discovery
+ca_pem = ""                            # extra CA bundle, also trusted for SMTP
+allow_private_targets = true           # false refuses loopback, link-local and RFC 1918 targets
+egress_log = ""                        # a file that gets one line per connection vink opens
+
+[log]
+level = "info"                         # debug, info, warn, error
+format = "json"                        # json or text; -d forces debug with colour
+
+[metrics]
+token = ""                             # when set, GET /metrics needs "Authorization: Bearer <token>"
+
+[auth.local]
+enabled = true                         # password sign-in; keep on as the break-glass path
+totp = "optional"                      # or "required": local accounts must set up two-factor first
+
+[auth.proxy]
+enabled = false                        # identity from a trusted reverse proxy (Authelia, oauth2-proxy, Apache + Kerberos)
+trusted_cidrs = ["127.0.0.1/32", "::1/128"]  # only these peers may send identity headers
+secret_header = "X-Auth-Proxy-Secret"  # the proxy sends the shared secret in this header
+secret = ""                            # e.g. "env:VINK_PROXY_SECRET"; required when enabled
+user_header = "Remote-User"
+email_header = "Remote-Email"
+name_header = "Remote-Name"
+groups_header = "Remote-Groups"
+groups_separator = ","
+strip_realm = true                     # j@CORP.EXAMPLE becomes j
+lowercase = true
+group_pattern = "^vink:(?P<org>[a-z0-9-]+):(?P<role>owner|admin|member|viewer)$"
+instance_admin_group = "vink:admin"
+default_org = ""                       # give every signed-in person viewer in this org
+logout_url = ""                        # with the provider's return parameter, e.g. ".../logout?rd=https://vink.example.com"
+# group_map = { "CN=Monitoring Admins" = "corp:admin" }
+
+[auth.oidc]
+enabled = false                        # OpenID Connect, authorization code with PKCE
+issuer = ""                            # e.g. "https://auth.example.com/realms/w4j"
+client_id = ""
+client_secret = ""                     # e.g. "env:VINK_OIDC_SECRET"; empty for a public client
+scopes = ["openid", "profile", "email", "groups"]
+display_name = "single sign-on"        # "Continue with <display_name>" on the sign-in page
+auto_redirect = false                  # with local accounts off, /login goes straight to the provider
+username_claim = "preferred_username"  # becomes the username; sub when missing
+groups_claim = "groups"
+strip_realm = false
+lowercase = true
+group_pattern = "^vink:(?P<org>[a-z0-9-]+):(?P<role>owner|admin|member|viewer)$"
+instance_admin_group = "vink:admin"
+default_org = ""
+logout_url = ""                        # the provider's end-session URL with its return parameter
+# group_map = { "monitoring-admins" = "homelab:admin" }
+
+[secrets]
+key_file = ""                          # default: secret.key next to the database, created on first run
+
+[smtp]
+host = ""                              # needed for smtp channels
+port = 587
+username = ""
+password = ""                          # e.g. "env:VINK_SMTP_PASSWORD"
+from = ""
+tls = "starttls"                       # starttls, tls or none
