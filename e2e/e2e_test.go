@@ -3,8 +3,9 @@
 // Package e2e runs the binary against a temp database. The heartbeat
 // smoke test is the phase 0 gate: a heartbeat with a one-minute period
 // and grace goes late, then down with a webhook delivery, then up again.
-// The homelab test is the phase 1 gate. Run with `make e2e`; together
-// they take about four minutes.
+// The homelab test is the phase 1 gate, the agent test the phase 2 gate
+// and the onboarding test the phase 3 gate. Run with `make e2e`; together
+// they take about six minutes.
 package e2e
 
 import (

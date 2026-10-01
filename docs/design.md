@@ -92,13 +92,13 @@ docs/                     apply-schema.json, deploy/ (systemd, compose, traefik-
 
 ## Data model
 
-Sixteen tables; every row below `projects` carries `project_id`, every row below `orgs` carries `org_id`, and the two are denormalised onto the hot tables (`monitors`, `observations`, `events`) so no scope check needs a join.
+Twenty-four tables; every row below `projects` carries `project_id`, every row below `orgs` carries `org_id`, and the two are denormalised onto the hot tables (`monitors`, `observations`, `events`) so no scope check needs a join. The account tables at the end (`recovery_codes`, `login_challenges`, `reset_tokens`) hang off `users` and carry no org.
 
 ![Data model: everything hangs off a project; a project hangs off an org](diagrams/data-model.png)
 
 | Table | Key columns | Notes |
 | --- | --- | --- |
-| `users` | `id`, `subject` (unique: proxy header value or local login), `email`, `display_name`, `password_hash` (null for proxy users), `is_instance_admin`, `created_at` | `subject` is what the auth layer supplies; local and proxy users share the table |
+| `users` | `id`, `subject` (unique: proxy header value, OIDC username claim or local login), `email`, `display_name`, `password_hash` (null for provider users), `is_instance_admin`, `source` (`local`/`proxy`/`oidc`), `disabled_at`, `disabled_by`, `totp_secret` (encrypted with the instance key, null until setup starts), `totp_enabled_at` (set while two-factor is on), `totp_last_step` (the last step that verified, so a code never works twice), `password_changed_at`, `created_at` | `subject` is what the auth layer supplies; all sources share the table. A disabled account is refused at sign-in and its sessions are deleted |
 | `orgs` | `id`, `slug` (unique), `name`, `quota_monitors`, `quota_agents`, `created_at` | quotas are instance-admin controlled; null = unlimited |
 | `memberships` | `user_id`, `org_id`, `role` (`owner`/`admin`/`member`/`viewer`), `source` (`local`/`header`/`oidc`) | primary key (`user_id`,`org_id`); `source=header` rows are re-derived on every login and pruned when the header no longer lists the org |
 | `projects` | `id`, `org_id`, `slug` (unique per org), `name`, `timezone`, `ping_key` (unique, 22 chars base32), `created_at` | ping key rotates via API; old key valid for a configurable grace (default 24 h) via `ping_key_prev`, `ping_key_prev_until` |
@@ -115,14 +115,21 @@ Sixteen tables; every row below `projects` carries `project_id`, every row below
 | `maintenance` | `id`, `project_id`, `name`, `match_tags`, `starts_at`, `ends_at` (one-off), `rrule` (`FREQ=WEEKLY;BYDAY=…`), `from_time`, `to_time` (weekly, `HH:MM`), `timezone`, `ended_until` (set by End now on a weekly window) | while active, matching monitors observe but do not alert or flip to `down`; a heartbeat held at `late` is looked at again when the window ends |
 | `status_pages` | `id`, `project_id`, `slug` (unique per instance), `title`, `match_tags`, `public` (bool), `password_hash` (optional), `custom_domain` | renders monitors whose tags match |
 | `agents` | `id`, `org_id`, `name`, `token_hash`, `last_seen_at`, `version`, `labels` (JSON) | phase 2 |
-| `sessions` | `id`, `user_id`, `expires_at`, `csrf` | local-auth browser sessions only |
+| `sessions` | `id`, `user_id`, `expires_at`, `csrf`, `created_at`, `user_agent`, `ip`, `last_seen_at` | browser sessions for local and OIDC accounts; `last_seen_at` is touched at most once a minute and feeds the Members and Users lists and the account page |
+| `audit` | `id`, `at`, `actor`, `actor_kind` (`user`/`key`/`system`), `actor_id`, `org_id`, `project_id`, `act`, `target`, `target_id`, `spec_before`, `spec_after` (YAML snapshots, secrets as `***`), `detail` (JSON), `via` (`web`/`api <prefix>`/`cli`/`link`), `request_id`, `remote_addr` | one row per admin action, written in the same transaction as the change; never edited, never pruned. The audit log is one query over `audit` and `events` (state flips are `vink`'s rows). Rows without an org (sign-ins, two-factor, passwords) show in the org log of the account's orgs |
+| `invites` | `id`, `org_id`, `role`, `note` (who it is for), `token_hash` (unique, SHA-256 of a 256-bit token), `created_by`, `created_at`, `expires_at` (7 days), `used_at`, `used_by`, `revoked_at` | a one-time link that creates a local account with a membership; used ones stay as the record of who joined |
+| `reset_tokens` | `id`, `user_id`, `token_hash`, `created_by`, `created_at`, `expires_at` (24 h), `used_at` | one-time password reset links made by an instance admin; a used or expired one shows the same page as an unknown one |
+| `recovery_codes` | `user_id`, `prefix` (first four characters, the lookup), `hash` (argon2id), `created_at`, `used_at` | ten per set, each good once; a new set replaces the whole set |
+| `login_challenges` | `id`, `user_id`, `created_at`, `expires_at` (5 min), `attempts`, `ip`, `user_agent`, `next_path` | the password checked out, the code is next; five wrong codes delete it |
+| `instance_meta` | `name`, `value`, `updated_at` | instance facts such as `last_backup_at`, which `vink admin backup` writes and the Server tab warns about after a day |
 
 **Tenancy rules the agent must enforce in code and tests**
 
 - Every sqlc query on a project-scoped table has `WHERE project_id = ?` (or `org_id = ?` for org tables) as its first predicate; a CI grep fails the build for a `SELECT` on those tables without it.
 - Uniqueness is scoped: monitor slugs per project, project slugs per org, page slugs per instance (they are URLs).
 - Deleting a project cascades through `ON DELETE CASCADE`; deleting an org is instance-admin only and requires zero projects.
-- `observations` and `bodies` are pruned by a nightly job: keep `retention.observations_days` (default 90) and `retention.bodies_days` (default 14); `events` and `incidents` are kept.
+- `observations` and `bodies` are pruned by a nightly job: keep `retention.observations_days` (default 90) and `retention.bodies_days` (default 14); `events`, `incidents` and `audit` are kept.
+- Audit rows are written by the service layer inside the transaction of the change they describe, so a failed change leaves no row and a row never lacks its change. The web, API, CLI and ack-link entry points put `via`, the request id and the remote address on the context; `vink apply` writes one row per file with counts, not one per resource.
 - SQLite pragmas at open: `journal_mode=WAL`, `synchronous=NORMAL`, `busy_timeout=5000`, `foreign_keys=ON`; one `*sql.DB` with `MaxOpenConns(1)` for writes and a second read-only pool.
 
 ## Monitor lifecycle
@@ -308,7 +315,7 @@ One binary, three personalities: `vink serve` runs the server, `vink agent` runs
 | `vink serve [--config vink.toml]` | starts the server; runs migrations first; refuses to start if the DB is newer than the binary |
 | `vink migrate up` · `down` · `status` · `new <name>` · `dump` | dbmate wrapper, no network; `dump` writes `db/schema.sql`, which is sqlc's schema input |
 | `vink admin init --org homelab --user j --password-stdin` | bootstrap on an empty DB: instance admin, first org, first project, prints the ping key and an rw API key |
-| `vink admin org create` · `org ls` · `user ls` · `user create` · `user promote` · `user grant <user> --org <slug> --role <role>` · `user revoke <user> --org <slug>` · `backup` | instance-admin operations, run on the server host against the DB file (no network); grant and revoke manage an existing user's role in an org, and the last owner of an org can be neither demoted nor removed |
+| `vink admin org create` · `org ls` · `user ls` · `user create` · `user promote` · `user grant <user> --org <slug> --role <role>` · `user revoke <user> --org <slug>` · `user totp-reset <user>` · `user reset-link <user>` · `backup` | instance-admin operations, run on the server host against the DB file (no network); grant and revoke manage an existing user's role in an org, and the last owner of an org can be neither demoted nor removed; `totp-reset` and `reset-link` are the break-glass for a lost phone or password; `backup` also records `last_backup_at`, which the Server tab watches |
 | `vink agent --server wss://vink.example.com --token … [--labels site=dc1]` | phase 2; connects out, runs assigned checks |
 | `vink ctx add homelab --server https://vink.w4j.nl --key …` · `vink ctx use homelab` · `vink ctx ls` | contexts; `VINK_SERVER` / `VINK_KEY` env override for CI |
 | `vink ls [--tag prod] [--state down]` | monitor table: slug, kind, state, since, next due, last latency |
@@ -346,9 +353,14 @@ The UI is one list and one drawer per entity, rendered by the server, with htmx 
 | `…/m/new` | create form: kind selector first, then only that kind's fields; advanced fields (thresholds, confirm, methods, body limit) behind one `Advanced` disclosure; `…/m/{slug}/edit` is the same form filled in. `POST …/m/preview` and `…/m/{slug}/preview` validate the form without saving and return the schedule and grace sentences, the `Advanced` summary and the YAML as `hx-partial`s |  |
 | `…/incidents` | open incidents on top with ack buttons, resolved below, filter by monitor/tag | polls every 15 s |
 | `…/settings/{tab}` with tab = channels, routes, maintenance, pages, keys | one tab per table; each tab is a list with inline add/edit forms; channel rows have a `Test` button | no polling |
-| `/o/{org}/admin/{tab}` with tab = members, projects, agents | org settings for org admins and owners: members (role select, phase 3), projects (quota line, add and edit panels, state counts per project), agents (add panel, the token and `vink agent` command shown once, rows with connected/offline/waiting); `…/agents/{name}` opens the agent drawer (labels, connection facts, assigned monitors, revoke) | no polling |
+| `/o/{org}/admin/{tab}` with tab = members, projects, agents, audit | org settings for org admins and owners: members (rows with an inline role select, the invite panel with the link shown once, open/expired/used invites, owner actions: transfer ownership and delete org), projects (quota line, add and edit panels, state counts per project), agents (add panel, the token and `vink agent` command shown once, rows with connected/offline/waiting); `…/agents/{name}` opens the agent drawer (labels, connection facts, assigned monitors, revoke). The audit tab is open to every member: kind chips (additive), project, who and period as query parameters, 50 rows a page grouped by day with Older; members and viewers see their projects' rows only, and for them it is the only tab | the filter bar swaps the tab in place |
+| `/admin/{tab}` with tab = orgs, users, server, audit | instance admins only, a 404 for anyone else: orgs (add with quotas and an optional first owner, edit, delete when empty, usage against quota), users (chips by source and flag, edit panel: instance admin checkbox, reset two-factor, one-time reset link shown once, disable and enable), server (read-only facts and the backup warning), audit (the same log across orgs with an org select) | no polling |
+| `/account` | from the user menu: profile and sessions for everyone, password and two-factor for local accounts; the two-factor setup panel (server-rendered QR, the key typed out, the code to confirm) and the recovery codes shown once; a session can be signed out, or all the others | no polling |
+| `/invite/{token}` · `/reset/{token}` | one-time links on the auth layout: join an org with a new local account; set a new password. Expired, used and unknown links show the same page | no polling |
+| `/login/code` | the second step after a correct password for an account with two-factor: the code from the app, or a recovery code; five wrong codes send the person back to `/login` | no polling |
+| `/auth/oidc/start` · `/auth/oidc/callback` | the OIDC round trip; every failure lands on `/login` as one notice with the provider's error code | no polling |
 | `/s/{slug}` | public status page: title, overall state banner, groups by first tag, per-monitor state + 90-day bar, open incidents; no top bar, no auth, cacheable 30 s | polls every 60 s |
-| `/login` | local accounts only; hidden when proxy auth is configured |  |
+| `/login` | the password form for local accounts; with `[auth.oidc]` on it leads with "Continue with <display_name>" and keeps the form below a divider, or is the button alone, or redirects straight to the provider (`auto_redirect`); hidden when only proxy auth is configured |  |
 
 **Interaction rules for the implementing agent**
 
@@ -383,13 +395,15 @@ The UI is one list and one drawer per entity, rendered by the server, with htmx 
 
 **Local mode** (`auth.local.enabled = true`, default on a fresh install)
 
-- Argon2id password hashes, session cookie `vink_session` (HttpOnly, Secure, SameSite=Lax, 30-day sliding, rotated on login), CSRF token in every form and required on every state-changing request from a session. TOTP second factor is phase 3.
-- `vink admin init` creates the instance admin; further users are invited by org admins with a one-time link (7-day expiry) or created by the instance admin.
+- Argon2id password hashes, session cookie `vink_session` (HttpOnly, Secure, SameSite=Lax, 30-day sliding, rotated on login), CSRF token in every form and required on every state-changing request from a session.
+- Two-factor: RFC 6238 TOTP (SHA-1, six digits, thirty-second steps, one step either side) from `internal/totp` on the standard library; the secret is sealed with the instance key and goes live only when a code verifies on the setup panel, whose QR code the server renders as inline SVG (`internal/qr`, no JavaScript, no outside service). A step never verifies twice (`totp_last_step`). Ten recovery codes (`XXXX-XXXX`, argon2id, each good once) are shown at setup and on "New codes". After the password, an account with two-factor gets a five-minute challenge in the `vink_login` cookie and `/login/code`; five wrong codes end the attempt. `auth.local.totp = "required"` sends a local account without two-factor to the setup panel before any other page. Instance admins reset two-factor from the Users tab or with `vink admin user totp-reset`; the account turns it off with its password.
+- `vink admin init` creates the instance admin; further users are invited by org admins and owners with a one-time link (7-day expiry, the note says who it is for, owner invites by owners only) or created by the instance admin. A forgotten password gets a one-time reset link (24 h) from an instance admin, on the Users tab or `vink admin user reset-link`; vink sends no mail. Disabling an account deletes its sessions and refuses sign-in; nobody can disable or demote themselves, and the last owner of an org can be neither demoted nor removed.
+- The account page lists the person's sessions (browser and platform, where and when they started, last seen) and signs one or all the others out; changing the password does the latter too.
 - Local and proxy mode may both be on: proxy users cannot use the password form, local users cannot come through the proxy. This is the break-glass path when the IdP is down.
 
 **API keys** are independent of user auth: project-scoped bearer tokens, `ro` or `rw`, shown once, stored as argon2id hashes with an 8-character lookup prefix. There are no user-level API tokens in v1; automation acts as a project. The one exception is the **org key** (`api_keys.project_id` NULL): issued by org admins with `vink admin org key create`, it may call `/orgs/{org}/export` and `/orgs/{org}/apply` for its own org and nothing else, so one context can export and apply every project of an org from a workstation. A project key never acts for the org, and an org key never acts for a project.
 
-**OIDC (phase 3)**: `coreos/go-oidc` authorization-code flow, `groups` claim through the same regex mapping, PKCE, one issuer per instance. It produces the same `subject + groups` input as proxy mode, so nothing downstream changes.
+**OIDC** (`auth.oidc.enabled = true`): `coreos/go-oidc` authorization-code flow with PKCE against one issuer; discovery is fetched from `auth.oidc.issuer` through the outbound environment, lazily, so a provider that is down does not keep vink from starting. `/auth/oidc/start` signs state, nonce and the PKCE verifier into the `vink_oidc` cookie with the instance key; the callback checks the state against it, refuses a state seen before, exchanges the code with the verifier, verifies the ID token's signature and nonce, and only then starts a session. The `username_claim` (`preferred_username`, else `sub`) and `groups_claim` become the same subject and roles proxy mode derives from headers, through `group_pattern`, `group_map`, `instance_admin_group` and `default_org` under `[auth.oidc]`; memberships arrive with `source = oidc` and are re-derived at every sign-in, and the instance admin flag follows the group (the Users tab shows it read-only for provider accounts). A subject that belongs to a local or proxy account is refused. `display_name` names the provider on `/login`, `auto_redirect` skips the page when local accounts are off, `logout_url` sends the sign-out on to the provider. Failures come back to `/login` as one notice with the provider's error code or vink's own (`state_mismatch`, `nonce_mismatch`, `token_exchange`, `id_token`, `disabled`, `local_account`).
 
 **Roles**
 
@@ -575,7 +589,21 @@ level = "info"
 format = "json"                          # text for dev; -d forces debug + colour
 [metrics]
 token = ""                               # bearer required for /metrics when set
-[auth.local] / [auth.proxy]              # see Authentication
+[auth.local]
+enabled = true
+totp = "optional"                        # or "required": local accounts must set up two-factor before anything else
+[auth.proxy]                             # see Authentication
+[auth.oidc]
+enabled = false
+issuer = "https://auth.example.com/realms/w4j"
+client_id = "vink"
+client_secret = "env:VINK_OIDC_SECRET"
+display_name = "Keycloak"                # "Continue with Keycloak" on /login
+auto_redirect = false
+username_claim = "preferred_username"
+groups_claim = "groups"
+group_pattern = "^vink:(?P<org>[a-z0-9-]+):(?P<role>owner|admin|member|viewer)$"
+instance_admin_group = "vink:admin"
 [secrets]
 key_file = "/var/lib/vink/secret.key"     # 32 bytes, created on first run; encrypts channel configs and signs ack links
 ```
@@ -594,7 +622,7 @@ key_file = "/var/lib/vink/secret.key"     # 32 bytes, created on first run; encr
 - CSRF: double-submit token on session-authenticated state changes; API-key requests are exempt (no cookie).
 - SSRF: HTTP checks and webhooks resolve the target once, and when `outbound.allow_private_targets = false` refuse loopback, link-local and RFC1918 addresses after resolution (re-checked on redirects).
 - Ping bodies are stored as opaque bytes and rendered as escaped text only; never sniffed for content type when served back (`Content-Type: text/plain; X-Content-Type-Options: nosniff`).
-- Enumeration: unknown ping key and unknown slug return identical 404s; login failures are rate-limited per IP (10/min) and per subject (5/min) with constant-time comparison.
+- Enumeration: unknown ping key and unknown slug return identical 404s; login failures are rate-limited per IP (10/min) and per subject (5/min) with constant-time comparison. Invite and reset links are 256-bit tokens looked up by SHA-256; a used, expired or unknown link shows the same page, so a link never tells whether someone joined. Two-factor codes are compared in constant time across the whole window, a wrong recovery code costs an argon2id check, and the code step locks after five tries.
 - Cross-tenant tests: an integration test suite creates two orgs and asserts every list/get/mutate endpoint returns 404 across the boundary, for session, `ro` key and `rw` key callers.
 - Supply chain: `go.sum` verified, `govulncheck` in CI, no cgo, `-trimpath -ldflags "-s -w -buildid="` for reproducible builds, SBOM emitted by the release workflow.
 
@@ -647,8 +675,8 @@ Phase 2 — closed network (gate: installs air-gapped from one binary)
 
 Phase 3 — multi-tenant polish (gate: second org onboarded without hand-holding)
 
-- [ ] Org admin UI: invites, roles, projects, quotas; instance admin page
-- [ ] Native OIDC; TOTP for local accounts; audit log view over `events` + admin actions
+- [x] Org admin UI: invites, roles, projects, quotas; instance admin page (orgs, users, server)
+- [x] Native OIDC; TOTP for local accounts; audit log view over `events` + admin actions (gate: `e2e/onboarding_test.go`, `TestSecondOrgOnboarding`)
 - [ ] Postgres backend behind the store interface (sqlc second engine)
 - [ ] Terraform provider (`terraform-provider-vink`) generated from the API client; OTLP traces
 
