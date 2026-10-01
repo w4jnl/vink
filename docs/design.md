@@ -223,6 +223,7 @@ The API is the product's real interface: the CLI is a client of it, the web UI c
 | `POST /api/v1/ping-key/rotate` | returns the new key; old key valid for `grace` |
 | `GET /api/v1/export` | the project as the apply YAML (secrets redacted unless `?secrets=1` with an rw key) |
 | `PUT /api/v1/apply` | body = apply YAML or JSON; `?dry_run=1` returns the diff; `?prune=1` deletes monitors, channels, routes not in the file |
+| `GET /api/v1/orgs/{org}/export` · `PUT /api/v1/orgs/{org}/apply` | the org file: every project of the org in one YAML; an org key or an org admin's session; apply creates projects the file names and never deletes one; same `dry_run`, `prune`, `secrets` |
 | `GET /api/v1/status` | project summary: counts per state, open incidents, oldest `late`; the same payload the status page uses |
 | `GET /api/v1/orgs` · `/orgs/{org}/projects` · `/orgs/{org}/members` | session or instance-admin only; org admins manage members and projects |
 | `GET /metrics` | Prometheus; instance-wide with `org`, `project`, `monitor` labels; optional bearer `metrics.token` |
@@ -276,6 +277,22 @@ status_pages:
   - {slug: homelab, title: Homelab status, match_tags: [prod], public: true}
 ```
 
+**Org file**: the same schema has a second shape for a whole org, which `vink export --org` writes and an org key applies. Each entry is a project file plus the project's slug, name and timezone, so a section can be cut out and applied on its own. Apply creates a project the file names but the org lacks (with an rw key), leaves projects the file does not name alone, and never deletes a project; `--prune` works inside each listed project.
+
+```yaml
+version: 1
+org: homelab
+projects:
+  - slug: prod
+    name: Production
+    timezone: Europe/Amsterdam
+    channels: [...]
+    routes: [...]
+    monitors: [...]
+  - slug: lab
+    monitors: [...]
+```
+
 `${VAR}` in the file is expanded by the CLI from its environment, never by the server. Apply is idempotent and transactional: it computes a diff by slug/name, applies it in one transaction, and returns `{created, updated, deleted, unchanged}` lists. Monitor state is never touched by apply; a monitor whose `kind` changes is recreated (state reset) and the diff says so.
 
 **Errors** are RFC 7807: `{"type":"https://github.com/w4jnl/vink/blob/main/docs/errors.md#validation","title":"Validation failed","status":422,"errors":[{"field":"grace","msg":"must be at least 60s"}]}`. Codes: 400 malformed, 401 missing/invalid credential, 403 role or read-only key, 404 (never 403 for a resource in another project: both are 404), 409 slug conflict, 422 validation, 429 rate limit.
@@ -300,7 +317,8 @@ One binary, three personalities: `vink serve` runs the server, `vink agent` runs
 | `vink pause <slug>` · `vink resume <slug>` · `vink check <slug>` · `vink ack <incident>` | actions |
 | `vink import healthchecks -f checks.json` · `vink import kuma -f backup.json` `[-o vink.yaml | --apply [--dry-run]]` | phase 2; converts a Healthchecks API listing or an Uptime Kuma backup into an apply file, listing what vink cannot carry over |
 | `vink apply -f vink.yaml [--dry-run] [--prune]` | declarative config; prints the diff; exit 1 on validation error, 2 on server error |
-| `vink export [-o vink.yaml]` | round-trips with apply |
+| `vink export [-o vink.yaml] [--org slug]` | round-trips with apply; `--org` writes every project of the org as one file and needs a context with an org key |
+| `vink admin org key create --org slug [--name n] [--access ro\|rw]` · `key ls` · `key revoke <id>` | org keys, issued on the server host; the key is printed once with the `vink ctx add` line to run next |
 | `vink ping <slug> [--start] [--fail] [--exit N] [--msg …]` | sends a ping using the context's project ping key (fetched once from `/me`, cached) — for shell scripts on hosts with the CLI |
 | `vink run <slug> -- <command…>` | wraps a command: `/start`, then `/{exit}` with captured stdout+stderr tail as body; exits with the command's code; the Cronitor-CLI/runitor pattern |
 | `vink status` | project summary: counts per state, open incidents |
@@ -369,7 +387,7 @@ The UI is one list and one drawer per entity, rendered by the server, with htmx 
 - `vink admin init` creates the instance admin; further users are invited by org admins with a one-time link (7-day expiry) or created by the instance admin.
 - Local and proxy mode may both be on: proxy users cannot use the password form, local users cannot come through the proxy. This is the break-glass path when the IdP is down.
 
-**API keys** are independent of user auth: project-scoped bearer tokens, `ro` or `rw`, shown once, stored as argon2id hashes with an 8-character lookup prefix. There are no user-level API tokens in v1; automation acts as a project.
+**API keys** are independent of user auth: project-scoped bearer tokens, `ro` or `rw`, shown once, stored as argon2id hashes with an 8-character lookup prefix. There are no user-level API tokens in v1; automation acts as a project. The one exception is the **org key** (`api_keys.project_id` NULL): issued by org admins with `vink admin org key create`, it may call `/orgs/{org}/export` and `/orgs/{org}/apply` for its own org and nothing else, so one context can export and apply every project of an org from a workstation. A project key never acts for the org, and an org key never acts for a project.
 
 **OIDC (phase 3)**: `coreos/go-oidc` authorization-code flow, `groups` claim through the same regex mapping, PKCE, one issuer per instance. It produces the same `subject + groups` input as proxy mode, so nothing downstream changes.
 

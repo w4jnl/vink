@@ -110,6 +110,8 @@ Settings › Status pages publishes the monitors with any of a page's tags at `/
 
 `vink apply -f vink.yaml` brings a project to a file: channels, routes, maintenance windows, monitors and status pages, applied in one transaction, with the diff printed. `--dry-run` shows the diff without applying, `--prune` deletes what the file does not name. `${VAR}` is expanded from the environment before sending, so tokens stay out of the file; a secret written as `***` keeps the stored value. `vink export -o vink.yaml` writes the project back in the same form, secrets redacted (`--secrets` includes them). `docs/apply-schema.json` is the JSON Schema the CLI validates against; the same file goes to `PUT /api/v1/apply`.
 
+A whole org fits in one file too. `vink admin org key create --org homelab --access rw` (on the server host) issues an org key; with it in a context, `vink export --org homelab -o homelab.yaml` writes every project under `org:` and `projects:`, and `vink apply -f homelab.yaml` brings them all back in one transaction, creating a project the file names and the org lacks, never deleting one. An org key does only that: it cannot touch a project's monitors or agents, and a project key cannot act for the org.
+
 ```yaml
 version: 1
 channels:
