@@ -17,7 +17,7 @@ export type Option = string | { value: string; label: string };
 /** Label + control + hint or inline error. `mono` for URLs, cron expressions, slugs. `html` replaces the control; `before`/`after` sit beside it (trusted HTML). */
 export declare function Field(props: { id?: string; name?: string; label: string; value?: string; placeholder?: string; hint?: string; error?: string; mono?: boolean;
   control?: 'input' | 'select' | 'textarea'; options?: Option[]; rows?: number; type?: 'text' | 'password' | 'url' | 'email'; prefix?: string; suffix?: string;
-  disabled?: boolean; autocomplete?: string; html?: string; before?: string; after?: string }): string;
+  disabled?: boolean; autocomplete?: string; html?: string; before?: string; after?: string; otp?: boolean }): string;
 /** Two to four rendered Fields side by side; `lead` makes the first column 112px. */
 export declare function FieldRow(props: { fields: string[]; lead?: boolean }): string;
 /** Native checkbox with label and optional hint. */
@@ -49,12 +49,23 @@ export declare function Avatar(props: { name: string }): string;
 export declare function InlineSelect(props: { label: string; name?: string; options: Option[]; value?: string; disabled?: boolean }): string;
 /** Quota use as <meter> + words; no `max` means no quota. */
 export declare function Usage(props: { value: number; max?: number; label: string }): string;
+/** YAML change lines: [' ' | '-' | '+', text]. */
+export declare function Diff(props: { lines: Array<[' ' | '-' | '+', string]> }): string;
+/** One audit log entry; rows with diff or meta are <details>. `text` is trusted HTML. */
+export declare function AuditRow(props: { time: string; timeAbs?: string; actor?: string; actorKind?: 'user' | 'key' | 'system'; state?: State; text: string; scope?: string; via?: string;
+  diff?: Array<[' ' | '-' | '+', string]>; meta?: Array<[string, string]>; open?: boolean }): string;
+/** Server-rendered QR SVG framed black on white. */
+export declare function Qr(props: { svg: string; label?: string; caption?: string }): string;
+/** One-time recovery codes with Copy. */
+export declare function RecoveryCodes(props: { codes: string[] }): string;
+/** Hairline with words in the middle. */
+export declare function Divider(props?: { label?: string }): string;
 /** Page sections as links (settings tabs). */
 export declare function Tabs(props: { tabs: Array<{ id: string; label: string; count?: number; href?: string }>; current?: string; label?: string }): string;
 /** One incident row: open (Ack), acked, or resolved. */
 export declare function IncidentRow(props: { state?: 'open' | 'acked' | 'resolved'; name: string; slug: string; href?: string; reason: string; opened: string; openedAbs?: string; duration: string; ackedBy?: string; resolved?: string }): string;
 /** One settings list row; `lead`, `titleHtml`, `actions`, cell `html` are trusted HTML. */
-export declare function SettingsRow(props: { title?: string; titleHtml?: string; sub?: string; lead?: string; muted?: boolean; href?: string; current?: boolean;
+export declare function SettingsRow(props: { title?: string; titleHtml?: string; sub?: string; prose?: boolean; lead?: string; muted?: boolean; href?: string; current?: boolean;
   cells?: Array<{ text?: string; html?: string; size?: 's' | 'm' | 'l'; mono?: boolean; ink?: boolean }>; actions?: string }): string;
 /** The project ping URL with the monitor slug highlighted and a Copy button (`data-copy`). */
 export declare function PingUrl(props: { base?: string; key?: string; slug?: string }): string;
@@ -75,4 +86,5 @@ export declare function wire(root?: ParentNode): void;
 declare global { interface Window { Vink: { StateBadge: typeof StateBadge; Button: typeof Button; Chip: typeof Chip; Tag: typeof Tag; KindIcon: typeof KindIcon; Field: typeof Field; PingUrl: typeof PingUrl; Sparkline: typeof Sparkline; MonitorRow: typeof MonitorRow; UptimeBar: typeof UptimeBar; StatusBanner: typeof StatusBanner; EmptyState: typeof EmptyState; Mark: typeof Mark;
   TopBar: typeof TopBar; Tabs: typeof Tabs; FieldRow: typeof FieldRow; Checkbox: typeof Checkbox; Switch: typeof Switch; Segmented: typeof Segmented; KindPicker: typeof KindPicker;
   Disclosure: typeof Disclosure; Notice: typeof Notice; Code: typeof Code; Panel: typeof Panel; IncidentRow: typeof IncidentRow; SettingsRow: typeof SettingsRow;
-  Menu: typeof Menu; StateCounts: typeof StateCounts; Avatar: typeof Avatar; InlineSelect: typeof InlineSelect; Usage: typeof Usage; wire: typeof wire } } }
+  Menu: typeof Menu; StateCounts: typeof StateCounts; Avatar: typeof Avatar; InlineSelect: typeof InlineSelect; Usage: typeof Usage;
+  AuditRow: typeof AuditRow; Diff: typeof Diff; Qr: typeof Qr; RecoveryCodes: typeof RecoveryCodes; Divider: typeof Divider; wire: typeof wire } } }

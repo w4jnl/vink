@@ -1,0 +1,205 @@
+[
+ {
+  "board": "Main",
+  "file": "monitors",
+  "title": "Monitors",
+  "width": 1280,
+  "fill": false
+ },
+ {
+  "board": "NewHeartbeat",
+  "file": "monitor-new-heartbeat",
+  "title": "New monitor: heartbeat",
+  "width": 1280,
+  "fill": false
+ },
+ {
+  "board": "NewHttp",
+  "file": "monitor-new-http",
+  "title": "New monitor: HTTP",
+  "width": 1280,
+  "fill": false
+ },
+ {
+  "board": "Incidents",
+  "file": "incidents",
+  "title": "Incidents",
+  "width": 1280,
+  "fill": false
+ },
+ {
+  "board": "Channels",
+  "file": "settings-channels",
+  "title": "Settings: channels",
+  "width": 1280,
+  "fill": false
+ },
+ {
+  "board": "Routes",
+  "file": "settings-routes",
+  "title": "Settings: routes",
+  "width": 1280,
+  "fill": false
+ },
+ {
+  "board": "Maintenance",
+  "file": "settings-maintenance",
+  "title": "Settings: maintenance",
+  "width": 1280,
+  "fill": false
+ },
+ {
+  "board": "Pages",
+  "file": "settings-pages",
+  "title": "Settings: status pages",
+  "width": 1280,
+  "fill": false
+ },
+ {
+  "board": "Keys",
+  "file": "settings-keys",
+  "title": "Settings: keys",
+  "width": 1280,
+  "fill": false
+ },
+ {
+  "board": "Login",
+  "file": "login",
+  "title": "Sign in",
+  "width": 1280,
+  "fill": true
+ },
+ {
+  "board": "ProxyDenied",
+  "file": "proxy-denied",
+  "title": "No identity from the proxy",
+  "width": 1280,
+  "fill": true
+ },
+ {
+  "board": "NoAccess",
+  "file": "no-access",
+  "title": "Signed in, no org",
+  "width": 1280,
+  "fill": true
+ },
+ {
+  "board": "Switcher",
+  "file": "switcher-menu",
+  "title": "Project switcher open",
+  "width": 1280,
+  "fill": false
+ },
+ {
+  "board": "OrgMembers",
+  "file": "org-members",
+  "title": "Org: members",
+  "width": 1280,
+  "fill": false
+ },
+ {
+  "board": "OrgProjects",
+  "file": "org-projects",
+  "title": "Org: projects",
+  "width": 1280,
+  "fill": false
+ },
+ {
+  "board": "OrgAgents",
+  "file": "org-agents",
+  "title": "Org: agents",
+  "width": 1280,
+  "fill": false
+ },
+ {
+  "board": "AgentDetail",
+  "file": "org-agent-detail",
+  "title": "Org: agent detail",
+  "width": 1280,
+  "fill": false
+ },
+ {
+  "board": "EditMonitor",
+  "file": "monitor-edit",
+  "title": "Edit monitor: run from an agent",
+  "width": 1280,
+  "fill": false
+ },
+ {
+  "board": "InstanceOrgs",
+  "file": "instance-orgs",
+  "title": "Instance: orgs",
+  "width": 1280,
+  "fill": false
+ },
+ {
+  "board": "Invite",
+  "file": "invite",
+  "title": "Accept an invite",
+  "width": 1280,
+  "fill": true
+ },
+ {
+  "board": "MembersManage",
+  "file": "org-members-manage",
+  "title": "Org: invite panel, invite states, owner actions",
+  "width": 1280,
+  "fill": false
+ },
+ {
+  "board": "OrgAudit",
+  "file": "org-audit",
+  "title": "Org: audit log",
+  "width": 1280,
+  "fill": false
+ },
+ {
+  "board": "InstanceUsers",
+  "file": "instance-users",
+  "title": "Instance: users",
+  "width": 1280,
+  "fill": false
+ },
+ {
+  "board": "InstanceServer",
+  "file": "instance-server",
+  "title": "Instance: server",
+  "width": 1280,
+  "fill": false
+ },
+ {
+  "board": "Account",
+  "file": "account",
+  "title": "Account: two-factor just turned on",
+  "width": 1280,
+  "fill": false
+ },
+ {
+  "board": "TotpSetup",
+  "file": "account-totp-setup",
+  "title": "Account: set up two-factor",
+  "width": 1280,
+  "fill": false
+ },
+ {
+  "board": "LoginTotp",
+  "file": "login-totp",
+  "title": "Sign in: two-factor code",
+  "width": 1280,
+  "fill": true
+ },
+ {
+  "board": "LoginOidc",
+  "file": "login-oidc",
+  "title": "Sign in with OIDC",
+  "width": 1280,
+  "fill": true
+ },
+ {
+  "board": "InviteExpired",
+  "file": "invite-expired",
+  "title": "Invite expired",
+  "width": 1280,
+  "fill": true
+ }
+]

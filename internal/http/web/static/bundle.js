@@ -1,4 +1,4 @@
-/* @ds-bundle: {"format":4,"namespace":"Vink","components":[{"name":"StateBadge"},{"name":"Button"},{"name":"Chip"},{"name":"Tag"},{"name":"KindIcon"},{"name":"Field"},{"name":"PingUrl"},{"name":"Sparkline"},{"name":"MonitorRow"},{"name":"UptimeBar"},{"name":"StatusBanner"},{"name":"EmptyState"},{"name":"TopBar"},{"name":"Tabs"},{"name":"FieldRow"},{"name":"Checkbox"},{"name":"Switch"},{"name":"Segmented"},{"name":"KindPicker"},{"name":"Disclosure"},{"name":"Notice"},{"name":"Code"},{"name":"Panel"},{"name":"IncidentRow"},{"name":"SettingsRow"},{"name":"Menu"},{"name":"StateCounts"},{"name":"Avatar"},{"name":"InlineSelect"},{"name":"Usage"}]} */
+/* @ds-bundle: {"format":4,"namespace":"Vink","components":[{"name":"StateBadge"},{"name":"Button"},{"name":"Chip"},{"name":"Tag"},{"name":"KindIcon"},{"name":"Field"},{"name":"PingUrl"},{"name":"Sparkline"},{"name":"MonitorRow"},{"name":"UptimeBar"},{"name":"StatusBanner"},{"name":"EmptyState"},{"name":"TopBar"},{"name":"Tabs"},{"name":"FieldRow"},{"name":"Checkbox"},{"name":"Switch"},{"name":"Segmented"},{"name":"KindPicker"},{"name":"Disclosure"},{"name":"Notice"},{"name":"Code"},{"name":"Panel"},{"name":"IncidentRow"},{"name":"SettingsRow"},{"name":"Menu"},{"name":"StateCounts"},{"name":"Avatar"},{"name":"InlineSelect"},{"name":"Usage"},{"name":"AuditRow"},{"name":"Diff"},{"name":"Qr"},{"name":"RecoveryCodes"},{"name":"Divider"}]} */
 /* vink components as canonical HTML. Each function returns the markup a Go html/template
    partial must produce; no framework. Helpers wire the two behaviours the UI has beyond htmx:
    copy-to-clipboard and the two-step destructive confirm. */
@@ -62,12 +62,13 @@
     p = p || {}; var id = esc(p.id || 'f'), hid = p.id ? id + '-msg' : '', ctl = p.control || 'input';
     var attrs = ' id="' + id + '" name="' + esc(p.name || p.id || 'f') + '"' + ((p.error || p.hint) && hid ? ' aria-describedby="' + hid + '"' : '') +
       (p.error ? ' aria-invalid="true"' : '') + (p.disabled ? ' disabled' : '');
-    var cls = 'vk-input' + (p.mono ? ' vk-input--mono' : '');
+    var cls = 'vk-input' + (p.mono ? ' vk-input--mono' : '') + (p.otp ? ' vk-input--otp' : '');
+    if (p.otp) attrs += ' inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code"';
     var el;
     if (ctl === 'select') el = '<span class="vk-select"><select class="' + cls + '"' + attrs + '>' + opts(p.options, p.value) + '</select></span>';
     else if (ctl === 'textarea') el = '<textarea class="' + cls + ' vk-input--area"' + attrs + ' rows="' + (p.rows || 3) + '" placeholder="' + esc(p.placeholder) + '">' + esc(p.value) + '</textarea>';
     else {
-      el = '<input class="' + cls + '"' + attrs + ' type="' + esc(p.type || 'text') + '" value="' + esc(p.value) + '" placeholder="' + esc(p.placeholder) + '"' + (p.autocomplete ? ' autocomplete="' + esc(p.autocomplete) + '"' : '') + '>';
+      el = '<input class="' + cls + '"' + attrs + ' type="' + esc(p.type || 'text') + '" value="' + esc(p.value) + '" placeholder="' + esc(p.placeholder) + '"' + (p.autocomplete && !p.otp ? ' autocomplete="' + esc(p.autocomplete) + '"' : '') + '>';
       if (p.prefix || p.suffix) el = '<span class="vk-affix">' + (p.prefix ? '<span class="vk-affix__text">' + esc(p.prefix) + '</span>' : '') + el +
         (p.suffix ? '<span class="vk-affix__text">' + esc(p.suffix) + '</span>' : '') + '</span>';
     }
@@ -272,18 +273,55 @@
       '<span class="vk-irow__act">' + act + '</span></div>';
   }
 
-  /* one row of a settings list; `href` makes the title a link (opens a drawer), `current` marks the open one. cells: [{text | html, size: 's'|'m'|'l', mono, ink}]; `lead`, `titleHtml`, `actions` are trusted HTML.
+  /* one row of a settings list; `prose: true` sets `sub` as a sentence instead of mono data; `href` makes the title a link (opens a drawer), `current` marks the open one. cells: [{text | html, size: 's'|'m'|'l', mono, ink}]; `lead`, `titleHtml`, `actions` are trusted HTML.
      Every row in one list uses the same cell sizes so the columns line up. */
   function SettingsRow(p) {
     p = p || {};
     var title = p.titleHtml || esc(p.title);
     if (p.href) title = '<a class="vk-srow__link" href="' + esc(p.href) + '">' + title + '</a>';
     return '<div class="vk-srow' + (p.muted ? ' vk-srow--muted' : '') + '"' + (p.current ? ' aria-current="true"' : '') + '>' + (p.lead != null ? '<span class="vk-srow__lead">' + p.lead + '</span>' : '') +
-      '<div class="vk-srow__main"><span class="vk-srow__title">' + title + '</span>' + (p.sub ? '<span class="vk-srow__sub" title="' + esc(p.sub) + '">' + esc(p.sub) + '</span>' : '') + '</div>' +
+      '<div class="vk-srow__main"><span class="vk-srow__title">' + title + '</span>' + (p.sub ? '<span class="vk-srow__sub' + (p.prose ? ' vk-srow__sub--prose' : '') + '" title="' + esc(p.sub) + '">' + esc(p.sub) + '</span>' : '') + '</div>' +
       (p.cells || []).map(function (c) {
         return '<span class="vk-srow__cell vk-srow__cell--' + (c.size || 'm') + (c.mono ? ' vk-srow__cell--mono' : '') + (c.ink ? ' vk-srow__cell--ink' : '') + '">' + (c.html || esc(c.text)) + '</span>';
       }).join('') + '<span class="vk-srow__actions">' + (p.actions || '') + '</span></div>';
   }
+
+  /* a change as lines: [op, text] with op ' ' (context), '-' (before) or '+' (after) */
+  function Diff(p) {
+    p = p || {};
+    return '<pre class="vk-diff">' + (p.lines || []).map(function (l) {
+      var k = l[0] === '-' ? ' vk-diff__line--del' : l[0] === '+' ? ' vk-diff__line--add' : '';
+      return '<span class="vk-diff__line' + k + '"><i aria-hidden="true">' + (l[0] === ' ' ? '' : esc(l[0])) + '</i>' + esc(l[1]) + '</span>';
+    }).join('') + '</pre>';
+  }
+
+  /* one audit entry: a change by a person or API key (with its diff), an access event, or a state flip by vink.
+     actorKind: 'user' | 'key' | 'system' (then `state` picks the glyph). `text` is trusted HTML. Rows with a diff or meta are <details>. */
+  function AuditRow(p) {
+    p = p || {}; var sys = p.actorKind === 'system';
+    var who = sys ? glyph(p.state || 'new', 'vk-audit__glyph') + '<span>vink</span>' : Avatar({ name: p.actor }) + '<span>' + esc(p.actor) + (p.actorKind === 'key' ? ' <span class="vk-audit__key">api key</span>' : '') + '</span>';
+    var sum = '<span class="vk-audit__time" title="' + esc(p.timeAbs || '') + '">' + esc(p.time) + '</span><span class="vk-audit__who">' + who + '</span>' +
+      '<span class="vk-audit__what">' + (p.text || '') + '</span><span class="vk-audit__scope">' + (p.scope ? Tag({ label: p.scope }) : '') + '</span><span class="vk-audit__via">' + esc(p.via || '') + '</span>';
+    var body = (p.diff ? Diff({ lines: p.diff }) : '') + (p.meta ? '<dl class="vk-kv">' + p.meta.map(function (m) { return '<dt>' + esc(m[0]) + '</dt><dd>' + esc(m[1]) + '</dd>'; }).join('') + '</dl>' : '');
+    if (!body) return '<div class="vk-audit vk-audit--flat' + (sys ? ' vk-audit--system' : '') + '"><div class="vk-audit__sum">' + sum + '</div></div>';
+    return '<details class="vk-audit' + (sys ? ' vk-audit--system' : '') + '"' + (p.open ? ' open' : '') + '><summary class="vk-audit__sum">' + sum + '</summary><div class="vk-audit__body">' + body + '</div></details>';
+  }
+
+  /* a QR code the server renders as SVG (black on white whatever the theme, so phones can read it); `svg` is trusted */
+  function Qr(p) {
+    p = p || {};
+    return '<figure class="vk-qr"><div class="vk-qr__code" role="img" aria-label="' + esc(p.label || 'QR code') + '">' + (p.svg || '') + '</div>' + (p.caption ? '<figcaption>' + esc(p.caption) + '</figcaption>' : '') + '</figure>';
+  }
+
+  /* one-time recovery codes, shown once, with Copy */
+  function RecoveryCodes(p) {
+    p = p || {}; var c = p.codes || [];
+    return '<div class="vk-codes"><ol class="vk-codes__list">' + c.map(function (x) { return '<li>' + esc(x) + '</li>'; }).join('') + '</ol>' +
+      '<button type="button" class="vk-btn vk-copy" data-copy="' + esc(c.join('\n')) + '">Copy codes</button></div>';
+  }
+
+  /* a hairline with words in the middle: "or use a local account" */
+  function Divider(p) { return '<div class="vk-or" role="separator"><span>' + esc((p || {}).label || 'or') + '</span></div>'; }
 
   /* behaviour: call once after htmx swaps (htmx:afterSettle) or on load */
   function wire(root) {
@@ -322,6 +360,7 @@
     MonitorRow: MonitorRow, UptimeBar: UptimeBar, StatusBanner: StatusBanner, EmptyState: EmptyState,
     TopBar: TopBar, Tabs: Tabs, FieldRow: FieldRow, Checkbox: Checkbox, Switch: Switch, Segmented: Segmented, KindPicker: KindPicker,
     Disclosure: Disclosure, Notice: Notice, Code: Code, Panel: Panel, IncidentRow: IncidentRow, SettingsRow: SettingsRow,
-    Menu: Menu, StateCounts: StateCounts, Avatar: Avatar, InlineSelect: InlineSelect, Usage: Usage, wire: wire, esc: esc };
+    Menu: Menu, StateCounts: StateCounts, Avatar: Avatar, InlineSelect: InlineSelect, Usage: Usage,
+    AuditRow: AuditRow, Diff: Diff, Qr: Qr, RecoveryCodes: RecoveryCodes, Divider: Divider, wire: wire, esc: esc };
   for (var k in api) w.Vink[k] = api[k];
 })();

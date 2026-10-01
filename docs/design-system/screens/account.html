@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Account: two-factor just turned on · vink</title>
+<link rel="stylesheet" href="../tokens.css">
+<link rel="stylesheet" href="../components/bundle.css">
+</head>
+<body class="vk-app">
+<header class="vk-top"><a class="vk-top__mark" href="monitors.html"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><g stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" fill="none"><path d="M8 3.2 H6 a2.2 2.2 0 0 0 -2.2 2.2 V18.6 a2.2 2.2 0 0 0 2.2 2.2 H8"/><path d="M16 3.2 H18 a2.2 2.2 0 0 1 2.2 2.2 V18.6 a2.2 2.2 0 0 1 -2.2 2.2 H16"/></g><path d="M7.5 10.1 L10.5 12.9 L16.5 7.1" stroke="currentColor" stroke-width="2.9" stroke-linecap="round" stroke-linejoin="round" fill="none"/><rect x="9.6" y="16.2" width="4.8" height="2.2" rx="1.1" fill="currentColor"/></svg><span>vink</span></a><nav class="vk-top__nav" aria-label="Project"><details class="vk-popover"><summary class="vk-top__crumb" title="Switch project">w4j / <b>homelab</b><i class="vk-caret" aria-hidden="true"></i></summary><div class="vk-menu"><div class="vk-menu__group"><div class="vk-menu__label"><span>w4j</span><span class="vk-tag">owner</span></div><a class="vk-menu__item" href="monitors.html" aria-current="page"><span>homelab</span><span class="vk-menu__meta"><span class="vk-counts"><span class="vk-counts__n vk-counts__n--down" title="2 down"><i class="vk-glyph vk-glyph--down" aria-hidden="true"></i>2</span><span class="vk-counts__n vk-counts__n--late" title="1 late"><i class="vk-glyph vk-glyph--late" aria-hidden="true"></i>1</span></span></span></a><a class="vk-menu__item" href="#"><span>office</span><span class="vk-menu__meta"><span class="vk-counts"><span class="vk-counts__n vk-counts__n--up"><i class="vk-glyph vk-glyph--up" aria-hidden="true"></i>all up</span></span></span></a><a class="vk-menu__item" href="#"><span>staging</span><span class="vk-menu__meta"><span class="vk-counts"><span class="vk-counts__none">no monitors</span></span></span></a></div><hr class="vk-menu__sep"><div class="vk-menu__group"><a class="vk-menu__item vk-menu__item--quiet" href="org-projects.html"><span>New project</span></a><a class="vk-menu__item vk-menu__item--quiet" href="org-members.html"><span>Org settings</span></a></div><hr class="vk-menu__sep"><div class="vk-menu__group"><div class="vk-menu__label"><span>acme</span><span class="vk-tag">viewer</span></div><a class="vk-menu__item" href="#"><span>shop</span><span class="vk-menu__meta"><span class="vk-counts"><span class="vk-counts__n vk-counts__n--down" title="1 down"><i class="vk-glyph vk-glyph--down" aria-hidden="true"></i>1</span></span></span></a></div></div></details><a class="vk-top__link" href="monitors.html">Monitors</a><a class="vk-top__link" href="incidents.html">Incidents<span class="vk-top__count" title="2 open"><i class="vk-glyph vk-glyph--down" aria-hidden="true"></i>2</span></a><a class="vk-top__link" href="settings-channels.html">Settings</a></nav><input class="vk-input vk-top__search" type="search" placeholder="Search monitors  /" aria-label="Search monitors"><details class="vk-popover vk-popover--end"><summary class="vk-top__user" title="j">J</summary><div class="vk-menu"><div class="vk-menu__group"><div class="vk-menu__label"><span>j</span><span class="vk-tag">instance admin</span></div><a class="vk-menu__item" href="account.html"><span>Account</span></a><a class="vk-menu__item" href="instance-orgs.html"><span>Instance admin</span></a><a class="vk-menu__item" href="#"><span>API reference</span><span class="vk-menu__meta"><span class="vk-counts__none">openapi.yaml</span></span></a></div><hr class="vk-menu__sep"><div class="vk-menu__group"><a class="vk-menu__item vk-menu__item--quiet" href="login.html"><span>Sign out</span></a></div></div></details></header>
+<div class="vk-page vk-page--full">
+<main class="vk-main vk-narrow">
+<div class="vk-main__head"><h1>Account</h1><span class="vk-muted vk-mono">j · local account</span></div>
+<section class="vk-section"><h2>Profile</h2>
+<div class="vk-fieldrow"><div class="vk-field"><label class="vk-field__label" for="acc_name">Name</label><input class="vk-input" id="acc_name" name="acc_name" type="text" value="J" placeholder=""></div><div class="vk-field"><label class="vk-field__label" for="acc_email">Email</label><input class="vk-input vk-input--mono" id="acc_email" name="acc_email" aria-describedby="acc_email-msg" type="text" value="j@w4j.nl" placeholder=""><span class="vk-field__hint" id="acc_email-msg">Shown to other members. Alert mail goes to channels, not here.</span></div></div>
+<div class="vk-actions"><button type="button" class="vk-btn">Save profile</button></div></section>
+<section class="vk-section"><h2>Password</h2>
+<form class="vk-inlineform vk-inlineform--even" action="#" method="post"><div class="vk-field"><label class="vk-field__label" for="pw_old">Current password</label><input class="vk-input" id="pw_old" name="pw_old" type="password" value="" placeholder="" autocomplete="current-password"></div><div class="vk-field"><label class="vk-field__label" for="pw_new">New password</label><input class="vk-input" id="pw_new" name="pw_new" type="password" value="" placeholder="" autocomplete="new-password"></div><button type="submit" class="vk-btn">Change password</button></form>
+<p class="vk-field__hint">12 characters or more. Changing it signs out your other sessions.</p></section>
+<section class="vk-section"><h2>Two-factor sign-in</h2><p class="vk-lede">Ask for a code from an authenticator app after the password. People who sign in through the proxy or OIDC get two-factor from their identity provider instead.</p>
+<div class="vk-srows">
+<div class="vk-srow"><div class="vk-srow__main"><span class="vk-srow__title">Authenticator app</span><span class="vk-srow__sub" title="on since today 14:20 · 10 of 10 recovery codes left">on since today 14:20 · 10 of 10 recovery codes left</span></div><span class="vk-srow__cell vk-srow__cell--m"><span class="vk-state vk-state--up"><i class="vk-glyph vk-glyph--up" aria-hidden="true"></i>on</span></span><span class="vk-srow__actions"><button type="button" class="vk-btn">New codes</button><button type="button" class="vk-btn vk-btn--danger" data-confirm="Really turn off?">Turn off</button></span></div>
+<div class="vk-srow__note"><div class="vk-notice vk-notice--ok" role="status"><i class="vk-glyph vk-glyph--up" aria-hidden="true"></i><div class="vk-notice__text"><p><b class="vk-notice__title">Two-factor is on.</b> Keep these recovery codes somewhere safe, away from your phone. Each one works once, and this is the only time vink shows them.</p><div class="vk-codes"><ol class="vk-codes__list"><li>7KQ2-M9XD</li><li>R4TW-8HNP</li><li>C3VB-Z6LJ</li><li>Y8PF-2KRM</li><li>H5NQ-W7DS</li><li>B9XG-4TCE</li><li>L2MJ-V6QA</li><li>T6RD-3ZPK</li><li>E8HW-9NBF</li><li>Q4CK-7YXT</li></ol><button type="button" class="vk-btn vk-copy" data-copy="7KQ2-M9XD
+R4TW-8HNP
+C3VB-Z6LJ
+Y8PF-2KRM
+H5NQ-W7DS
+B9XG-4TCE
+L2MJ-V6QA
+T6RD-3ZPK
+E8HW-9NBF
+Q4CK-7YXT">Copy codes</button></div></div></div></div>
+</div>
+</section>
+<section class="vk-section"><h2>Sessions <span>3</span></h2>
+<div class="vk-srows">
+<div class="vk-srow"><div class="vk-srow__main"><span class="vk-srow__title">Firefox on macOS <span class="vk-tag">this session</span></span><span class="vk-srow__sub" title="since Mon 28 Sep 09:12 · 10.0.4.12">since Mon 28 Sep 09:12 · 10.0.4.12</span></div><span class="vk-srow__cell vk-srow__cell--m vk-srow__cell--mono">active now</span><span class="vk-srow__actions"></span></div>
+<div class="vk-srow"><div class="vk-srow__main"><span class="vk-srow__title">Safari on iPhone</span><span class="vk-srow__sub" title="since Fri 25 Sep 18:40 · 10.0.4.31">since Fri 25 Sep 18:40 · 10.0.4.31</span></div><span class="vk-srow__cell vk-srow__cell--m vk-srow__cell--mono">2 h ago</span><span class="vk-srow__actions"><button type="button" class="vk-btn">Sign out</button></span></div>
+<div class="vk-srow"><div class="vk-srow__main"><span class="vk-srow__title">Firefox on Linux</span><span class="vk-srow__sub" title="since Sat 12 Sep 10:02 · 192.168.1.20">since Sat 12 Sep 10:02 · 192.168.1.20</span></div><span class="vk-srow__cell vk-srow__cell--m vk-srow__cell--mono">6 d ago</span><span class="vk-srow__actions"><button type="button" class="vk-btn">Sign out</button></span></div>
+</div>
+<div class="vk-actions"><button type="button" class="vk-btn" data-confirm="Really sign out 2 sessions?">Sign out everywhere else</button></div></section>
+</main>
+</div>
+<script src="../components/bundle.js"></script>
+<script>Vink.wire(document);</script>
+</body>
+</html>

@@ -238,7 +238,7 @@
    "name": "Nightly backup",
    "slug": "nightly-backup",
    "kind": "heartbeat",
-   "last": "3 h ago · 4m12s",
+   "last": "3 h ago \u00b7 4m12s",
    "lastAbs": "2026-09-27 03:04 CEST",
    "next": "due in 21 h",
    "tags": [
@@ -256,7 +256,7 @@
    "name": "Public API",
    "slug": "api-health",
    "kind": "http",
-   "last": "2 min ago · 503",
+   "last": "2 min ago \u00b7 503",
    "points": [
     80,
     82,
@@ -641,7 +641,7 @@
   "name": "disclosure",
   "component": "Disclosure",
   "props": {
-   "summary": "max runtime none · down after 1",
+   "summary": "max runtime none \u00b7 down after 1",
    "body": "<p>body</p>"
   }
  },
@@ -788,8 +788,8 @@
    "name": "Public API",
    "slug": "api-health",
    "href": "/o/w4j/p/homelab/m/api-health",
-   "reason": "503 · 3 of 3 checks failed",
-   "opened": "14:07 · 4 min ago",
+   "reason": "503 \u00b7 3 of 3 checks failed",
+   "opened": "14:07 \u00b7 4 min ago",
    "openedAbs": "Mon 28 Sep 14:07:31 CEST",
    "duration": "open 4 min"
   }
@@ -802,9 +802,9 @@
    "name": "Postgres",
    "slug": "postgres",
    "reason": "connection refused",
-   "opened": "13:51 · 20 min ago",
+   "opened": "13:51 \u00b7 20 min ago",
    "duration": "open 20 min",
-   "ackedBy": "j · 13:55"
+   "ackedBy": "j \u00b7 13:55"
   }
  },
  {
@@ -825,7 +825,7 @@
   "component": "SettingsRow",
   "props": {
    "title": "ops mail",
-   "sub": "smtp · ops@example.com",
+   "sub": "smtp \u00b7 ops@example.com",
    "cells": [
     {
      "html": "<b>on</b>",
@@ -853,7 +853,7 @@
   "props": {
    "lead": "1",
    "titleHtml": "<span class=\"vk-tag\">prod</span>",
-   "sub": "→ ops mail, ntfy",
+   "sub": "\u2192 ops mail, ntfy",
    "muted": true
   }
  },
@@ -885,7 +885,7 @@
    "title": "dc1-probe",
    "href": "/o/w4j/admin/agents/dc1-probe",
    "current": true,
-   "sub": "site=dc1 · zone=core",
+   "sub": "site=dc1 \u00b7 zone=core",
    "cells": [
     {
      "text": "12 monitors"
@@ -1065,5 +1065,176 @@
    "value": 4,
    "label": "agents"
   }
+ },
+ {
+  "name": "field-otp",
+  "component": "Field",
+  "props": {
+   "id": "code",
+   "label": "Code from the app",
+   "otp": true,
+   "placeholder": "000000",
+   "hint": "Proves the app and vink agree on the time.",
+   "autocomplete": "off"
+  }
+ },
+ {
+  "name": "settingsrow-prose",
+  "component": "SettingsRow",
+  "props": {
+   "title": "Transfer ownership",
+   "sub": "Make another member the owner of w4j. You stay on as admin.",
+   "prose": true,
+   "cells": [
+    {
+     "html": "<select></select>",
+     "size": "m"
+    }
+   ],
+   "actions": "<button type=\"button\" class=\"vk-btn\">Transfer</button>"
+  }
+ },
+ {
+  "name": "diff",
+  "component": "Diff",
+  "props": {
+   "lines": [
+    [
+     " ",
+     "kind: http"
+    ],
+    [
+     "-",
+     "interval: 60s"
+    ],
+    [
+     "+",
+     "interval: 30s"
+    ],
+    [
+     " ",
+     "timeout: 5s"
+    ]
+   ]
+  }
+ },
+ {
+  "name": "auditrow-change",
+  "component": "AuditRow",
+  "props": {
+   "time": "14:12",
+   "timeAbs": "Mon 28 Sep 14:12:03 CEST",
+   "actor": "j",
+   "actorKind": "user",
+   "text": "changed monitor <code>api-health</code>: interval, confirm",
+   "scope": "homelab",
+   "via": "web",
+   "open": true,
+   "diff": [
+    [
+     " ",
+     "kind: http"
+    ],
+    [
+     "-",
+     "interval: 60s"
+    ],
+    [
+     "+",
+     "interval: 30s"
+    ]
+   ],
+   "meta": [
+    [
+     "request",
+     "01J8ZQ3M2C7T4W9N1B5K8D0FHX"
+    ],
+    [
+     "from",
+     "10.0.4.12"
+    ]
+   ]
+  }
+ },
+ {
+  "name": "auditrow-key",
+  "component": "AuditRow",
+  "props": {
+   "time": "11:30",
+   "actor": "ci deploy",
+   "actorKind": "key",
+   "text": "applied vink.yaml: 1 created, 2 updated",
+   "scope": "homelab",
+   "via": "api vk_9Tq2x7Lm",
+   "meta": [
+    [
+     "request",
+     "01J8ZQ3M2C7T4W9N1B5K8D0FHX"
+    ]
+   ]
+  }
+ },
+ {
+  "name": "auditrow-system",
+  "component": "AuditRow",
+  "props": {
+   "time": "14:07",
+   "actorKind": "system",
+   "state": "down",
+   "text": "<code>api-health</code> went down: 503, 3 of 3 checks failed",
+   "scope": "homelab",
+   "via": "checker"
+  }
+ },
+ {
+  "name": "auditrow-access",
+  "component": "AuditRow",
+  "props": {
+   "time": "10:20",
+   "actor": "j",
+   "actorKind": "user",
+   "text": "signed in with a recovery code; 9 left",
+   "scope": "w4j",
+   "via": "web"
+  }
+ },
+ {
+  "name": "qr",
+  "component": "Qr",
+  "props": {
+   "svg": "<svg viewBox=\"0 0 4 4\"><path d=\"M0 0h1v1H0z\" fill=\"currentColor\"/></svg>",
+   "label": "QR code for vink.w4j.nl, account j",
+   "caption": "Scan with an authenticator app."
+  }
+ },
+ {
+  "name": "qr-bare",
+  "component": "Qr",
+  "props": {
+   "svg": "<svg></svg>"
+  }
+ },
+ {
+  "name": "recoverycodes",
+  "component": "RecoveryCodes",
+  "props": {
+   "codes": [
+    "7KQ2-M9XD",
+    "R4TW-8HNP",
+    "C3VB-Z6LJ"
+   ]
+  }
+ },
+ {
+  "name": "divider",
+  "component": "Divider",
+  "props": {
+   "label": "or use a local account"
+  }
+ },
+ {
+  "name": "divider-default",
+  "component": "Divider",
+  "props": {}
  }
 ]

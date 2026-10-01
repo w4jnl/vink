@@ -69,7 +69,7 @@ func render(t *testing.T, c goldenCase) string {
 		return string(KindIcon(str("kind")))
 	case "Field":
 		fp := FieldProps{ID: str("id"), Name: str("name"), Label: str("label"), Value: str("value"), Placeholder: str("placeholder"), Hint: str("hint"), Error: str("error"), Mono: boolean("mono"),
-			Control: str("control"), Type: str("type"), Prefix: str("prefix"), Suffix: str("suffix"), Disabled: boolean("disabled"), Autocomplete: str("autocomplete"),
+			Control: str("control"), Type: str("type"), Prefix: str("prefix"), Suffix: str("suffix"), Disabled: boolean("disabled"), Autocomplete: str("autocomplete"), Otp: boolean("otp"),
 			HTML: HTML(str("html")), Before: HTML(str("before")), After: HTML(str("after"))}
 		if v, ok := p["rows"].(float64); ok {
 			fp.Rows = int(v)
@@ -131,7 +131,7 @@ func render(t *testing.T, c goldenCase) string {
 	case "IncidentRow":
 		return string(IncidentRow(IncidentRowProps{State: str("state"), Name: str("name"), Slug: str("slug"), Href: str("href"), Reason: str("reason"), Opened: str("opened"), OpenedAbs: str("openedAbs"), Duration: str("duration"), AckedBy: str("ackedBy"), Resolved: str("resolved")}))
 	case "SettingsRow":
-		sp := SettingsRowProps{Title: str("title"), TitleHTML: HTML(str("titleHtml")), Sub: str("sub"), Muted: boolean("muted"), Href: str("href"), Current: boolean("current"), Actions: HTML(str("actions"))}
+		sp := SettingsRowProps{Title: str("title"), TitleHTML: HTML(str("titleHtml")), Sub: str("sub"), Prose: boolean("prose"), Muted: boolean("muted"), Href: str("href"), Current: boolean("current"), Actions: HTML(str("actions"))}
 		if lead, ok := p["lead"]; ok {
 			sp.HasLead = true
 			sp.Lead = stringOf(lead)
@@ -189,6 +189,27 @@ func render(t *testing.T, c goldenCase) string {
 		return string(StatusBanner(str("state"), str("text"), str("detail")))
 	case "EmptyState":
 		return string(EmptyState(str("base"), str("key")))
+	case "Diff":
+		return string(Diff(diffLines(p["lines"])))
+	case "AuditRow":
+		ap := AuditRowProps{Time: str("time"), TimeAbs: str("timeAbs"), Actor: str("actor"), ActorKind: str("actorKind"), State: str("state"), Text: HTML(str("text")), Scope: str("scope"), Via: str("via"), Open: boolean("open")}
+		if _, ok := p["diff"]; ok {
+			ap.Diff = diffLines(p["diff"])
+		}
+		if meta, ok := p["meta"].([]any); ok {
+			ap.Meta = [][2]string{}
+			for _, raw := range meta {
+				pair := raw.([]any)
+				ap.Meta = append(ap.Meta, [2]string{stringOf(pair[0]), stringOf(pair[1])})
+			}
+		}
+		return string(AuditRow(ap))
+	case "Qr":
+		return string(Qr(HTML(str("svg")), str("label"), str("caption")))
+	case "RecoveryCodes":
+		return string(RecoveryCodes(strs("codes")))
+	case "Divider":
+		return string(Divider(str("label")))
 	case "Mark":
 		size := 0
 		if v, ok := p["size"].(float64); ok {
@@ -316,4 +337,15 @@ func TestExtras(t *testing.T) {
 	if esc(`<a href="x">'&'</a>`) != `&lt;a href=&quot;x&quot;&gt;&#39;&amp;&#39;&lt;/a&gt;` {
 		t.Error("esc")
 	}
+}
+
+// diffLines reads the kit's [op, text] pairs.
+func diffLines(v any) []DiffLine {
+	raw, _ := v.([]any)
+	out := []DiffLine{}
+	for _, l := range raw {
+		pair := l.([]any)
+		out = append(out, DiffLine{Op: stringOf(pair[0]), Text: stringOf(pair[1])})
+	}
+	return out
 }

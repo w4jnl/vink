@@ -87,7 +87,11 @@ func (f *serverFlags) withService(cmd *cobra.Command, fn func(*service.Service, 
 	svcCfg.PingBaseURL = cfg.PingBaseURL()
 	svcCfg.BodyLimit = int64(cfg.Ping.BodyLimit)
 	svcCfg.Keyring = keyring
-	return fn(service.New(d, nil, log, svcCfg), cfg)
+	if err := fn(service.New(d, nil, log, svcCfg), cfg); err != nil {
+		// name the database, so a command aimed at the wrong file says so
+		return fmt.Errorf("%w (database %s)", err, cfg.DB.Path)
+	}
+	return nil
 }
 
 // readPassword reads one line from stdin when --password-stdin is set.
@@ -114,6 +118,7 @@ func newAdminInitCmd(f *serverFlags) *cobra.Command {
 		Short: "Bootstrap an empty database: instance admin, first org, first project, rw API key",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			f.createDB = true
 			pw, err := readPassword(cmd, passwordStdin)
 			if err != nil {
 				return err

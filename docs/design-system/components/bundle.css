@@ -13,7 +13,7 @@ body { margin: 0; background: var(--ground); color: var(--ink); font-family: var
 /* focus: one ring for everything */
 .vk-btn:focus-visible, .vk-chip:focus-visible, .vk-input:focus-visible, .vk-row:focus-visible, .vk-copy:focus-visible, .vk-top a:focus-visible, .vk-top button:focus-visible,
 .vk-tab:focus-visible, .vk-switch:focus-visible, .vk-details > summary:focus-visible, .vk-check input:focus-visible, .vk-irow__name:focus-visible, .vk-link:focus-visible,
-.vk-seg__opt input:focus-visible + span, .vk-kindopt input:focus-visible + .vk-kindopt__card, .vk-top summary:focus-visible, .vk-menu__item:focus-visible, .vk-srow__link:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.vk-seg__opt input:focus-visible + span, .vk-kindopt input:focus-visible + .vk-kindopt__card, .vk-top summary:focus-visible, .vk-menu__item:focus-visible, .vk-srow__link:focus-visible, .vk-audit__sum:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 
 /* state glyphs: shape carries the state, colour repeats it */
 .vk-glyph { display: inline-block; flex: none; width: 10px; height: 10px; box-sizing: border-box; }
@@ -403,3 +403,61 @@ p.vk-field__hint { margin: 0; }
 /* beside an open drawer a settings list keeps the name and its first cell */
 .vk-page:not(.vk-page--full) .vk-srow__cell ~ .vk-srow__cell, .vk-page:not(.vk-page--full) .vk-srow__actions { display: none; }
 .vk-page:not(.vk-page--full) .vk-srow__cell { width: auto; }
+
+/* One-time code */
+.vk-input--otp { height: 44px; font: 700 22px/1 var(--font-mono); letter-spacing: 0.45em; text-align: center; padding-left: calc(10px + 0.45em); }
+
+/* AuditRow and Diff */
+.vk-audits { display: flex; flex-direction: column; border-top: 1px solid var(--line); max-width: var(--content-max); }
+.vk-audit { border-bottom: 1px solid var(--line); }
+.vk-audit__sum { display: grid; grid-template-columns: 12px 48px 184px minmax(0, 1fr) 104px 128px; align-items: center; column-gap: var(--space-3); min-height: var(--row-h); padding: 0 var(--space-4); list-style: none; }
+.vk-audit > summary { cursor: pointer; }
+.vk-audit > summary::-webkit-details-marker { display: none; }
+.vk-audit > summary::before { content: ""; width: 5px; height: 5px; border-right: 1.5px solid var(--ink-muted); border-bottom: 1.5px solid var(--ink-muted); transform: rotate(-45deg); }
+.vk-audit[open] > summary::before { transform: rotate(45deg); }
+.vk-audit--flat .vk-audit__sum::before { content: ""; }
+.vk-audit > summary:hover, .vk-audit[open] > summary { background: var(--surface); }
+.vk-audit__time { color: var(--ink-muted); font: 400 13px/20px var(--font-mono); font-variant-numeric: tabular-nums; }
+.vk-audit__who { display: flex; align-items: center; gap: var(--space-2); min-width: 0; font-size: 14px; font-weight: 500; white-space: nowrap; overflow: hidden; }
+.vk-audit__who > span { overflow: hidden; text-overflow: ellipsis; }
+.vk-audit__who .vk-avatar { width: 24px; height: 24px; font-size: 11px; }
+.vk-audit__glyph { margin: 0 7px; }
+.vk-audit__glyph.vk-glyph--up { color: var(--up); } .vk-audit__glyph.vk-glyph--late { color: var(--late); } .vk-audit__glyph.vk-glyph--down { color: var(--down); }
+.vk-audit--system .vk-audit__who { color: var(--ink-muted); font-weight: 400; }
+.vk-audit__key { color: var(--ink-muted); font: 400 12px/16px var(--font-mono); }
+.vk-audit__what { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; }
+.vk-audit__what code { font: 400 13px/20px var(--font-mono); }
+.vk-audit__scope { display: flex; }
+.vk-audit__via { color: var(--ink-muted); font: 400 12px/16px var(--font-mono); text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.vk-audit__body { display: flex; flex-direction: column; gap: var(--space-3); padding: var(--space-2) var(--space-4) var(--space-4) calc(12px + 48px + 184px + 3 * var(--space-3) + var(--space-4)); background: var(--surface); }
+.vk-diff { margin: 0; padding: var(--space-2) 0; border-radius: var(--radius-sm); background: var(--surface-sunk); font: 400 12.5px/20px var(--font-mono); overflow-x: auto; }
+.vk-diff__line { display: block; padding: 0 var(--space-4) 0 0; color: var(--ink-muted); white-space: pre; }
+.vk-diff__line i { display: inline-block; width: 28px; text-align: center; font-style: normal; }
+.vk-diff__line--del { color: var(--ink-muted); }
+.vk-diff__line--add { background: var(--accent-soft); color: var(--ink); }
+.vk-diff__line--add i { color: var(--accent); font-weight: 700; }
+.vk-diff__line--del i { color: var(--ink); font-weight: 700; }
+@media (max-width: 640px) { .vk-audit__sum { grid-template-columns: 12px 48px minmax(0, 1fr); } .vk-audit__sum > :nth-child(n+4) { display: none; } .vk-audit__body { padding-left: var(--space-4); } }
+
+/* QR code: black on white in both themes, so any phone reads it */
+.vk-qr { display: flex; flex-direction: column; gap: var(--space-2); margin: 0; }
+.vk-qr__code { box-sizing: border-box; width: 172px; height: 172px; padding: 10px; border-radius: var(--radius-sm); background: #FFFFFF; color: #000000; }
+.vk-qr__code svg { display: block; width: 100%; height: 100%; }
+.vk-qr figcaption { color: var(--ink-muted); font-size: 12px; line-height: 16px; }
+
+/* RecoveryCodes */
+.vk-codes { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-3); }
+.vk-codes__list { display: grid; grid-template-columns: repeat(2, max-content); gap: 4px var(--space-6); margin: 0; padding: var(--space-3) var(--space-5); list-style: none; border-radius: var(--radius-sm); background: var(--surface-sunk); color: var(--ink); font: 400 13px/20px var(--font-mono); }
+
+/* Divider */
+.vk-or { display: flex; align-items: center; gap: var(--space-3); color: var(--ink-muted); font-size: 12px; line-height: 16px; }
+.vk-or::before, .vk-or::after { content: ""; flex: 1; border-top: 1px solid var(--line); }
+
+/* Facts: read-only server settings in panels */
+.vk-facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-4); max-width: var(--content-max); }
+.vk-facts .vk-panel { gap: var(--space-3); }
+.vk-two { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: var(--space-5); align-items: start; }
+.vk-section .vk-srows { max-width: none; }
+.vk-narrow { max-width: 760px; }
+.vk-inlineform--even > .vk-field, .vk-inlineform--even > .vk-field + .vk-field { flex: 1; }
+.vk-srow__sub--prose { font: 400 12px/18px var(--font-sans); white-space: normal; }

@@ -33,4 +33,25 @@ Do not write code until I approve the plan. Stop at the phase 1 gate and show me
 
 ---
 
-Later phases: "Plan phase N from docs/design.md, same rules. Build the UI to docs/design-system/screens/." Every screen in docs/design.md is designed now, including org settings, agents and instance admin (phases 2 and 3). Anything new (the TOTP step, the audit log view) gets designed in Claude Design with the vink design system first and saved under docs/design-system/screens/ before asking for the build.
+## Phase 2
+
+"Plan phase 2 from docs/design.md, same rules. Build the agents UI to docs/design-system/screens/ (org-agents, org-agent-detail, monitor-edit)."
+
+## Phase 3
+
+The phase 3 screens are designed now: members with invites and owner actions, the audit log, instance admin users and server, the account page with two-factor, the sign-in code step, OIDC sign-in and the expired invite. Copy this kit's `docs/design-system/` and `KICKOFF.md` over the repo (bundle.css, bundle.js, index.d.ts, README.md and five new components changed), commit, then in plan mode paste:
+
+---
+
+Read docs/design-system/screens/README.md, the section "Phase 3: invites, audit log, instance admin, accounts" first, and look at the PNGs for org-members-manage, org-audit, instance-users, instance-server, account, account-totp-setup, login-totp, login-oidc and invite-expired. Then read the new components in docs/design-system/components/ (AuditRow, Diff, Qr, RecoveryCodes, Divider) and the `otp` option on Field and `prose` on SettingsRow.
+
+Plan phase 3 from docs/design.md, same rules as before. The plan must:
+1. start with the data model: the `audit` table (actor, actor kind, org, project, action, target, before/after spec as YAML with secrets masked, via, request id, remote address), how every admin action and API apply writes to it in the same transaction as the change, and the one query that merges it with `events` for the log; plus the columns for two-factor (secret encrypted at rest, recovery code hashes), invites, reset tokens and disabled users. Give the migrations;
+2. then the tasks in order: org admin UI (members with invites, roles, owner actions; projects; quotas), instance admin (orgs, users, server), audit log (org and instance), account page and TOTP (enrolment, the sign-in code step, recovery codes, `auth.local.totp = "optional" | "required"`), native OIDC (`coreos/go-oidc`, PKCE, the same `subject + groups` mapping as proxy mode), then the Postgres backend and the Terraform provider. For each UI task, list the template partials and the component whose markup each copies;
+3. name every Go dependency you add (TOTP and QR libraries included; the QR must render as inline SVG on the server, no JavaScript and no external service), and the open decisions phase 3 depends on, with your default;
+4. list everything in the screens README that is not in docs/design.md yet (routes, the `audit` table, the new config keys) and propose the doc changes, so I can approve them with the plan;
+5. include tests for: cross-tenant access to the audit log and admin pages (404), the last-owner rule, invite expiry and single use, TOTP window and replay, recovery code single use, and the OIDC callback's state and nonce checks.
+
+Do not write code until I approve the plan. Stop at the phase 3 gate and show me a second org onboarded without hand-holding: create the org with a quota as instance admin, invite its first owner, accept the invite, turn on two-factor, add a project and a monitor, and find all of it in the audit log.
+
+---

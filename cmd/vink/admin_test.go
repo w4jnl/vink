@@ -240,3 +240,34 @@ func TestAdminUserGrantAndRevoke(t *testing.T) {
 		t.Fatalf("revoke twice: %d %s", code, errs)
 	}
 }
+
+func TestAdminRefusesMissingDatabase(t *testing.T) {
+	dir := t.TempDir()
+	missing := filepath.Join(dir, "nope.db")
+	runCLI := func(stdin string, args ...string) (string, string, int) {
+		var out, errb bytes.Buffer
+		code := run(context.Background(), append([]string{"--color", "never"}, args...), strings.NewReader(stdin), &out, &errb)
+		return out.String(), errb.String(), code
+	}
+	if _, errs, code := runCLI("", "admin", "user", "ls", "--db", missing); code == 0 || !strings.Contains(errs, "no database at "+missing) {
+		t.Fatalf("missing db: %d %s", code, errs)
+	}
+	if _, errs, code := runCLI("", "migrate", "status", "--db", missing); code == 0 || !strings.Contains(errs, "no database at") {
+		t.Fatalf("migrate status on a missing db: %d %s", code, errs)
+	}
+	if _, err := os.Stat(missing); err == nil {
+		t.Fatal("a refused command must not create the file")
+	}
+	// init and migrate up are the ways to create one
+	if _, errs, code := runCLI("hunter2hunter2\n", "admin", "init", "--db", missing, "--org", "homelab", "--user", "j", "--password-stdin"); code != 0 {
+		t.Fatalf("init: %s", errs)
+	}
+	fresh := filepath.Join(dir, "fresh.db")
+	if _, errs, code := runCLI("", "migrate", "up", "--db", fresh); code != 0 {
+		t.Fatalf("migrate up: %s", errs)
+	}
+	// errors name the database
+	if _, errs, code := runCLI("", "admin", "user", "grant", "--db", missing, "nobody", "--org", "homelab"); code == 0 || !strings.Contains(errs, "(database "+missing+")") {
+		t.Fatalf("error without the database: %d %s", code, errs)
+	}
+}

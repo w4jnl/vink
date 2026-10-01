@@ -1,0 +1,16 @@
+<!-- @dsCard group="Audit" height=300 width=1120 -->
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>vink</title></head>
+<body>
+<div id="root" class=""></div>
+<script>
+  var V = window.Vink;
+  document.getElementById('root').innerHTML = '<div class="vk-audits">' +
+    V.AuditRow({ time: '14:12', actor: 'j', text: 'changed monitor <code>api-health</code>: interval', scope: 'homelab', via: 'web', open: true, diff: [[' ', 'kind: http'], ['-', 'interval: 60s'], ['+', 'interval: 30s']] }) +
+    V.AuditRow({ time: '14:07', actorKind: 'system', state: 'down', text: '<code>api-health</code> went down: 503', scope: 'homelab', via: 'checker' }) +
+    V.AuditRow({ time: '11:30', actor: 'ci deploy', actorKind: 'key', text: 'applied vink.yaml: 1 created, 2 updated', scope: 'homelab', via: 'api vk_9Tq2x7Lm', meta: [['request', '01J8ZK0P4R6S']] }) + '</div>';
+  V.wire(document);
+</script>
+</body>
+</html>

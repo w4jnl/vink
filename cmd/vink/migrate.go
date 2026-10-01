@@ -19,6 +19,10 @@ import (
 type serverFlags struct {
 	config string
 	dbPath string
+	// createDB lets a command open a path with no database yet: init and
+	// migrate up. Every other command refuses, so a typo in --db never
+	// quietly makes an empty one.
+	createDB bool
 }
 
 func (f *serverFlags) add(cmd *cobra.Command) {
@@ -47,6 +51,11 @@ func (f *serverFlags) open(ctx context.Context) (*db.DB, *config.Config, error) 
 	cfg, err := f.load()
 	if err != nil {
 		return nil, nil, err
+	}
+	if !f.createDB {
+		if _, err := os.Stat(cfg.DB.Path); err != nil {
+			return nil, nil, fmt.Errorf("no database at %s; pass --db, set VINK_DB_PATH or VINK_CONFIG_FILE (the dev server uses data/vink.db), or run vink admin init to create one", cfg.DB.Path)
+		}
 	}
 	d, err := db.Open(ctx, cfg.DB.Path)
 	if err != nil {
@@ -77,6 +86,7 @@ func newMigrateCmd() *cobra.Command {
 		Short: "Apply pending migrations",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			f.createDB = true
 			d, _, err := f.open(cmd.Context())
 			if err != nil {
 				return err

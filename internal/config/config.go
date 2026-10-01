@@ -240,6 +240,9 @@ func (c *Config) Validate() error {
 	if c.Server.Listen == "" {
 		fail("server.listen must not be empty")
 	}
+	if c.Auth.Proxy.Enabled && len(c.Auth.Proxy.TrustedCIDRs) == 0 {
+		fail("auth.proxy.enabled is on but auth.proxy.trusted_cidrs is empty: list the proxy's address, or nobody's identity headers are believed")
+	}
 	if u, err := url.Parse(c.Server.BaseURL); err != nil || u.Scheme == "" || u.Host == "" {
 		fail("server.base_url must be an absolute URL, got %q", c.Server.BaseURL)
 	}

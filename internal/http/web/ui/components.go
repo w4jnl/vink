@@ -231,6 +231,8 @@ type FieldProps struct {
 	Suffix       string
 	Disabled     bool
 	Autocomplete string
+	// Otp styles a six-digit one-time code: numeric keyboard, large spaced mono.
+	Otp bool
 	// HTML replaces the control; Before and After sit beside it. All trusted.
 	HTML   HTML
 	Before HTML
@@ -271,6 +273,10 @@ func Field(p FieldProps) HTML {
 	if p.Mono {
 		cls += " vk-input--mono"
 	}
+	if p.Otp {
+		cls += " vk-input--otp"
+		attrs += ` inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code"`
+	}
 	var el string
 	switch p.Control {
 	case "select":
@@ -287,7 +293,7 @@ func Field(p FieldProps) HTML {
 			typ = "text"
 		}
 		el = `<input class="` + cls + `"` + attrs + ` type="` + esc(typ) + `" value="` + esc(p.Value) + `" placeholder="` + esc(p.Placeholder) + `"`
-		if p.Autocomplete != "" {
+		if p.Autocomplete != "" && !p.Otp {
 			el += ` autocomplete="` + esc(p.Autocomplete) + `"`
 		}
 		el += p.Attrs + ">"
@@ -898,9 +904,11 @@ type SettingsRowProps struct {
 	Title     string
 	TitleHTML HTML
 	Sub       string
-	Lead      string
-	HasLead   bool
-	Muted     bool
+	// Prose sets Sub as a sentence instead of mono data (owner actions).
+	Prose   bool
+	Lead    string
+	HasLead bool
+	Muted   bool
 	// Href makes the title a link that opens the row's drawer; Current marks the open one.
 	Href    string
 	Current bool
@@ -932,7 +940,11 @@ func SettingsRow(p SettingsRowProps) HTML {
 	}
 	b.WriteString(`<div class="vk-srow__main"><span class="vk-srow__title">` + title + "</span>")
 	if p.Sub != "" {
-		b.WriteString(`<span class="vk-srow__sub" title="` + esc(p.Sub) + `">` + esc(p.Sub) + `</span>`)
+		cls := "vk-srow__sub"
+		if p.Prose {
+			cls += " vk-srow__sub--prose"
+		}
+		b.WriteString(`<span class="` + cls + `" title="` + esc(p.Sub) + `">` + esc(p.Sub) + `</span>`)
 	}
 	b.WriteString("</div>")
 	for _, c := range p.Cells {
@@ -1130,4 +1142,135 @@ func Mark(size int) HTML {
 	}
 	s := strconv.Itoa(size)
 	return HTML(`<svg viewBox="0 0 24 24" width="` + s + `" height="` + s + `" aria-hidden="true">` + markPaths + `</svg>`)
+}
+
+// DiffLine is one line of a stored-spec change: Op is " ", "-" or "+".
+type DiffLine struct {
+	Op   string
+	Text string
+}
+
+// Diff renders a change as YAML lines: context muted, the old line marked
+// "-", the new line marked "+". Never state colours.
+func Diff(lines []DiffLine) HTML {
+	var b strings.Builder
+	b.WriteString(`<pre class="vk-diff">`)
+	for _, l := range lines {
+		cls := "vk-diff__line"
+		switch l.Op {
+		case "-":
+			cls += " vk-diff__line--del"
+		case "+":
+			cls += " vk-diff__line--add"
+		}
+		op := l.Op
+		if op == " " {
+			op = ""
+		}
+		b.WriteString(`<span class="` + cls + `"><i aria-hidden="true">` + esc(op) + `</i>` + esc(l.Text) + `</span>`)
+	}
+	b.WriteString("</pre>")
+	return HTML(b.String())
+}
+
+// AuditRowProps: one audit log entry.
+type AuditRowProps struct {
+	Time    string
+	TimeAbs string
+	Actor   string
+	// ActorKind is user, key or system; State picks the glyph for system.
+	ActorKind string
+	State     string
+	// Text is trusted HTML with the target in <code>.
+	Text  HTML
+	Scope string
+	Via   string
+	Diff  []DiffLine
+	Meta  [][2]string
+	Open  bool
+}
+
+// AuditRow renders one audit log entry; rows with a diff or meta are a
+// <details> that opens in place.
+func AuditRow(p AuditRowProps) HTML {
+	sys := p.ActorKind == "system"
+	var who string
+	if sys {
+		state := p.State
+		if state == "" {
+			state = "new"
+		}
+		who = string(Glyph(state, "vk-audit__glyph")) + "<span>vink</span>"
+	} else {
+		who = string(Avatar(p.Actor)) + "<span>" + esc(p.Actor)
+		if p.ActorKind == "key" {
+			who += ` <span class="vk-audit__key">api key</span>`
+		}
+		who += "</span>"
+	}
+	scope := ""
+	if p.Scope != "" {
+		scope = string(Tag(p.Scope))
+	}
+	sum := `<span class="vk-audit__time" title="` + esc(p.TimeAbs) + `">` + esc(p.Time) + `</span><span class="vk-audit__who">` + who + `</span>` +
+		`<span class="vk-audit__what">` + string(p.Text) + `</span><span class="vk-audit__scope">` + scope + `</span><span class="vk-audit__via">` + esc(p.Via) + `</span>`
+	body := ""
+	if p.Diff != nil {
+		body += string(Diff(p.Diff))
+	}
+	if p.Meta != nil {
+		body += `<dl class="vk-kv">`
+		for _, m := range p.Meta {
+			body += "<dt>" + esc(m[0]) + "</dt><dd>" + esc(m[1]) + "</dd>"
+		}
+		body += "</dl>"
+	}
+	cls := "vk-audit"
+	if sys {
+		cls += " vk-audit--system"
+	}
+	if body == "" {
+		flat := "vk-audit vk-audit--flat"
+		if sys {
+			flat += " vk-audit--system"
+		}
+		return HTML(`<div class="` + flat + `"><div class="vk-audit__sum">` + sum + `</div></div>`)
+	}
+	open := ""
+	if p.Open {
+		open = " open"
+	}
+	return HTML(`<details class="` + cls + `"` + open + `><summary class="vk-audit__sum">` + sum + `</summary><div class="vk-audit__body">` + body + `</div></details>`)
+}
+
+// Qr renders a QR code the server made as SVG, framed black on white in
+// both themes so a phone reads it. svg is trusted.
+func Qr(svg HTML, label, caption string) HTML {
+	if label == "" {
+		label = "QR code"
+	}
+	out := `<figure class="vk-qr"><div class="vk-qr__code" role="img" aria-label="` + esc(label) + `">` + string(svg) + `</div>`
+	if caption != "" {
+		out += "<figcaption>" + esc(caption) + "</figcaption>"
+	}
+	return HTML(out + "</figure>")
+}
+
+// RecoveryCodes renders ten one-time codes with Copy, shown once.
+func RecoveryCodes(codes []string) HTML {
+	var b strings.Builder
+	b.WriteString(`<div class="vk-codes"><ol class="vk-codes__list">`)
+	for _, c := range codes {
+		b.WriteString("<li>" + esc(c) + "</li>")
+	}
+	b.WriteString(`</ol><button type="button" class="vk-btn vk-copy" data-copy="` + esc(strings.Join(codes, "\n")) + `">Copy codes</button></div>`)
+	return HTML(b.String())
+}
+
+// Divider is a hairline with a few words in the middle, for the sign-in card.
+func Divider(label string) HTML {
+	if label == "" {
+		label = "or"
+	}
+	return HTML(`<div class="vk-or" role="separator"><span>` + esc(label) + `</span></div>`)
 }

@@ -190,3 +190,19 @@ func TestDisabledProxySecretNeedsNoEnv(t *testing.T) {
 		t.Fatalf("enabled proxy must need the secret: %v", err)
 	}
 }
+
+func TestProxyModeNeedsTrustedCIDRs(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "vink.toml")
+	if err := os.WriteFile(path, []byte("[auth.proxy]\nenabled = true\ntrusted_cidrs = []\nsecret = \"s\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadWith(path, func(string) (string, bool) { return "", false }); err == nil || !strings.Contains(err.Error(), "trusted_cidrs is empty") {
+		t.Fatalf("want the guard, got %v", err)
+	}
+	if err := os.WriteFile(path, []byte("[auth.proxy]\nenabled = true\ntrusted_cidrs = [\"10.0.0.0/8\"]\nsecret = \"s\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadWith(path, func(string) (string, bool) { return "", false }); err != nil {
+		t.Fatalf("with a cidr: %v", err)
+	}
+}
