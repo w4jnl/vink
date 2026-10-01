@@ -315,7 +315,7 @@ func (h *Web) baseFor(c *reqCtx, title, section string) base {
 			b.OpenIncidents = len(open)
 		}
 	}
-	if c.principal != nil && (c.project != nil || c.org != nil) {
+	if c.principal != nil {
 		h.menus(c, &b)
 	}
 	return b
@@ -323,7 +323,9 @@ func (h *Web) baseFor(c *reqCtx, title, section string) base {
 
 // menus builds the switcher (every org and project the viewer can see,
 // problem counts, New project and Org settings for admins) and the user
-// menu. On an org page the switcher still shows the last project there.
+// menu. On an org page the switcher still shows the last project there;
+// on a page without one (account, instance admin, the chooser) it shows
+// the last project the viewer opened, so the top bar is always a way out.
 func (h *Web) menus(c *reqCtx, b *base) {
 	ctx := c.r.Context()
 	p := c.principal
@@ -332,21 +334,27 @@ func (h *Web) menus(c *reqCtx, b *base) {
 		return
 	}
 	counts, _ := h.svc.ProjectProblems(ctx)
-	if c.project == nil && c.org != nil {
+	if c.project == nil {
 		var pick *service.ProjectSummary
 		for i := range projects {
-			if projects[i].OrgSlug != c.org.Slug {
+			if c.org != nil && projects[i].OrgSlug != c.org.Slug {
 				continue
 			}
 			if pick == nil || (p.Session != nil && projects[i].ID == p.Session.LastProjectID) {
 				pick = &projects[i]
 			}
 		}
-		b.OrgSlug = c.org.Slug
-		if pick != nil {
-			b.ProjectSlug, b.ProjectPath = pick.Slug, "/o/"+pick.OrgSlug+"/p/"+pick.Slug
-		} else {
-			b.ProjectSlug, b.ProjectPath = "projects", "/projects"
+		switch {
+		case pick != nil:
+			b.OrgSlug, b.ProjectSlug, b.ProjectPath = pick.OrgSlug, pick.Slug, "/o/"+pick.OrgSlug+"/p/"+pick.Slug
+		case c.org != nil:
+			b.OrgSlug, b.ProjectSlug, b.ProjectPath = c.org.Slug, "projects", "/projects"
+		default:
+			orgs := h.orgsFor(c)
+			if len(orgs) == 0 {
+				return
+			}
+			b.OrgSlug, b.ProjectSlug, b.ProjectPath = orgs[0].Slug, "projects", "/projects"
 		}
 	}
 	// every org the viewer has a role in comes first, so an org without

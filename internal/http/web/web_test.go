@@ -1443,7 +1443,7 @@ func TestInstanceAdminPages(t *testing.T) {
 		t.Fatalf("/admin: %d %s", r.code, r.hdr.Get("Location"))
 	}
 	orgs := e.get("/admin/orgs", false)
-	orgs.has(t, `<h1>Instance</h1><span class="vk-muted vk-mono">vink `, ` · localhost:8080</span>`,
+	orgs.has(t, `<header class="vk-top">`, `<summary class="vk-top__crumb" title="Switch project">homelab / <b>prod</b>`, `<h1>Instance</h1><span class="vk-muted vk-mono">vink `, ` · localhost:8080</span>`,
 		`<nav class="vk-tabs" aria-label="Instance"><a class="vk-tab" href="/admin/orgs" aria-current="page">Orgs<span class="vk-tab__n">2</span></a><a class="vk-tab" href="/admin/users">Users<span class="vk-tab__n">2</span></a><a class="vk-tab" href="/admin/server">Server</a><a class="vk-tab" href="/admin/audit">Audit log</a></nav>`,
 		`Instance admins create orgs and set their quotas.`, `href="/admin/orgs?add=1">Add org</a>`,
 		`<a class="vk-srow__link" href="/o/homelab/admin/members">homelab</a></span><span class="vk-srow__sub" title="1 project · no owner">1 project · no owner</span></div><span class="vk-srow__cell vk-srow__cell--l"><span class="vk-usage"><span class="vk-usage__text">0 monitors · no quota</span></span></span>`,
@@ -1767,6 +1767,8 @@ func TestAccountAndTwoFactor(t *testing.T) {
 		t.Error("nothing else to sign out")
 	}
 	e.get(projPath, false).has(t, `<a class="vk-menu__item" href="/account">`)
+	// the page has the top bar, so there is a way back and out
+	acc.has(t, `<header class="vk-top">`, `<summary class="vk-top__crumb" title="Switch project">homelab / <b>prod</b>`, `href="/logout"><span>Sign out</span>`)
 
 	// profile and password
 	if r := e.post("/account/profile", url.Values{"acc_name": {"Jaro Z"}, "acc_email": {"nope"}}, false); r.code != 422 || !strings.Contains(r.body, `id="acc_email-msg"`) {
