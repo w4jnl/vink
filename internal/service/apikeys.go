@@ -140,6 +140,12 @@ func (s *Service) touchKey(ctx context.Context, k *domain.APIKey) {
 type keyCache struct {
 	mu      sync.Mutex
 	entries map[string]keyCacheEntry
+	agents  map[string]agentCacheEntry
+}
+
+type agentCacheEntry struct {
+	agent *domain.Agent
+	until time.Time
 }
 
 type keyCacheEntry struct {

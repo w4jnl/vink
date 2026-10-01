@@ -781,3 +781,62 @@ func (a *API) deleteStatusPage(w http.ResponseWriter, r *http.Request) error {
 	w.WriteHeader(http.StatusNoContent)
 	return nil
 }
+
+// --- agents (org level) -----------------------------------------------------
+
+func (a *API) listAgents(w http.ResponseWriter, r *http.Request) error {
+	list, err := a.svc.ListAgents(r.Context(), scope(r))
+	if err != nil {
+		return err
+	}
+	out := make([]AgentOut, 0, len(list))
+	for _, ag := range list {
+		out = append(out, agentOut(a.svc, ag))
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": out})
+	return nil
+}
+
+func (a *API) createAgent(w http.ResponseWriter, r *http.Request) error {
+	var in AgentIn
+	if err := decodeJSON(r, &in); err != nil {
+		return err
+	}
+	ag, token, err := a.svc.CreateAgent(r.Context(), scope(r), in.Name, in.Labels)
+	if err != nil {
+		return err
+	}
+	w.Header().Set("Location", locationFor(r, "/agents/"+ag.Name))
+	writeJSON(w, http.StatusCreated, AgentCreated{AgentOut: agentOut(a.svc, ag), Token: token, Command: domain.AgentCommand(a.svc.Config().BaseURL, token, ag.Labels)})
+	return nil
+}
+
+func (a *API) getAgent(w http.ResponseWriter, r *http.Request) error {
+	ag, err := a.svc.Agent(r.Context(), scope(r), r.PathValue("name"))
+	if err != nil {
+		return err
+	}
+	writeJSON(w, http.StatusOK, agentOut(a.svc, ag))
+	return nil
+}
+
+func (a *API) putAgentLabels(w http.ResponseWriter, r *http.Request) error {
+	var in AgentIn
+	if err := decodeJSON(r, &in); err != nil {
+		return err
+	}
+	ag, err := a.svc.UpdateAgentLabels(r.Context(), scope(r), r.PathValue("name"), in.Labels)
+	if err != nil {
+		return err
+	}
+	writeJSON(w, http.StatusOK, agentOut(a.svc, ag))
+	return nil
+}
+
+func (a *API) deleteAgent(w http.ResponseWriter, r *http.Request) error {
+	if err := a.svc.RevokeAgent(r.Context(), scope(r), r.PathValue("name")); err != nil {
+		return err
+	}
+	w.WriteHeader(http.StatusNoContent)
+	return nil
+}

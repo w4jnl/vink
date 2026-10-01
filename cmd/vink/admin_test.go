@@ -71,6 +71,59 @@ func TestAdminInitAndFriends(t *testing.T) {
 	}
 }
 
+func TestAdminAgents(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "vink.db")
+	runCLI := func(stdin string, args ...string) (string, string, int) {
+		var out, errb bytes.Buffer
+		code := run(context.Background(), append([]string{"--color", "never"}, args...), strings.NewReader(stdin), &out, &errb)
+		return out.String(), errb.String(), code
+	}
+	if _, errs, code := runCLI("hunter2hunter2\n", "admin", "init", "--db", dbPath, "--org", "homelab", "--user", "j", "--password-stdin"); code != 0 {
+		t.Fatalf("init: %s", errs)
+	}
+	out, errs, code := runCLI("", "admin", "agent", "add", "--db", dbPath, "--org", "homelab", "dc2-probe", "--labels", "site=dc2,zone=dmz", "--json")
+	if code != 0 {
+		t.Fatalf("add: %s", errs)
+	}
+	var res struct {
+		Name, Token, Command string
+		Labels               map[string]string
+	}
+	if err := json.Unmarshal([]byte(out), &res); err != nil {
+		t.Fatalf("add output not JSON: %q", out)
+	}
+	if res.Name != "dc2-probe" || !strings.HasPrefix(res.Token, "vat_") || res.Labels["zone"] != "dmz" || !strings.Contains(res.Command, "vink agent --server ws://localhost:8080") || !strings.Contains(res.Command, "--labels site=dc2,zone=dmz") {
+		t.Fatalf("add result: %+v", res)
+	}
+	out, errs, code = runCLI("", "admin", "agent", "add", "--db", dbPath, "--org", "homelab", "edge", "--labels", "site=edge")
+	if code != 0 || !strings.Contains(out, "token (shown once)  vat_") || !strings.Contains(out, "run on the agent's host:") {
+		t.Fatalf("text add: %d %s %s", code, out, errs)
+	}
+	if _, errs, code := runCLI("", "admin", "agent", "add", "--db", dbPath, "--org", "homelab", "edge"); code == 0 || !strings.Contains(errs, "exists") {
+		t.Fatalf("duplicate: %d %s", code, errs)
+	}
+	if _, errs, code := runCLI("", "admin", "agent", "add", "--db", dbPath, "--org", "homelab", "bad", "--labels", "no-equals"); code == 0 || errs == "" {
+		t.Fatalf("bad labels: %d %s", code, errs)
+	}
+	if _, errs, code := runCLI("", "admin", "agent", "ls", "--db", dbPath); code == 0 || !strings.Contains(errs, "org") {
+		t.Fatalf("missing org: %d %s", code, errs)
+	}
+	out, _, _ = runCLI("", "admin", "agent", "ls", "--db", dbPath, "--org", "homelab")
+	if !strings.Contains(out, "dc2-probe") || !strings.Contains(out, "site=dc2,zone=dmz") || !strings.Contains(out, "never") || strings.Contains(out, res.Token) {
+		t.Errorf("agent ls: %s", out)
+	}
+	if _, errs, code := runCLI("", "admin", "agent", "revoke", "--db", dbPath, "--org", "homelab", "edge"); code != 0 {
+		t.Fatalf("revoke: %s", errs)
+	}
+	out, _, _ = runCLI("", "admin", "agent", "ls", "--db", dbPath, "--org", "homelab", "--json")
+	if strings.Contains(out, "edge") || !strings.Contains(out, "dc2-probe") {
+		t.Errorf("after revoke: %s", out)
+	}
+	if _, errs, code := runCLI("", "admin", "agent", "revoke", "--db", dbPath, "--org", "nope", "dc2-probe"); code == 0 || errs == "" {
+		t.Fatalf("unknown org: %d %s", code, errs)
+	}
+}
+
 func TestAdminBackup(t *testing.T) {
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "vink.db")

@@ -30,6 +30,7 @@ type Config struct {
 	DB        DB        `toml:"db"`
 	Retention Retention `toml:"retention"`
 	Checks    Checks    `toml:"checks"`
+	Agents    Agents    `toml:"agents"`
 	Outbound  Outbound  `toml:"outbound"`
 	Log       Log       `toml:"log"`
 	Metrics   Metrics   `toml:"metrics"`
@@ -59,6 +60,12 @@ type DB struct {
 type Retention struct {
 	ObservationsDays int `toml:"observations_days"`
 	BodiesDays       int `toml:"bodies_days"`
+}
+
+type Agents struct {
+	// OfflineAfter is how long without a heartbeat before an agent's
+	// monitors turn late with reason agent offline.
+	OfflineAfter domain.Duration `toml:"offline_after"`
 }
 
 type Checks struct {
@@ -136,6 +143,7 @@ func Default() *Config {
 		DB:        DB{Path: "vink.db"},
 		Retention: Retention{ObservationsDays: 90, BodiesDays: 14},
 		Checks:    Checks{Workers: 32, MinInterval: domain.MustDuration("10s")},
+		Agents:    Agents{OfflineAfter: domain.MustDuration("2m")},
 		Outbound:  Outbound{AllowPrivateTargets: true},
 		Log:       Log{Level: "info", Format: "json"},
 		Auth: Auth{

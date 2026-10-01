@@ -90,6 +90,8 @@ type Service struct {
 	checker         *checks.Registry
 	checkNow        func(ctx context.Context, monitorID string) error
 	metrics         *metrics.Metrics
+	agentCache      agentCache
+	agentPresence   func(agentID string) bool
 }
 
 // New wires a service. The clock is time.Now unless SetClock is called.

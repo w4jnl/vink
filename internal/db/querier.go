@@ -10,6 +10,8 @@ import (
 
 type Querier interface {
 	AckIncident(ctx context.Context, arg AckIncidentParams) (int64, error)
+	// tenancy: org
+	CountAgents(ctx context.Context, orgID string) (int64, error)
 	// tenancy: root (dispatcher keeps per-monitor order)
 	CountEarlierPendingDeliveries(ctx context.Context, arg CountEarlierPendingDeliveriesParams) (int64, error)
 	CountMonitorsByState(ctx context.Context, projectID string) ([]CountMonitorsByStateRow, error)
@@ -25,6 +27,8 @@ type Querier interface {
 	CountRoutesForChannel(ctx context.Context, arg CountRoutesForChannelParams) (int64, error)
 	CountUsers(ctx context.Context) (int64, error)
 	CreateAPIKey(ctx context.Context, arg CreateAPIKeyParams) (ApiKey, error)
+	// tenancy: org
+	CreateAgent(ctx context.Context, arg CreateAgentParams) (Agent, error)
 	CreateChannel(ctx context.Context, arg CreateChannelParams) (Channel, error)
 	CreateMaintenance(ctx context.Context, arg CreateMaintenanceParams) (Maintenance, error)
 	CreateMonitor(ctx context.Context, arg CreateMonitorParams) (Monitor, error)
@@ -34,6 +38,8 @@ type Querier interface {
 	CreateSession(ctx context.Context, arg CreateSessionParams) error
 	CreateStatusPage(ctx context.Context, arg CreateStatusPageParams) (StatusPage, error)
 	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
+	// tenancy: org
+	DeleteAgent(ctx context.Context, arg DeleteAgentParams) (int64, error)
 	// tenancy: root (retention job)
 	DeleteBodiesBefore(ctx context.Context, createdAt int64) (int64, error)
 	DeleteChannel(ctx context.Context, arg DeleteChannelParams) (int64, error)
@@ -53,6 +59,10 @@ type Querier interface {
 	DeleteStatusPage(ctx context.Context, arg DeleteStatusPageParams) (int64, error)
 	DeleteUserSessions(ctx context.Context, userID string) error
 	GetAPIKey(ctx context.Context, arg GetAPIKeyParams) (ApiKey, error)
+	// tenancy: org
+	GetAgent(ctx context.Context, arg GetAgentParams) (Agent, error)
+	// tenancy: org
+	GetAgentByName(ctx context.Context, arg GetAgentByNameParams) (Agent, error)
 	GetBody(ctx context.Context, arg GetBodyParams) (Body, error)
 	GetChannel(ctx context.Context, arg GetChannelParams) (Channel, error)
 	GetChannelByName(ctx context.Context, arg GetChannelByNameParams) (Channel, error)
@@ -95,6 +105,10 @@ type Querier interface {
 	ListAPIKeys(ctx context.Context, projectID string) ([]ApiKey, error)
 	// tenancy: root (bearer lookup establishes the scope)
 	ListAPIKeysByPrefix(ctx context.Context, prefix string) ([]ApiKey, error)
+	// tenancy: org
+	ListAgents(ctx context.Context, orgID string) ([]Agent, error)
+	// tenancy: root (bearer lookup establishes the org)
+	ListAgentsByPrefix(ctx context.Context, tokenPrefix string) ([]Agent, error)
 	// tenancy: root (instance admin)
 	ListAllProjects(ctx context.Context) ([]ListAllProjectsRow, error)
 	ListChannels(ctx context.Context, projectID string) ([]Channel, error)
@@ -154,7 +168,11 @@ type Querier interface {
 	SetUserPassword(ctx context.Context, arg SetUserPasswordParams) error
 	// tenancy: root (called after the key was verified)
 	TouchAPIKey(ctx context.Context, arg TouchAPIKeyParams) error
+	// tenancy: root (the gateway acts for a verified agent)
+	TouchAgent(ctx context.Context, arg TouchAgentParams) error
 	TouchSession(ctx context.Context, arg TouchSessionParams) error
+	// tenancy: org
+	UpdateAgentLabels(ctx context.Context, arg UpdateAgentLabelsParams) (Agent, error)
 	UpdateChannel(ctx context.Context, arg UpdateChannelParams) (Channel, error)
 	UpdateMaintenance(ctx context.Context, arg UpdateMaintenanceParams) (Maintenance, error)
 	UpdateMonitor(ctx context.Context, arg UpdateMonitorParams) (Monitor, error)

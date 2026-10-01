@@ -131,6 +131,30 @@ components:
         recreated: {type: array, items: {type: string}}
         deleted: {type: array, items: {type: string}}
         unchanged: {type: array, items: {type: string}}
+    AgentIn:
+      type: object
+      properties:
+        name: {type: string, description: lowercase letters, digits and dashes; unique in the org}
+        labels: {type: object, additionalProperties: {type: string}, description: "site=dc2 style selectors monitors can name"}
+    Agent:
+      type: object
+      properties:
+        id: {type: string}
+        name: {type: string}
+        labels: {type: object, additionalProperties: {type: string}}
+        state: {type: string, enum: [connected, offline, waiting]}
+        version: {type: string}
+        last_seen_at: {type: [string, "null"], format: date-time}
+        last_addr: {type: string}
+        token_prefix: {type: string}
+        created_at: {type: string, format: date-time}
+    AgentCreated:
+      allOf:
+        - $ref: "#/components/schemas/Agent"
+        - type: object
+          properties:
+            token: {type: string, description: shown once; vink keeps a hash}
+            command: {type: string, description: the vink agent command line for the agent's host}
     StatusPageIn:
       type: object
       required: [slug, title]
@@ -287,6 +311,8 @@ components:
   parameters:
     slug: {name: slug, in: path, required: true, schema: {type: string}}
     id: {name: id, in: path, required: true, schema: {type: string}}
+    org: {name: org, in: path, required: true, schema: {type: string}, description: org slug}
+    name: {name: name, in: path, required: true, schema: {type: string}, description: agent name}
     limit: {name: limit, in: query, schema: {type: integer, maximum: 200, default: 50}}
     cursor: {name: cursor, in: query, schema: {type: string}, description: Opaque; take next_cursor from the previous page.}
 paths:
@@ -376,6 +402,23 @@ paths:
       requestBody: {content: {application/json: {schema: {$ref: "#/components/schemas/StatusPageIn"}}}}
       responses: {"200": {description: The page.}}
     delete: {summary: Delete a status page, responses: {"204": {description: Deleted.}}}
+  /orgs/{org}/agents:
+    parameters: [{$ref: "#/components/parameters/org"}]
+    get: {summary: List the org's agents with their state (sessions of org admins and owners), responses: {"200": {description: "{items: [Agent]}"}}}
+    post:
+      summary: Register an agent; the token comes back once with the command to run
+      requestBody: {content: {application/json: {schema: {$ref: "#/components/schemas/AgentIn"}}}}
+      responses: {"201": {description: AgentCreated.}, "409": {description: The name is taken.}, "422": {description: Validation failed, or the org's agent quota is reached.}}
+  /orgs/{org}/agents/{name}:
+    parameters: [{$ref: "#/components/parameters/org"}, {$ref: "#/components/parameters/name"}]
+    get: {summary: One agent, responses: {"200": {description: The agent.}}}
+    delete: {summary: Revoke the agent's token and forget it; its monitors turn late, responses: {"204": {description: Revoked.}}}
+  /orgs/{org}/agents/{name}/labels:
+    parameters: [{$ref: "#/components/parameters/org"}, {$ref: "#/components/parameters/name"}]
+    put:
+      summary: Replace the agent's labels
+      requestBody: {content: {application/json: {schema: {$ref: "#/components/schemas/AgentIn"}}}}
+      responses: {"200": {description: The agent.}}
   /monitors/{slug}/check:
     parameters: [{$ref: "#/components/parameters/slug"}]
     post: {summary: Run a pull monitor's check now and return it, responses: {"200": {description: The monitor after the attempt.}, "422": {description: Not a pull monitor, or paused.}}}

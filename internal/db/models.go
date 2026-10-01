@@ -5,14 +5,16 @@
 package db
 
 type Agent struct {
-	ID         string
-	OrgID      string
-	Name       string
-	TokenHash  string
-	LastSeenAt *int64
-	Version    *string
-	Labels     string
-	CreatedAt  int64
+	ID          string
+	OrgID       string
+	Name        string
+	TokenHash   string
+	LastSeenAt  *int64
+	Version     *string
+	Labels      string
+	CreatedAt   int64
+	TokenPrefix string
+	LastAddr    *string
 }
 
 type ApiKey struct {

@@ -222,6 +222,33 @@ func NewAPIKey() (token, prefix string, err error) {
 	return "vk_" + prefix + "_" + secret, prefix, nil
 }
 
+// NewAgentToken returns a plaintext agent token "vat_<prefix>_<secret>"
+// and its prefix; it is hashed like an API key.
+func NewAgentToken() (token, prefix string, err error) {
+	prefix, err = randomString(APIKeyPrefixLen)
+	if err != nil {
+		return "", "", err
+	}
+	secret, err := randomString(32)
+	if err != nil {
+		return "", "", err
+	}
+	return "vat_" + prefix + "_" + secret, prefix, nil
+}
+
+// ParseAgentTokenPrefix returns the prefix of a well-formed agent token.
+func ParseAgentTokenPrefix(token string) (string, bool) {
+	rest, ok := strings.CutPrefix(token, "vat_")
+	if !ok {
+		return "", false
+	}
+	prefix, secret, ok := strings.Cut(rest, "_")
+	if !ok || len(prefix) != APIKeyPrefixLen || len(secret) != 32 {
+		return "", false
+	}
+	return prefix, true
+}
+
 // ParseAPIKeyPrefix returns the prefix of a well-formed key.
 func ParseAPIKeyPrefix(token string) (string, bool) {
 	rest, ok := strings.CutPrefix(token, "vk_")

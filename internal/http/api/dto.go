@@ -429,3 +429,37 @@ func statusPageOut(svc *service.Service, p *domain.StatusPage) StatusPageOut {
 		URL: strings.TrimRight(svc.Config().BaseURL, "/") + "/s/" + p.Slug, CreatedAt: p.CreatedAt, UpdatedAt: p.UpdatedAt,
 	}
 }
+
+// AgentIn creates an agent or replaces its labels.
+type AgentIn struct {
+	Name   string            `json:"name"`
+	Labels map[string]string `json:"labels"`
+}
+
+// AgentOut is an agent with its derived state.
+type AgentOut struct {
+	ID          string            `json:"id"`
+	Name        string            `json:"name"`
+	Labels      map[string]string `json:"labels"`
+	State       domain.AgentState `json:"state"`
+	Version     string            `json:"version,omitempty"`
+	LastSeenAt  *time.Time        `json:"last_seen_at"`
+	LastAddr    string            `json:"last_addr,omitempty"`
+	TokenPrefix string            `json:"token_prefix"`
+	CreatedAt   time.Time         `json:"created_at"`
+}
+
+// AgentCreated carries the token once, with the command to run.
+type AgentCreated struct {
+	AgentOut
+	Token   string `json:"token"`
+	Command string `json:"command"`
+}
+
+func agentOut(svc *service.Service, a *domain.Agent) AgentOut {
+	labels := a.Labels
+	if labels == nil {
+		labels = map[string]string{}
+	}
+	return AgentOut{ID: a.ID, Name: a.Name, Labels: labels, State: a.State(svc.AgentConnected(a.ID)), Version: a.Version, LastSeenAt: a.LastSeenAt, LastAddr: a.LastAddr, TokenPrefix: a.TokenPrefix, CreatedAt: a.CreatedAt}
+}

@@ -200,7 +200,7 @@ CREATE TABLE agents (
   last_seen_at INTEGER,
   version TEXT,
   labels TEXT NOT NULL DEFAULT '{}',
-  created_at INTEGER NOT NULL,
+  created_at INTEGER NOT NULL, token_prefix TEXT NOT NULL DEFAULT '', last_addr TEXT,
   UNIQUE (org_id, name)
 );
 CREATE TABLE sessions (
@@ -232,8 +232,10 @@ CREATE TABLE "routes" (
   updated_at INTEGER NOT NULL
 );
 CREATE INDEX routes_project ON routes(project_id, priority DESC);
+CREATE INDEX agents_token_prefix ON agents(token_prefix);
 -- Dbmate schema migrations
 INSERT INTO "schema_migrations" (version) VALUES
   ('20260927000000'),
   ('20260930000000'),
-  ('20261001000000');
+  ('20261001000000'),
+  ('20261002000000');

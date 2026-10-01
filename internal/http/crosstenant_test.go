@@ -32,6 +32,7 @@ type tenant struct {
 	route, key          string
 	window              string
 	page                string
+	agent               string
 }
 
 func TestCrossTenantIsolation(t *testing.T) {
@@ -89,6 +90,11 @@ func TestCrossTenantIsolation(t *testing.T) {
 			t.Fatal(err)
 		}
 		tn.page = page.Slug
+		agent, _, err := svc.CreateAgent(ctx, sc, name+"-probe", map[string]string{"site": name})
+		if err != nil {
+			t.Fatal(err)
+		}
+		tn.agent = agent.Name
 		return tn
 	}
 	a, b := mk("alpha"), mk("beta")
@@ -183,6 +189,52 @@ func TestCrossTenantIsolation(t *testing.T) {
 	}
 	if checked < 100 {
 		t.Fatalf("only %d cross-tenant checks ran", checked)
+	}
+
+	// org-level routes: B's session sees nothing of alpha, keys are refused
+	for _, route := range spec.OrgRoutes {
+		method, path, _ := strings.Cut(route, " ")
+		filled := strings.Replace(path, "{name}", a.agent, 1)
+		for _, c := range []struct {
+			name   string
+			prefix string
+			key    string
+			want   int
+		}{
+			{"own org, A's agent", "/api/v1/orgs/beta", "", 404},
+			{"A's org", "/api/v1/orgs/alpha", "", 404},
+			{"rw key", "/api/v1/orgs/beta", b.rw, 403},
+			{"ro key", "/api/v1/orgs/alpha", b.ro, 403},
+		} {
+			t.Run(c.name+" "+route, func(t *testing.T) {
+				var body io.Reader
+				if method == "POST" || method == "PUT" {
+					body = bytes.NewReader([]byte(`{}`))
+				}
+				req := httptest.NewRequest(method, c.prefix+filled, body)
+				if body != nil {
+					req.Header.Set("Content-Type", "application/json")
+				}
+				if c.key != "" {
+					req.Header.Set("Authorization", "Bearer "+c.key)
+				} else {
+					req.AddCookie(b.cookie)
+					req.Header.Set(auth.CSRFHeader, b.csrf)
+				}
+				rec := httptest.NewRecorder()
+				h.ServeHTTP(rec, req)
+				if !strings.Contains(path, "{name}") && c.want == 404 && c.prefix == "/api/v1/orgs/beta" {
+					// a list or create in B's own org: never A's agent
+					if rec.Code == 404 || bytes.Contains(rec.Body.Bytes(), []byte(a.agent)) {
+						t.Fatalf("own org %s: %d %s", route, rec.Code, rec.Body.String())
+					}
+					return
+				}
+				if rec.Code != c.want {
+					t.Fatalf("%s: %d %s", route, rec.Code, rec.Body.String())
+				}
+			})
+		}
 	}
 
 	// pings: A's key cannot reach B's monitor slug in B's project

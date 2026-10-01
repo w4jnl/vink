@@ -15,6 +15,7 @@ import (
 	"github.com/w4jnl/vink/internal/auth"
 	"github.com/w4jnl/vink/internal/checks"
 	"github.com/w4jnl/vink/internal/config"
+	"github.com/w4jnl/vink/internal/db"
 	"github.com/w4jnl/vink/internal/db/dbtest"
 	"github.com/w4jnl/vink/internal/domain"
 	"github.com/w4jnl/vink/internal/http/middleware"
@@ -570,6 +571,96 @@ func TestApplyAndExportAPI(t *testing.T) {
 	}
 	if r := e.key(e.rw, "GET", "/export?secrets=1", nil); r.code != 200 {
 		t.Fatalf("secrets with rw key: %d", r.code)
+	}
+}
+
+// adminSession signs in an org admin and returns the cookie and CSRF token.
+func (e *env) adminSession(t *testing.T) (*http.Cookie, string) {
+	t.Helper()
+	ctx := context.Background()
+	admin := domain.Scope{InstanceAdmin: true, Role: domain.RoleOwner}
+	user, err := e.svc.CreateLocalUser(ctx, admin, "adm", "adm@example.com", "Adm", "correct horse", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = e.svc.SetMembership(ctx, admin, user.ID, e.org.ID, domain.RoleAdmin)
+	rec := httptest.NewRecorder()
+	p, err := e.authn.Login(rec, httptest.NewRequest("POST", "/login", nil), "adm", "correct horse")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return rec.Result().Cookies()[0], p.CSRF()
+}
+
+func TestAgentsAPI(t *testing.T) {
+	e := newEnv(t)
+	cookie, csrf := e.adminSession(t)
+	as := func(c *http.Cookie, token string) func(*http.Request) {
+		return func(r *http.Request) {
+			r.AddCookie(c)
+			r.Header.Set(auth.CSRFHeader, token)
+		}
+	}
+	// a member session has no business here; a key neither
+	if r := e.do("GET", "/api/v1/orgs/homelab/agents", nil, as(e.cookie, e.csrf)); r.code != 403 {
+		t.Fatalf("member: %d", r.code)
+	}
+	if r := e.key(e.rw, "GET", "/orgs/homelab/agents", nil); r.code != 403 {
+		t.Fatalf("key: %d", r.code)
+	}
+	created := e.do("POST", "/api/v1/orgs/homelab/agents", map[string]any{"name": "DC2-probe", "labels": map[string]string{"site": "dc2", "zone": "dmz"}}, as(cookie, csrf))
+	if created.code != 201 {
+		t.Fatalf("create: %d %s", created.code, created.body)
+	}
+	var out AgentCreated
+	created.json(t, &out)
+	if out.Name != "dc2-probe" || out.State != domain.AgentWaiting || !strings.HasPrefix(out.Token, "vat_") || !strings.Contains(out.Command, "vink agent --server ws://localhost:8080") || !strings.Contains(out.Command, "--labels site=dc2,zone=dmz") || out.TokenPrefix == "" {
+		t.Fatalf("created: %s", created.body)
+	}
+	if r := e.do("POST", "/api/v1/orgs/homelab/agents", map[string]any{"name": "dc2-probe"}, as(cookie, csrf)); r.code != 409 {
+		t.Fatalf("duplicate: %d %s", r.code, r.body)
+	}
+	if r := e.do("POST", "/api/v1/orgs/homelab/agents", map[string]any{"name": "bad name"}, as(cookie, csrf)); r.code != 422 {
+		t.Fatalf("bad name: %d", r.code)
+	}
+	list := e.do("GET", "/api/v1/orgs/homelab/agents", nil, as(cookie, csrf))
+	if list.code != 200 || !strings.Contains(string(list.body), `"name":"dc2-probe"`) || strings.Contains(string(list.body), out.Token) {
+		t.Fatalf("list: %d %s", list.code, list.body)
+	}
+	one := e.do("GET", "/api/v1/orgs/homelab/agents/dc2-probe", nil, as(cookie, csrf))
+	if one.code != 200 || !strings.Contains(string(one.body), `"state":"waiting"`) {
+		t.Fatalf("get: %d %s", one.code, one.body)
+	}
+	upd := e.do("PUT", "/api/v1/orgs/homelab/agents/dc2-probe/labels", map[string]any{"labels": map[string]string{"site": "dc3"}}, as(cookie, csrf))
+	if upd.code != 200 || !strings.Contains(string(upd.body), `"labels":{"site":"dc3"}`) {
+		t.Fatalf("labels: %d %s", upd.code, upd.body)
+	}
+	// the token verifies, until revoked
+	if ag, err := e.svc.VerifyAgentToken(context.Background(), out.Token); err != nil || ag.Name != "dc2-probe" {
+		t.Fatalf("verify: %v %+v", err, ag)
+	}
+	if _, err := e.svc.VerifyAgentToken(context.Background(), "vat_nope"); err == nil {
+		t.Fatal("bad token must fail")
+	}
+	// the quota
+	one64 := int64(1)
+	if err := e.svc.DB().Write().SetOrgQuotas(context.Background(), db.SetOrgQuotasParams{QuotaAgents: &one64, ID: e.org.ID}); err != nil {
+		t.Fatal(err)
+	}
+	if r := e.do("POST", "/api/v1/orgs/homelab/agents", map[string]any{"name": "second"}, as(cookie, csrf)); r.code != 422 || !strings.Contains(string(r.body), "ask the instance admin") {
+		t.Fatalf("quota: %d %s", r.code, r.body)
+	}
+	if r := e.do("DELETE", "/api/v1/orgs/homelab/agents/dc2-probe", nil, as(cookie, csrf)); r.code != 204 {
+		t.Fatalf("revoke: %d %s", r.code, r.body)
+	}
+	if r := e.do("GET", "/api/v1/orgs/homelab/agents/dc2-probe", nil, as(cookie, csrf)); r.code != 404 {
+		t.Fatalf("after revoke: %d", r.code)
+	}
+	if _, err := e.svc.VerifyAgentToken(context.Background(), out.Token); err == nil {
+		t.Fatal("revoked token must fail")
+	}
+	if r := e.do("GET", "/api/v1/orgs/acme/agents", nil, as(cookie, csrf)); r.code != 404 {
+		t.Fatalf("foreign org: %d", r.code)
 	}
 }
 

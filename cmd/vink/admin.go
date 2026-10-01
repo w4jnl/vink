@@ -13,6 +13,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/w4jnl/vink/internal/config"
 	"github.com/w4jnl/vink/internal/domain"
 	"github.com/w4jnl/vink/internal/logging"
 	"github.com/w4jnl/vink/internal/secrets"
@@ -30,7 +31,7 @@ func newAdminCmd() *cobra.Command {
 		Short: "Instance administration on the server host (no network)",
 	}
 	f.add(cmd)
-	cmd.AddCommand(newAdminInitCmd(f), newAdminOrgCmd(f), newAdminUserCmd(f), newAdminBackupCmd(f))
+	cmd.AddCommand(newAdminInitCmd(f), newAdminOrgCmd(f), newAdminUserCmd(f), newAdminAgentCmd(f), newAdminBackupCmd(f))
 	return cmd
 }
 
@@ -68,7 +69,7 @@ func newAdminBackupCmd(f *serverFlags) *cobra.Command {
 }
 
 // withService opens the database and hands a service to fn.
-func (f *serverFlags) withService(cmd *cobra.Command, fn func(*service.Service) error) error {
+func (f *serverFlags) withService(cmd *cobra.Command, fn func(*service.Service, *config.Config) error) error {
 	d, cfg, err := f.open(cmd.Context())
 	if err != nil {
 		return err
@@ -86,7 +87,7 @@ func (f *serverFlags) withService(cmd *cobra.Command, fn func(*service.Service) 
 	svcCfg.PingBaseURL = cfg.PingBaseURL()
 	svcCfg.BodyLimit = int64(cfg.Ping.BodyLimit)
 	svcCfg.Keyring = keyring
-	return fn(service.New(d, nil, log, svcCfg))
+	return fn(service.New(d, nil, log, svcCfg), cfg)
 }
 
 // readPassword reads one line from stdin when --password-stdin is set.
@@ -118,7 +119,7 @@ func newAdminInitCmd(f *serverFlags) *cobra.Command {
 				return err
 			}
 			in.Password = pw
-			return f.withService(cmd, func(svc *service.Service) error {
+			return f.withService(cmd, func(svc *service.Service, _ *config.Config) error {
 				res, err := svc.Bootstrap(cmd.Context(), in)
 				if err != nil {
 					return err
@@ -165,7 +166,7 @@ func newAdminOrgCmd(f *serverFlags) *cobra.Command {
 		Short: "Create an org",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return f.withService(cmd, func(svc *service.Service) error {
+			return f.withService(cmd, func(svc *service.Service, _ *config.Config) error {
 				org, err := svc.CreateOrg(cmd.Context(), adminScope, args[0], name)
 				if err != nil {
 					return err
@@ -182,7 +183,7 @@ func newAdminOrgCmd(f *serverFlags) *cobra.Command {
 		Short: "List orgs",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return f.withService(cmd, func(svc *service.Service) error {
+			return f.withService(cmd, func(svc *service.Service, _ *config.Config) error {
 				orgs, err := svc.ListOrgs(cmd.Context(), adminScope)
 				if err != nil {
 					return err
@@ -212,7 +213,7 @@ func newAdminUserCmd(f *serverFlags) *cobra.Command {
 		Short: "List users",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return f.withService(cmd, func(svc *service.Service) error {
+			return f.withService(cmd, func(svc *service.Service, _ *config.Config) error {
 				users, err := svc.ListUsers(cmd.Context(), adminScope)
 				if err != nil {
 					return err
@@ -240,7 +241,7 @@ func newAdminUserCmd(f *serverFlags) *cobra.Command {
 		Short: "Make a user an instance admin",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return f.withService(cmd, func(svc *service.Service) error {
+			return f.withService(cmd, func(svc *service.Service, _ *config.Config) error {
 				if err := svc.SetInstanceAdmin(cmd.Context(), adminScope, args[0], true); err != nil {
 					return err
 				}
@@ -261,7 +262,7 @@ func newAdminUserCmd(f *serverFlags) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return f.withService(cmd, func(svc *service.Service) error {
+			return f.withService(cmd, func(svc *service.Service, _ *config.Config) error {
 				ctx := cmd.Context()
 				u, err := svc.CreateLocalUser(ctx, adminScope, args[0], email, name, pw, false)
 				if err != nil {
@@ -287,5 +288,110 @@ func newAdminUserCmd(f *serverFlags) *cobra.Command {
 	create.Flags().StringVar(&role, "role", "member", "role in that org: owner, admin, member or viewer")
 	create.Flags().BoolVar(&passwordStdin, "password-stdin", false, "read the password from stdin")
 	cmd.AddCommand(ls, promote, create)
+	return cmd
+}
+
+// newAdminAgentCmd manages an org's probe agents from the server host.
+func newAdminAgentCmd(f *serverFlags) *cobra.Command {
+	cmd := &cobra.Command{Use: "agent", Short: "Manage an org's probe agents"}
+	var orgSlug string
+	cmd.PersistentFlags().StringVar(&orgSlug, "org", "", "org slug (required)")
+	_ = cmd.MarkPersistentFlagRequired("org")
+	orgScope := func(cmd *cobra.Command, svc *service.Service) (domain.Scope, error) {
+		org, err := svc.OrgBySlug(cmd.Context(), orgSlug)
+		if err != nil {
+			return domain.Scope{}, err
+		}
+		sc := adminScope
+		sc.OrgID = org.ID
+		return sc, nil
+	}
+
+	var labels string
+	var asJSON bool
+	add := &cobra.Command{
+		Use:   "add <name>",
+		Short: "Register an agent and print its token once, with the command to run",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			parsed, err := domain.ParseLabels(labels)
+			if err != nil {
+				return err
+			}
+			return f.withService(cmd, func(svc *service.Service, cfg *config.Config) error {
+				sc, err := orgScope(cmd, svc)
+				if err != nil {
+					return err
+				}
+				a, token, err := svc.CreateAgent(cmd.Context(), sc, args[0], parsed)
+				if err != nil {
+					return err
+				}
+				command := domain.AgentCommand(cfg.Server.BaseURL, token, a.Labels)
+				if asJSON {
+					return json.NewEncoder(cmd.OutOrStdout()).Encode(map[string]any{
+						"name": a.Name, "id": a.ID, "labels": a.Labels, "token": token, "command": command,
+					})
+				}
+				fmt.Fprintf(cmd.OutOrStdout(), "created agent %s\ntoken (shown once)  %s\n\nrun on the agent's host:\n  %s\n", a.Name, token, strings.ReplaceAll(command, "\n", "\n  "))
+				return nil
+			})
+		},
+	}
+	add.Flags().StringVar(&labels, "labels", "", "labels monitors can select, like site=dc2,zone=dmz")
+	add.Flags().BoolVar(&asJSON, "json", false, "print as JSON")
+
+	var lsJSON bool
+	ls := &cobra.Command{
+		Use:   "ls",
+		Short: "List the org's agents",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return f.withService(cmd, func(svc *service.Service, _ *config.Config) error {
+				sc, err := orgScope(cmd, svc)
+				if err != nil {
+					return err
+				}
+				agents, err := svc.ListAgents(cmd.Context(), sc)
+				if err != nil {
+					return err
+				}
+				if lsJSON {
+					return json.NewEncoder(cmd.OutOrStdout()).Encode(agents)
+				}
+				tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 4, 2, ' ', 0)
+				fmt.Fprintln(tw, "NAME\tLABELS\tLAST SEEN\tVERSION\tTOKEN")
+				for _, a := range agents {
+					seen := "never"
+					if a.LastSeenAt != nil {
+						seen = a.LastSeenAt.Local().Format("2006-01-02 15:04")
+					}
+					fmt.Fprintf(tw, "%s\t%s\t%s\t%s\tvat_%s_…\n", a.Name, domain.LabelsString(a.Labels), seen, a.Version, a.TokenPrefix)
+				}
+				return tw.Flush()
+			})
+		},
+	}
+	ls.Flags().BoolVar(&lsJSON, "json", false, "print as JSON")
+
+	revoke := &cobra.Command{
+		Use:   "revoke <name>",
+		Short: "Revoke an agent's token and forget it; its monitors turn late",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return f.withService(cmd, func(svc *service.Service, _ *config.Config) error {
+				sc, err := orgScope(cmd, svc)
+				if err != nil {
+					return err
+				}
+				if err := svc.RevokeAgent(cmd.Context(), sc, args[0]); err != nil {
+					return err
+				}
+				fmt.Fprintf(cmd.OutOrStdout(), "revoked agent %s\n", args[0])
+				return nil
+			})
+		},
+	}
+	cmd.AddCommand(add, ls, revoke)
 	return cmd
 }

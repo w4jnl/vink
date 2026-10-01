@@ -30,7 +30,18 @@ type API struct {
 	limiter *ratelimit.Limiter
 	// Routes records every registered method and path for the OpenAPI test.
 	Routes []string
+	// OrgRoutes are the org-level routes, mounted under /orgs/{org} for sessions only.
+	OrgRoutes []string
 }
+
+// scopeMode says how a route finds its scope.
+type scopeMode int
+
+const (
+	modeProject scopeMode = iota // bearer key, or a session on /orgs/{org}/projects/{project}
+	modeMe                       // a session on /me
+	modeOrg                      // a session on /orgs/{org}, org admins and owners
+)
 
 // New builds the API.
 func New(svc *service.Service, a *auth.Authenticator, log *slog.Logger) *API {
@@ -85,6 +96,11 @@ func (a *API) Mount(mux *http.ServeMux) {
 	a.register(mux, "DELETE", "/keys/{id}", a.deleteKey, false)
 	a.register(mux, "POST", "/ping-key/rotate", a.rotatePingKey, false)
 	a.register(mux, "GET", "/status", a.status, false)
+	a.registerOrg(mux, "GET", "/agents", a.listAgents)
+	a.registerOrg(mux, "POST", "/agents", a.createAgent)
+	a.registerOrg(mux, "GET", "/agents/{name}", a.getAgent)
+	a.registerOrg(mux, "PUT", "/agents/{name}/labels", a.putAgentLabels)
+	a.registerOrg(mux, "DELETE", "/agents/{name}", a.deleteAgent)
 	mux.HandleFunc("GET "+Prefix+"/openapi.yaml", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/yaml")
 		_, _ = w.Write(openAPI)
@@ -102,13 +118,24 @@ func (a *API) RegisterExtra(mux *http.ServeMux, method, path string, h handlerFu
 
 func (a *API) register(mux *http.ServeMux, method, path string, h handlerFunc, meRoute bool) {
 	a.Routes = append(a.Routes, method+" "+path)
-	mux.Handle(method+" "+Prefix+path, a.wrap(h, false, meRoute))
-	mux.Handle(method+" "+Prefix+"/orgs/{org}/projects/{project}"+path, a.wrap(h, true, meRoute))
+	mode := modeProject
+	if meRoute {
+		mode = modeMe
+	}
+	mux.Handle(method+" "+Prefix+path, a.wrap(h, mode, false))
+	mux.Handle(method+" "+Prefix+"/orgs/{org}/projects/{project}"+path, a.wrap(h, mode, true))
+}
+
+// registerOrg mounts an org-level route under /orgs/{org}, for sessions
+// of org admins and owners; API keys act as a project and are refused.
+func (a *API) registerOrg(mux *http.ServeMux, method, path string, h handlerFunc) {
+	a.OrgRoutes = append(a.OrgRoutes, method+" "+path)
+	mux.Handle(method+" "+Prefix+"/orgs/{org}"+path, a.wrap(h, modeOrg, true))
 }
 
 // wrap resolves the caller's scope, applies the rate limit, the read-only
 // and CSRF rules, and turns handler errors into problems.
-func (a *API) wrap(h handlerFunc, sessionPath, meRoute bool) http.Handler {
+func (a *API) wrap(h handlerFunc, mode scopeMode, sessionPath bool) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("Cache-Control", "no-store")
@@ -121,6 +148,10 @@ func (a *API) wrap(h handlerFunc, sessionPath, meRoute bool) http.Handler {
 			err       error
 		)
 		if token, ok := auth.BearerToken(r); ok {
+			if mode == modeOrg {
+				writeError(w, r, a.log, errors.Join(domain.ErrForbidden, errors.New("API keys act as a project; org routes take a session")))
+				return
+			}
 			sc, err = a.auth.KeyScope(ctx, token)
 			if err != nil {
 				writeError(w, r, a.log, err)
@@ -141,13 +172,19 @@ func (a *API) wrap(h handlerFunc, sessionPath, meRoute bool) http.Handler {
 				return
 			}
 			switch {
+			case mode == modeOrg:
+				sc, err = a.orgScope(r, principal)
+				if err != nil {
+					writeError(w, r, a.log, err)
+					return
+				}
 			case sessionPath:
 				sc, err = a.sessionScope(r, principal)
 				if err != nil {
 					writeError(w, r, a.log, err)
 					return
 				}
-			case meRoute:
+			case mode == modeMe:
 				sc = domain.Scope{UserID: principal.User.ID, InstanceAdmin: principal.InstanceAdmin, Actor: "user:" + principal.User.Subject}
 			default:
 				writeError(w, r, a.log, errors.Join(domain.ErrUnauthorized, errors.New("sessions must use /api/v1/orgs/{org}/projects/{project}/…")))
@@ -171,6 +208,23 @@ func (a *API) wrap(h handlerFunc, sessionPath, meRoute bool) http.Handler {
 			writeError(w, r, a.log, err)
 		}
 	})
+}
+
+// orgScope resolves the org from the path for a principal; a principal
+// without a role there gets a 404, one without the admin role a 403.
+func (a *API) orgScope(r *http.Request, p *auth.Principal) (domain.Scope, error) {
+	org, err := a.svc.OrgBySlug(r.Context(), r.PathValue("org"))
+	if err != nil {
+		return domain.Scope{}, domain.NotFound("org")
+	}
+	sc, err := a.auth.OrgScope(p, org)
+	if err != nil {
+		return domain.Scope{}, err
+	}
+	if !sc.InstanceAdmin && !sc.CanAdminOrg() {
+		return domain.Scope{}, domain.ErrForbidden
+	}
+	return sc, nil
 }
 
 // sessionScope resolves org and project from the path for a principal.

@@ -51,6 +51,10 @@ func TestOpenAPIMatchesRouter(t *testing.T) {
 	a := New(nil, nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	a.Mount(http.NewServeMux())
 	got := append([]string(nil), a.Routes...)
+	for _, r := range a.OrgRoutes {
+		method, path, _ := strings.Cut(r, " ")
+		got = append(got, method+" /orgs/{org}"+path)
+	}
 	want := specRoutes(t)
 	sort.Strings(got)
 	sort.Strings(want)
