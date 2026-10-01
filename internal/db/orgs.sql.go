@@ -148,3 +148,17 @@ func (q *Queries) SetOrgQuotas(ctx context.Context, arg SetOrgQuotasParams) erro
 	_, err := q.db.ExecContext(ctx, setOrgQuotas, arg.QuotaMonitors, arg.QuotaAgents, arg.ID)
 	return err
 }
+
+const updateOrgName = `-- name: UpdateOrgName :exec
+UPDATE orgs SET name = ? WHERE id = ?
+`
+
+type UpdateOrgNameParams struct {
+	Name string
+	ID   string
+}
+
+func (q *Queries) UpdateOrgName(ctx context.Context, arg UpdateOrgNameParams) error {
+	_, err := q.db.ExecContext(ctx, updateOrgName, arg.Name, arg.ID)
+	return err
+}

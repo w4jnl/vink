@@ -1,0 +1,42 @@
+{{define "content"}}<div class="vk-page vk-page--full" id="page"><main class="vk-main" id="instance">
+<div class="vk-main__head"><h1>Instance</h1><span class="vk-muted vk-mono">vink {{.Version}} · {{.Host}}</span></div>
+{{tabs .Tabs .Tab "Instance"}}
+<div id="tab"><div class="vk-tabhead"><p class="vk-lede">{{.Lede}}</p>{{if and (eq .Tab "orgs") (not .OrgPanel)}}{{button (dict "Label" "Add org" "Href" "/admin/orgs?add=1")}}{{end}}</div>
+{{if .Flash}}{{notice .Tone "" .Flash ""}}{{end}}
+{{if eq .Tab "orgs"}}{{template "instance-orgs" .}}{{else if eq .Tab "users"}}{{template "instance-users" .}}{{else}}{{template "instance-server" .}}{{end}}</div>
+</main></div>{{end}}
+
+{{define "instance-orgs"}}{{if .OrgPanel}}{{template "org-panel" .OrgPanel}}{{end}}
+<div class="vk-srows">{{range .OrgRows}}{{settingsrow (dict "Title" .Slug "Sub" .Sub "Href" .Href "Muted" .Muted "Cells" .Cells "Actions" .Actions)}}{{else}}<div class="vk-empty"><h3>No orgs</h3><p>Add one; its first owner invites the rest.</p></div>{{end}}</div>
+<p class="vk-field__hint">Only an org without projects can be deleted.</p>{{end}}
+
+{{define "org-panel"}}<form id="org-form" class="vk-sr" method="post" action="{{.Action}}"><input type="hidden" name="_csrf" value="{{.CSRF}}"></form>{{panel .Title "" (partial "org-fields" .) (partial "org-actions" .) "org-panel"}}{{end}}
+
+{{define "org-fields"}}{{fieldrow (list (field (dict "ID" "org_slug" "Label" "Slug" "Value" .Values.org_slug "Mono" true "Hint" (print "In URLs: /o/" .Values.org_slug) "Error" .Errors.org_slug "Disabled" (ne .EditID "") "Attrs" (attrs "form" "org-form" "required" ""))) (field (dict "ID" "org_name" "Label" "Name" "Value" .Values.org_name "Error" .Errors.org_name "Attrs" (attrs "form" "org-form")))) false}}
+{{if .EditID}}{{fieldrow (list (field (dict "ID" "org_q_mon" "Label" "Monitor quota" "Value" .Values.org_q_mon "Mono" true "Hint" "Empty means no quota." "Error" .Errors.org_q_mon "Attrs" (attrs "form" "org-form"))) (field (dict "ID" "org_q_ag" "Label" "Agent quota" "Value" .Values.org_q_ag "Mono" true "Error" .Errors.org_q_ag "Attrs" (attrs "form" "org-form")))) false}}{{else}}<div class="vk-fieldrow vk-fieldrow--3">{{field (dict "ID" "org_owner" "Label" "First owner" "Value" .Values.org_owner "Mono" true "Hint" "A local user or a proxy subject; empty to invite one later." "Error" .Errors.org_owner "Attrs" (attrs "form" "org-form"))}}{{field (dict "ID" "org_q_mon" "Label" "Monitor quota" "Value" .Values.org_q_mon "Mono" true "Hint" "Empty means no quota." "Error" .Errors.org_q_mon "Attrs" (attrs "form" "org-form"))}}{{field (dict "ID" "org_q_ag" "Label" "Agent quota" "Value" .Values.org_q_ag "Mono" true "Error" .Errors.org_q_ag "Attrs" (attrs "form" "org-form"))}}</div>{{end}}{{end}}
+
+{{define "org-actions"}}{{if .EditID}}{{button (dict "Label" "Save" "Variant" "primary" "Type" "submit" "Attrs" (attrs "form" "org-form"))}}{{else}}{{button (dict "Label" "Create org" "Variant" "primary" "Type" "submit" "Attrs" (attrs "form" "org-form"))}}{{end}}{{button (dict "Label" "Cancel" "Href" .CancelPath)}}{{end}}
+
+{{define "instance-users"}}<form class="vk-chips" method="get" action="/admin/users">{{.Chips}}</form>
+<div class="vk-srows">{{range .UserRows}}{{if and $.UserPanel (eq $.UserPanel.ID .ID)}}{{template "user-panel" $.UserPanel}}{{else}}{{settingsrow (dict "Lead" .Lead "HasLead" true "TitleHTML" .TitleHTML "Sub" .Sub "Muted" .Muted "Cells" .Cells "Actions" .Actions)}}{{end}}{{end}}</div>{{end}}
+
+{{define "user-panel"}}<form id="user-form" class="vk-sr" method="post" action="{{.Action}}"><input type="hidden" name="_csrf" value="{{.CSRF}}"></form>
+<form id="totp-reset-form" class="vk-sr" method="post" action="{{.ResetTOTPPath}}"><input type="hidden" name="_csrf" value="{{.CSRF}}"></form>
+<form id="reset-link-form" class="vk-sr" method="post" action="{{.ResetLinkPath}}"><input type="hidden" name="_csrf" value="{{.CSRF}}"></form>
+<form id="disable-form" class="vk-sr" method="post" action="{{if .Disabled}}{{.EnablePath}}{{else}}{{.DisablePath}}{{end}}"><input type="hidden" name="_csrf" value="{{.CSRF}}"></form>
+{{panel .Title .Sub (partial "user-fields" .) (partial "user-actions" .) "user-panel"}}{{end}}
+
+{{define "user-fields"}}{{if .Error}}{{notice "error" "" .Error ""}}{{end}}
+{{checkbox (dict "Name" "is_admin" "Value" "1" "Label" "Instance admin" "Hint" .AdminHint "Checked" .IsAdmin "Disabled" .AdminLocked "Attrs" (attrs "form" "user-form"))}}
+{{if .Local}}<div class="vk-fieldrow"><div class="vk-field"><span class="vk-field__label">Two-factor</span><div class="vk-field__row">{{if .TOTPOn}}{{statebadge (dict "State" "up" "Label" "on")}}{{button (dict "Label" "Reset two-factor" "Type" "submit" "Confirm" "Really reset?" "Attrs" (attrs "form" "totp-reset-form"))}}{{else}}{{statebadge (dict "State" "paused" "Label" "off")}}{{end}}</div><span class="vk-field__hint">{{if .TOTPOn}}For a lost phone. They set it up again at the next sign-in.{{else}}They turn it on from their account page.{{end}}</span></div><div class="vk-field"><span class="vk-field__label">Password</span><div class="vk-field__row">{{button (dict "Label" "Make a reset link" "Type" "submit" "Attrs" (attrs "form" "reset-link-form"))}}</div><span class="vk-field__hint">A one-time link, valid for 24 h. vink sends no email; pass it on yourself.</span></div></div>{{end}}
+{{if .Link}}{{notice .Link.Tone .Link.Title .Link.Text .Link.HTML}}{{end}}{{end}}
+
+{{define "user-actions"}}{{button (dict "Label" "Save" "Variant" "primary" "Type" "submit" "Attrs" (attrs "form" "user-form"))}}{{button (dict "Label" "Cancel" "Href" .CancelPath)}}{{if not .Self}}{{if .Disabled}}{{button (dict "Label" "Enable account" "Type" "submit" "Attrs" (attrs "form" "disable-form"))}}{{else}}{{button (dict "Label" "Disable account" "Variant" "danger" "Type" "submit" "Confirm" "Really disable?" "Attrs" (attrs "form" "disable-form"))}}{{end}}{{end}}{{end}}
+
+{{define "instance-server"}}{{if .Backup}}{{notice .Backup.Tone .Backup.Title .Backup.Text ""}}{{end}}
+<div class="vk-facts">
+<section class="vk-panel"><div class="vk-panel__head"><h2>Build</h2></div><dl class="vk-kv">{{range .Facts.Build}}<dt>{{index . 0}}</dt><dd>{{index . 1}}</dd>{{end}}</dl></section>
+<section class="vk-panel"><div class="vk-panel__head"><h2>Database</h2></div><dl class="vk-kv">{{range .Facts.Database}}<dt>{{index . 0}}</dt><dd>{{index . 1}}</dd>{{end}}</dl></section>
+<section class="vk-panel"><div class="vk-panel__head"><h2>Sign-in</h2></div><dl class="vk-kv">{{range .Facts.SignIn}}<dt>{{index . 0}}</dt><dd>{{index . 1}}</dd>{{end}}</dl></section>
+<section class="vk-panel"><div class="vk-panel__head"><h2>Network and health</h2></div><dl class="vk-kv">{{range .Facts.Network}}<dt>{{index . 0}}</dt><dd>{{index . 1}}</dd>{{end}}</dl></section>
+</div>{{end}}

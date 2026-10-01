@@ -1,6 +1,7 @@
 package web
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -30,6 +31,8 @@ type Web struct {
 	now    func() time.Time
 	// smtpFrom is shown as the placeholder of a mail channel's From.
 	smtpFrom string
+	// facts feeds the instance admin's Server tab.
+	facts func(ctx context.Context) ServerFacts
 }
 
 // New builds the UI handlers.
@@ -60,6 +63,18 @@ func (h *Web) Mount(mux *http.ServeMux) {
 	mux.Handle("POST /login", h.public(h.login))
 	mux.Handle("POST /logout", h.user(h.logout))
 	mux.Handle("GET /logout", h.user(h.logout))
+	mux.Handle("GET /admin", h.instanceAdmin(h.instanceHome))
+	mux.Handle("GET /admin/{tab}", h.instanceAdmin(h.instanceTab))
+	mux.Handle("POST /admin/orgs", h.instanceAdmin(h.createOrgAdmin))
+	mux.Handle("POST /admin/orgs/{slug}", h.instanceAdmin(h.updateOrgAdmin))
+	mux.Handle("POST /admin/orgs/{slug}/delete", h.instanceAdmin(h.deleteOrgAdmin))
+	mux.Handle("POST /admin/users/{id}", h.instanceAdmin(h.saveUserAdmin))
+	mux.Handle("POST /admin/users/{id}/totp-reset", h.instanceAdmin(h.resetUserTOTP))
+	mux.Handle("POST /admin/users/{id}/reset-link", h.instanceAdmin(h.makeResetLink))
+	mux.Handle("POST /admin/users/{id}/disable", h.instanceAdmin(h.setUserDisabled(true)))
+	mux.Handle("POST /admin/users/{id}/enable", h.instanceAdmin(h.setUserDisabled(false)))
+	mux.Handle("GET /reset/{token}", h.public(h.resetPage))
+	mux.Handle("POST /reset/{token}", h.public(h.resetPassword))
 	mux.Handle("GET /o/{org}/admin", h.orgAdmin(h.orgAdminHome))
 	mux.Handle("GET /o/{org}/admin/{tab}", h.orgAdmin(h.orgAdminTab))
 	mux.Handle("POST /o/{org}/admin/members/invites", h.orgAdmin(h.createInvite))
@@ -355,8 +370,13 @@ func (h *Web) menus(c *reqCtx, b *base) {
 	if p.InstanceAdmin {
 		role = "instance admin"
 	}
+	items := []ui.MenuItem{}
+	if p.InstanceAdmin {
+		items = append(items, ui.MenuItem{Label: "Instance admin", Href: "/admin/orgs"})
+	}
+	items = append(items, ui.MenuItem{Label: "API reference", Href: "/api/v1/openapi.yaml", Meta: ui.HTML(`<span class="vk-counts__none">openapi.yaml</span>`)})
 	b.UserMenu = ui.Menu([]ui.MenuGroup{
-		{Label: b.UserName, Role: role, Items: []ui.MenuItem{{Label: "API reference", Href: "/api/v1/openapi.yaml", Meta: ui.HTML(`<span class="vk-counts__none">openapi.yaml</span>`)}}},
+		{Label: b.UserName, Role: role, Items: items},
 		{Items: []ui.MenuItem{{Label: "Sign out", Href: "/logout", Quiet: true}}},
 	})
 }

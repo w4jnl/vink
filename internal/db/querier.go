@@ -46,6 +46,8 @@ type Querier interface {
 	CreateMonitor(ctx context.Context, arg CreateMonitorParams) (Monitor, error)
 	CreateOrg(ctx context.Context, arg CreateOrgParams) (Org, error)
 	CreateProject(ctx context.Context, arg CreateProjectParams) (Project, error)
+	// tenancy: root (instance admin)
+	CreateResetToken(ctx context.Context, arg CreateResetTokenParams) error
 	CreateRoute(ctx context.Context, arg CreateRouteParams) (Route, error)
 	CreateSession(ctx context.Context, arg CreateSessionParams) error
 	CreateStatusPage(ctx context.Context, arg CreateStatusPageParams) (StatusPage, error)
@@ -67,6 +69,8 @@ type Querier interface {
 	DeleteOrg(ctx context.Context, id string) (int64, error)
 	DeleteOrphanRoutes(ctx context.Context, projectID string) (int64, error)
 	DeleteProject(ctx context.Context, arg DeleteProjectParams) (int64, error)
+	// tenancy: root (follows the user)
+	DeleteRecoveryCodes(ctx context.Context, userID string) error
 	DeleteRoute(ctx context.Context, arg DeleteRouteParams) (int64, error)
 	DeleteRouteChannels(ctx context.Context, arg DeleteRouteChannelsParams) error
 	DeleteSession(ctx context.Context, id string) error
@@ -104,6 +108,8 @@ type Querier interface {
 	// tenancy: root (ping ingress resolves the project from the key)
 	GetProjectByPingKey(ctx context.Context, arg GetProjectByPingKeyParams) (Project, error)
 	GetProjectBySlug(ctx context.Context, arg GetProjectBySlugParams) (Project, error)
+	// tenancy: root (the link's token establishes the user)
+	GetResetTokenByHash(ctx context.Context, tokenHash string) (GetResetTokenByHashRow, error)
 	GetRoute(ctx context.Context, arg GetRouteParams) (Route, error)
 	GetSession(ctx context.Context, arg GetSessionParams) (Session, error)
 	GetStatusPage(ctx context.Context, arg GetStatusPageParams) (StatusPage, error)
@@ -135,6 +141,8 @@ type Querier interface {
 	ListAgentsByPrefix(ctx context.Context, tokenPrefix string) ([]Agent, error)
 	// tenancy: root (offline sweep, instance-wide)
 	ListAgentsSeenBefore(ctx context.Context, lastSeenAt *int64) ([]Agent, error)
+	// tenancy: root (instance admin: every user's roles)
+	ListAllMemberships(ctx context.Context) ([]ListAllMembershipsRow, error)
 	// tenancy: root (instance admin)
 	ListAllProjects(ctx context.Context) ([]ListAllProjectsRow, error)
 	// tenancy: root (the service scopes by org_id and project_id below)
@@ -189,6 +197,8 @@ type Querier interface {
 	// tenancy: root (offline sweep)
 	ListUnassignedRemoteMonitors(ctx context.Context, updatedAt int64) ([]Monitor, error)
 	ListUsers(ctx context.Context) ([]User, error)
+	// tenancy: root (instance admin)
+	ListUsersWithSeen(ctx context.Context) ([]ListUsersWithSeenRow, error)
 	// tenancy: root (dispatcher)
 	MarkDeliveryDelivered(ctx context.Context, arg MarkDeliveryDeliveredParams) error
 	// tenancy: root (dispatcher)
@@ -200,6 +210,8 @@ type Querier interface {
 	OpenIncident(ctx context.Context, arg OpenIncidentParams) (Incident, error)
 	// tenancy: root (dispatcher)
 	RescheduleDelivery(ctx context.Context, arg RescheduleDeliveryParams) error
+	// tenancy: root (instance admin, or the account itself)
+	ResetUserTOTP(ctx context.Context, id string) error
 	ResolveIncident(ctx context.Context, arg ResolveIncidentParams) error
 	RevokeAPIKey(ctx context.Context, arg RevokeAPIKeyParams) (int64, error)
 	// tenancy: org
@@ -215,6 +227,8 @@ type Querier interface {
 	SetMonitorPaused(ctx context.Context, arg SetMonitorPausedParams) error
 	SetOrgQuotas(ctx context.Context, arg SetOrgQuotasParams) error
 	SetSessionProject(ctx context.Context, arg SetSessionProjectParams) error
+	// tenancy: root (instance admin)
+	SetUserDisabled(ctx context.Context, arg SetUserDisabledParams) error
 	SetUserPassword(ctx context.Context, arg SetUserPasswordParams) error
 	// tenancy: root (called after the key was verified)
 	TouchAPIKey(ctx context.Context, arg TouchAPIKeyParams) error
@@ -228,6 +242,7 @@ type Querier interface {
 	UpdateMaintenance(ctx context.Context, arg UpdateMaintenanceParams) (Maintenance, error)
 	UpdateMonitor(ctx context.Context, arg UpdateMonitorParams) (Monitor, error)
 	UpdateMonitorState(ctx context.Context, arg UpdateMonitorStateParams) error
+	UpdateOrgName(ctx context.Context, arg UpdateOrgNameParams) error
 	UpdateProject(ctx context.Context, arg UpdateProjectParams) error
 	UpdateRoute(ctx context.Context, arg UpdateRouteParams) (Route, error)
 	UpdateStatusPage(ctx context.Context, arg UpdateStatusPageParams) (StatusPage, error)
@@ -235,6 +250,8 @@ type Querier interface {
 	UpsertMembership(ctx context.Context, arg UpsertMembershipParams) error
 	// tenancy: root (the link's token establishes the org; the row must still be open)
 	UseInvite(ctx context.Context, arg UseInviteParams) (int64, error)
+	// tenancy: root (the link's token establishes the user)
+	UseResetToken(ctx context.Context, arg UseResetTokenParams) (int64, error)
 }
 
 var _ Querier = (*Queries)(nil)

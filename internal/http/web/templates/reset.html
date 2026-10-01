@@ -1,0 +1,12 @@
+{{define "content"}}<main class="vk-auth">
+<div class="vk-auth__brand">{{mark 22}}<span>vink</span></div>
+<form class="vk-auth__card" action="{{.Action}}" method="post">
+<input type="hidden" name="_csrf" value="{{.CSRF}}">
+<h1>Set a new password</h1>
+<p><b>{{.Maker}}</b> made this link for <b>{{.Who}}</b>. It works once, until {{.Until}}.</p>
+{{if .Error}}{{notice "error" "" .Error ""}}{{end}}
+{{field (dict "ID" "password" "Label" "New password" "Type" "password" "Hint" "12 characters or more. Your other sessions are signed out." "Autocomplete" "new-password" "Attrs" (attrs "autofocus" "" "required" ""))}}
+{{button (dict "Label" "Save password" "Variant" "primary" "Type" "submit" "Block" true)}}
+</form>
+<p class="vk-auth__foot">vink {{.Version}} · w4j.nl</p>
+</main>{{end}}

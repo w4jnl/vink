@@ -20,9 +20,35 @@ func (q *Queries) CountUsers(ctx context.Context) (int64, error) {
 	return count, err
 }
 
+const createResetToken = `-- name: CreateResetToken :exec
+INSERT INTO reset_tokens (id, user_id, token_hash, created_by, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?)
+`
+
+type CreateResetTokenParams struct {
+	ID        string
+	UserID    string
+	TokenHash string
+	CreatedBy *string
+	CreatedAt int64
+	ExpiresAt int64
+}
+
+// tenancy: root (instance admin)
+func (q *Queries) CreateResetToken(ctx context.Context, arg CreateResetTokenParams) error {
+	_, err := q.db.ExecContext(ctx, createResetToken,
+		arg.ID,
+		arg.UserID,
+		arg.TokenHash,
+		arg.CreatedBy,
+		arg.CreatedAt,
+		arg.ExpiresAt,
+	)
+	return err
+}
+
 const createUser = `-- name: CreateUser :one
-INSERT INTO users (id, subject, email, display_name, password_hash, is_instance_admin, created_at)
-VALUES (?, ?, ?, ?, ?, ?, ?)
+INSERT INTO users (id, subject, email, display_name, password_hash, is_instance_admin, source, created_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING id, subject, email, display_name, password_hash, is_instance_admin, created_at, source, disabled_at, disabled_by, totp_secret, totp_enabled_at, totp_last_step, password_changed_at
 `
 
@@ -33,6 +59,7 @@ type CreateUserParams struct {
 	DisplayName     string
 	PasswordHash    *string
 	IsInstanceAdmin bool
+	Source          string
 	CreatedAt       int64
 }
 
@@ -44,6 +71,7 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 		arg.DisplayName,
 		arg.PasswordHash,
 		arg.IsInstanceAdmin,
+		arg.Source,
 		arg.CreatedAt,
 	)
 	var i User
@@ -62,6 +90,56 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 		&i.TotpEnabledAt,
 		&i.TotpLastStep,
 		&i.PasswordChangedAt,
+	)
+	return i, err
+}
+
+const deleteRecoveryCodes = `-- name: DeleteRecoveryCodes :exec
+DELETE FROM recovery_codes WHERE user_id = ?
+`
+
+// tenancy: root (follows the user)
+func (q *Queries) DeleteRecoveryCodes(ctx context.Context, userID string) error {
+	_, err := q.db.ExecContext(ctx, deleteRecoveryCodes, userID)
+	return err
+}
+
+const getResetTokenByHash = `-- name: GetResetTokenByHash :one
+SELECT r.id, r.user_id, r.token_hash, r.created_by, r.created_at, r.expires_at, r.used_at, u.subject, u.display_name, c.subject AS created_by_subject, c.display_name AS created_by_name
+FROM reset_tokens r JOIN users u ON u.id = r.user_id LEFT JOIN users c ON c.id = r.created_by
+WHERE r.token_hash = ?
+`
+
+type GetResetTokenByHashRow struct {
+	ID               string
+	UserID           string
+	TokenHash        string
+	CreatedBy        *string
+	CreatedAt        int64
+	ExpiresAt        int64
+	UsedAt           *int64
+	Subject          string
+	DisplayName      string
+	CreatedBySubject *string
+	CreatedByName    *string
+}
+
+// tenancy: root (the link's token establishes the user)
+func (q *Queries) GetResetTokenByHash(ctx context.Context, tokenHash string) (GetResetTokenByHashRow, error) {
+	row := q.db.QueryRowContext(ctx, getResetTokenByHash, tokenHash)
+	var i GetResetTokenByHashRow
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.TokenHash,
+		&i.CreatedBy,
+		&i.CreatedAt,
+		&i.ExpiresAt,
+		&i.UsedAt,
+		&i.Subject,
+		&i.DisplayName,
+		&i.CreatedBySubject,
+		&i.CreatedByName,
 	)
 	return i, err
 }
@@ -160,6 +238,79 @@ func (q *Queries) ListUsers(ctx context.Context) ([]User, error) {
 	return items, nil
 }
 
+const listUsersWithSeen = `-- name: ListUsersWithSeen :many
+SELECT u.id, u.subject, u.email, u.display_name, u.password_hash, u.is_instance_admin, u.created_at, u.source, u.disabled_at, u.disabled_by, u.totp_secret, u.totp_enabled_at, u.totp_last_step, u.password_changed_at, (SELECT MAX(s.last_seen_at) FROM sessions s WHERE s.user_id = u.id) AS last_seen_at
+FROM users u ORDER BY u.subject
+`
+
+type ListUsersWithSeenRow struct {
+	ID                string
+	Subject           string
+	Email             string
+	DisplayName       string
+	PasswordHash      *string
+	IsInstanceAdmin   bool
+	CreatedAt         int64
+	Source            string
+	DisabledAt        *int64
+	DisabledBy        *string
+	TotpSecret        *string
+	TotpEnabledAt     *int64
+	TotpLastStep      int64
+	PasswordChangedAt *int64
+	LastSeenAt        interface{}
+}
+
+// tenancy: root (instance admin)
+func (q *Queries) ListUsersWithSeen(ctx context.Context) ([]ListUsersWithSeenRow, error) {
+	rows, err := q.db.QueryContext(ctx, listUsersWithSeen)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListUsersWithSeenRow
+	for rows.Next() {
+		var i ListUsersWithSeenRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Subject,
+			&i.Email,
+			&i.DisplayName,
+			&i.PasswordHash,
+			&i.IsInstanceAdmin,
+			&i.CreatedAt,
+			&i.Source,
+			&i.DisabledAt,
+			&i.DisabledBy,
+			&i.TotpSecret,
+			&i.TotpEnabledAt,
+			&i.TotpLastStep,
+			&i.PasswordChangedAt,
+			&i.LastSeenAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const resetUserTOTP = `-- name: ResetUserTOTP :exec
+UPDATE users SET totp_secret = NULL, totp_enabled_at = NULL, totp_last_step = 0 WHERE id = ?
+`
+
+// tenancy: root (instance admin, or the account itself)
+func (q *Queries) ResetUserTOTP(ctx context.Context, id string) error {
+	_, err := q.db.ExecContext(ctx, resetUserTOTP, id)
+	return err
+}
+
 const setInstanceAdmin = `-- name: SetInstanceAdmin :execrows
 UPDATE users SET is_instance_admin = ? WHERE id = ?
 `
@@ -175,6 +326,22 @@ func (q *Queries) SetInstanceAdmin(ctx context.Context, arg SetInstanceAdminPara
 		return 0, err
 	}
 	return result.RowsAffected()
+}
+
+const setUserDisabled = `-- name: SetUserDisabled :exec
+UPDATE users SET disabled_at = ?, disabled_by = ? WHERE id = ?
+`
+
+type SetUserDisabledParams struct {
+	DisabledAt *int64
+	DisabledBy *string
+	ID         string
+}
+
+// tenancy: root (instance admin)
+func (q *Queries) SetUserDisabled(ctx context.Context, arg SetUserDisabledParams) error {
+	_, err := q.db.ExecContext(ctx, setUserDisabled, arg.DisabledAt, arg.DisabledBy, arg.ID)
+	return err
 }
 
 const setUserPassword = `-- name: SetUserPassword :exec
@@ -204,4 +371,23 @@ type UpdateUserProfileParams struct {
 func (q *Queries) UpdateUserProfile(ctx context.Context, arg UpdateUserProfileParams) error {
 	_, err := q.db.ExecContext(ctx, updateUserProfile, arg.Email, arg.DisplayName, arg.ID)
 	return err
+}
+
+const useResetToken = `-- name: UseResetToken :execrows
+UPDATE reset_tokens SET used_at = ? WHERE id = ? AND used_at IS NULL AND expires_at > ?
+`
+
+type UseResetTokenParams struct {
+	UsedAt    *int64
+	ID        string
+	ExpiresAt int64
+}
+
+// tenancy: root (the link's token establishes the user)
+func (q *Queries) UseResetToken(ctx context.Context, arg UseResetTokenParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, useResetToken, arg.UsedAt, arg.ID, arg.ExpiresAt)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }

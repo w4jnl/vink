@@ -20,3 +20,6 @@ UPDATE orgs SET quota_monitors = ?, quota_agents = ? WHERE id = ?;
 
 -- name: DeleteOrg :execrows
 DELETE FROM orgs WHERE id = ?;
+
+-- name: UpdateOrgName :exec
+UPDATE orgs SET name = ? WHERE id = ?;

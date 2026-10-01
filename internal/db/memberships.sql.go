@@ -69,6 +69,54 @@ func (q *Queries) GetMembership(ctx context.Context, arg GetMembershipParams) (M
 	return i, err
 }
 
+const listAllMemberships = `-- name: ListAllMemberships :many
+SELECT m.user_id, m.org_id, m.role, m.source, m.created_at, o.slug AS org_slug, o.name AS org_name
+FROM memberships m JOIN orgs o ON o.id = m.org_id
+ORDER BY o.slug
+`
+
+type ListAllMembershipsRow struct {
+	UserID    string
+	OrgID     string
+	Role      string
+	Source    string
+	CreatedAt int64
+	OrgSlug   string
+	OrgName   string
+}
+
+// tenancy: root (instance admin: every user's roles)
+func (q *Queries) ListAllMemberships(ctx context.Context) ([]ListAllMembershipsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listAllMemberships)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListAllMembershipsRow
+	for rows.Next() {
+		var i ListAllMembershipsRow
+		if err := rows.Scan(
+			&i.UserID,
+			&i.OrgID,
+			&i.Role,
+			&i.Source,
+			&i.CreatedAt,
+			&i.OrgSlug,
+			&i.OrgName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listMembershipsForOrg = `-- name: ListMembershipsForOrg :many
 SELECT m.user_id, m.org_id, m.role, m.source, m.created_at, u.subject, u.email, u.display_name
 FROM memberships m JOIN users u ON u.id = m.user_id

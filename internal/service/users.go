@@ -18,7 +18,7 @@ const MinPasswordLen = 8
 func userFromRow(r db.User) *domain.User {
 	return &domain.User{
 		ID: r.ID, Subject: r.Subject, Email: r.Email, DisplayName: r.DisplayName, HasPassword: r.PasswordHash != nil, Source: r.Source,
-		InstanceAdmin: r.IsInstanceAdmin, DisabledAt: domain.FromMillisPtr(r.DisabledAt), CreatedAt: domain.FromMillis(r.CreatedAt),
+		InstanceAdmin: r.IsInstanceAdmin, DisabledAt: domain.FromMillisPtr(r.DisabledAt), DisabledBy: strp(r.DisabledBy), TOTPEnabledAt: domain.FromMillisPtr(r.TotpEnabledAt), CreatedAt: domain.FromMillis(r.CreatedAt),
 	}
 }
 
@@ -68,7 +68,7 @@ func (s *Service) createLocalUser(ctx context.Context, q *db.Queries, subject, e
 	}
 	row, err := q.CreateUser(ctx, db.CreateUserParams{
 		ID: domain.NewID(), Subject: subject, Email: strings.TrimSpace(email), DisplayName: strings.TrimSpace(name),
-		PasswordHash: &hash, IsInstanceAdmin: instanceAdmin, CreatedAt: domain.Millis(s.now()),
+		PasswordHash: &hash, IsInstanceAdmin: instanceAdmin, Source: "local", CreatedAt: domain.Millis(s.now()),
 	})
 	if err != nil {
 		return nil, conflictIfUnique(err, "a user named "+subject+" exists")
@@ -158,6 +158,15 @@ func (s *Service) SetInstanceAdmin(ctx context.Context, sc domain.Scope, subject
 	if err != nil {
 		return err
 	}
+	if !admin && u.ID == sc.UserID {
+		return validation("instance_admin", "you cannot take instance admin from yourself")
+	}
+	if u.Source != "local" {
+		return validation("instance_admin", "proxy and oidc users get instance admin from the "+"instance_admin_group")
+	}
+	if u.InstanceAdmin == admin {
+		return nil
+	}
 	return s.db.Tx(ctx, func(q *db.Queries) error {
 		if _, err := q.SetInstanceAdmin(ctx, db.SetInstanceAdminParams{IsInstanceAdmin: admin, ID: u.ID}); err != nil {
 			return err
@@ -192,7 +201,7 @@ func (s *Service) EnsureProxyUser(ctx context.Context, subject, email, name stri
 		name = subject
 	}
 	created, err := s.db.Write().CreateUser(ctx, db.CreateUserParams{
-		ID: domain.NewID(), Subject: subject, Email: email, DisplayName: name, PasswordHash: nil, IsInstanceAdmin: false, CreatedAt: domain.Millis(s.now()),
+		ID: domain.NewID(), Subject: subject, Email: email, DisplayName: name, PasswordHash: nil, IsInstanceAdmin: false, Source: "proxy", CreatedAt: domain.Millis(s.now()),
 	})
 	if err != nil {
 		if db.IsUniqueViolation(err) {

@@ -40,8 +40,14 @@ type User struct {
 	Source        string
 	InstanceAdmin bool
 	DisabledAt    *time.Time
+	DisabledBy    string
+	// TOTPEnabledAt is set while two-factor is on.
+	TOTPEnabledAt *time.Time
 	CreatedAt     time.Time
 }
+
+// TOTPOn reports whether two-factor sign-in is on.
+func (u *User) TOTPOn() bool { return u.TOTPEnabledAt != nil }
 
 // Disabled reports whether sign-in is blocked.
 func (u *User) Disabled() bool { return u.DisabledAt != nil }

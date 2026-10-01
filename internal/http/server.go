@@ -17,6 +17,7 @@ import (
 	"github.com/w4jnl/vink/internal/config"
 	"github.com/w4jnl/vink/internal/domain"
 	"github.com/w4jnl/vink/internal/engine"
+	"github.com/w4jnl/vink/internal/http/agentgw"
 	"github.com/w4jnl/vink/internal/http/api"
 	"github.com/w4jnl/vink/internal/http/middleware"
 	"github.com/w4jnl/vink/internal/http/ping"
@@ -37,6 +38,8 @@ type Deps struct {
 	Pool  *engine.Pool
 	// Metrics, when set, serves GET /metrics.
 	Metrics *metrics.Metrics
+	// Gateway, when set, tells the Server tab how many agents are connected.
+	Gateway *agentgw.Gateway
 	// Mount lets later packages (api, web) register on the main mux.
 	Mount []func(mux *http.ServeMux)
 }
@@ -97,6 +100,7 @@ func Handler(d Deps, withPing bool) http.Handler {
 			panic(fmt.Errorf("web templates: %w", err))
 		}
 		ui.SetSMTPFrom(d.Cfg.SMTP.From)
+		ui.SetServerFacts(d.serverFacts)
 		ui.Mount(mux)
 		root = ui.CustomDomains(mux)
 	}

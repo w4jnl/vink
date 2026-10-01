@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -26,6 +27,7 @@ import (
 
 type env struct {
 	t       *testing.T
+	db      *db.DB
 	svc     *service.Service
 	authn   *auth.Authenticator
 	web     *Web
@@ -52,7 +54,7 @@ func newEnv(t *testing.T) *env {
 		t.Fatal(err)
 	}
 	svc.SetNotifier(reg)
-	e := &env{t: t, svc: svc, now: time.Date(2026, 9, 27, 12, 0, 0, 0, time.UTC)}
+	e := &env{t: t, db: d, svc: svc, now: time.Date(2026, 9, 27, 12, 0, 0, 0, time.UTC)}
 	svc.SetClock(func() time.Time { return e.now })
 	ctx := context.Background()
 	admin := domain.Scope{InstanceAdmin: true, Role: domain.RoleOwner}
@@ -1392,4 +1394,179 @@ func TestMembersInvitesAndOwnerActions(t *testing.T) {
 	if r := e.post("/o/acme/admin/members/transfer", url.Values{"new_owner": {bob.ID}}, false); r.code != 404 {
 		t.Fatalf("acme transfer: %d", r.code)
 	}
+}
+
+func TestInstanceAdminPages(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	admin := domain.Scope{InstanceAdmin: true, Role: domain.RoleOwner}
+	bob, _ := e.svc.CreateLocalUser(ctx, admin, "bob", "bob@example.com", "Bob Jansen", "correct horse", false)
+	_ = e.svc.SetMembership(ctx, admin, bob.ID, e.org.ID, domain.RoleMember)
+
+	// an org admin who is not an instance admin sees nothing here
+	for _, path := range []string{"/admin", "/admin/orgs", "/admin/users", "/admin/server", "/admin/users?edit=" + bob.ID} {
+		if r := e.get(path, false); r.code != 404 {
+			t.Errorf("%s as org admin: %d", path, r.code)
+		}
+	}
+	for _, path := range []string{"/admin/orgs", "/admin/users/" + bob.ID + "/disable", "/admin/users/" + bob.ID + "/reset-link"} {
+		if r := e.post(path, url.Values{}, false); r.code != 404 {
+			t.Errorf("POST %s as org admin: %d", path, r.code)
+		}
+	}
+	if r := e.get(projPath, false); strings.Contains(r.body, `href="/admin/orgs"`) {
+		t.Error("menu offers Instance admin to an org admin")
+	}
+	if r := e.do("GET", "/reset/rs_nope", nil, false, false); r.code != 404 {
+		t.Errorf("unknown reset link: %d", r.code)
+	}
+
+	// as instance admin: the shell, the orgs tab and its rows
+	if err := e.svc.SetInstanceAdmin(ctx, admin, "j", true); err != nil {
+		t.Fatal(err)
+	}
+	e.get(projPath, false).has(t, `<a class="vk-menu__item" href="/admin/orgs">`, `Instance admin</span>`)
+	if r := e.get("/admin", false); r.code != 303 || r.hdr.Get("Location") != "/admin/orgs" {
+		t.Fatalf("/admin: %d %s", r.code, r.hdr.Get("Location"))
+	}
+	orgs := e.get("/admin/orgs", false)
+	orgs.has(t, `<h1>Instance</h1><span class="vk-muted vk-mono">vink `, ` · localhost:8080</span>`,
+		`<nav class="vk-tabs" aria-label="Instance"><a class="vk-tab" href="/admin/orgs" aria-current="page">Orgs<span class="vk-tab__n">2</span></a><a class="vk-tab" href="/admin/users">Users<span class="vk-tab__n">2</span></a><a class="vk-tab" href="/admin/server">Server</a></nav>`,
+		`Instance admins create orgs and set their quotas.`, `href="/admin/orgs?add=1">Add org</a>`,
+		`<a class="vk-srow__link" href="/o/homelab/admin/members">homelab</a></span><span class="vk-srow__sub" title="1 project · no owner">1 project · no owner</span></div><span class="vk-srow__cell vk-srow__cell--l"><span class="vk-usage"><span class="vk-usage__text">0 monitors · no quota</span></span></span>`,
+		`href="/o/acme/admin/members">acme</a>`, `href="/admin/orgs?edit=homelab">Edit</a>`, `<p class="vk-field__hint">Only an org without projects can be deleted.</p>`)
+	if strings.Contains(orgs.body, "Delete</button>") {
+		t.Error("an org with projects offers Delete")
+	}
+
+	// add an org: bad quota, unknown owner, then one with a quota and bob as owner
+	e.get("/admin/orgs?add=1", false).has(t, `<h2>Add org</h2>`, `id="org_slug" name="org_slug"`, `id="org_owner" name="org_owner"`, `id="org_q_mon" name="org_q_mon"`, `>Create org</button>`)
+	if r := e.post("/admin/orgs", url.Values{"org_slug": {"lab"}, "org_q_mon": {"many"}}, false); r.code != 422 || !strings.Contains(r.body, `id="org_q_mon-msg"`) {
+		t.Fatalf("bad quota: %d", r.code)
+	}
+	if r := e.post("/admin/orgs", url.Values{"org_slug": {"lab"}, "org_owner": {"nobody"}}, false); r.code != 422 || !strings.Contains(r.body, `No user named nobody`) {
+		t.Fatalf("unknown owner: %d", r.code)
+	}
+	if r := e.post("/admin/orgs", url.Values{"org_slug": {"lab"}, "org_name": {"Lab"}, "org_owner": {"bob"}, "org_q_mon": {"5"}}, false); r.code != 303 || !strings.HasPrefix(r.hdr.Get("Location"), "/admin/orgs?flash=") {
+		t.Fatalf("create: %d %s", r.code, r.hdr.Get("Location"))
+	}
+	if r := e.post("/admin/orgs", url.Values{"org_slug": {"lab"}, "org_name": {"Lab"}}, false); r.code != 422 || !strings.Contains(r.body, `An org with this slug exists.`) {
+		t.Fatalf("duplicate: %d", r.code)
+	}
+	e.get("/admin/orgs", false).has(t, `href="/o/lab/admin/members">lab</a></span><span class="vk-srow__sub" title="no projects · owner bob">`, `<span class="vk-usage__text">0 / 5 monitors</span>`, `<span class="vk-usage__text">0 agents · no quota</span>`,
+		`action="/admin/orgs/lab/delete"`, `data-confirm="Really delete?">Delete</button>`, `Orgs<span class="vk-tab__n">3</span>`)
+	e.get("/admin/orgs?edit=lab", false).has(t, `<h2>Edit lab</h2>`, `name="org_slug" aria-describedby="org_slug-msg" disabled type="text" value="lab"`, `name="org_q_mon" aria-describedby="org_q_mon-msg" type="text" value="5"`, `>Save</button>`)
+	if r := e.post("/admin/orgs/lab", url.Values{"org_name": {"Lab 2"}, "org_q_mon": {""}, "org_q_ag": {"3"}}, false); r.code != 303 {
+		t.Fatalf("edit: %d", r.code)
+	}
+	if lab, err := e.svc.OrgBySlug(ctx, "lab"); err != nil || lab.Name != "Lab 2" || lab.QuotaMonitors != nil || lab.QuotaAgents == nil || *lab.QuotaAgents != 3 {
+		t.Fatalf("after edit: %+v %v", lab, err)
+	}
+	if r := e.post("/admin/orgs/lab/delete", url.Values{}, false); r.code != 303 || !strings.Contains(r.hdr.Get("Location"), "deleted") {
+		t.Fatalf("delete: %d %s", r.code, r.hdr.Get("Location"))
+	}
+	if _, err := e.svc.OrgBySlug(ctx, "lab"); err == nil {
+		t.Fatal("lab still exists")
+	}
+	if r := e.post("/admin/orgs/homelab/delete", url.Values{}, false); r.code != 303 || !strings.Contains(r.hdr.Get("Location"), "project") {
+		t.Fatalf("delete with projects: %d %s", r.code, r.hdr.Get("Location"))
+	}
+
+	// the users tab: chips, rows, the filter
+	users := e.get("/admin/users", false)
+	users.has(t, `aria-current="page">Users<span class="vk-tab__n">2</span>`, `<form class="vk-chips" method="get" action="/admin/users">`, `name="filter" value="local">local<span class="vk-chip__n">2</span>`, `value="admins">instance admins<span class="vk-chip__n">1</span>`, `value="disabled">disabled<span class="vk-chip__n">0</span></button>`,
+		`<span class="vk-avatar" aria-hidden="true">J</span></span><div class="vk-srow__main"><span class="vk-srow__title">Jaro <span class="vk-tag">you</span></span><span class="vk-srow__sub" title="j@example.com · local · two-factor off">`,
+		`<span class="vk-srow__cell vk-srow__cell--l">homelab admin</span><span class="vk-srow__cell vk-srow__cell--m"><span class="vk-tag">instance admin</span></span><span class="vk-srow__cell vk-srow__cell--m vk-srow__cell--mono">active now</span>`,
+		`<span class="vk-srow__title">Bob Jansen</span>`, `vk-srow__cell--mono">never</span>`, `href="/admin/users?edit=`+bob.ID+`">Edit</a>`)
+	if r := e.get("/admin/users?filter=admins", false); strings.Contains(r.body, "Bob Jansen") || !strings.Contains(r.body, `aria-pressed="true"`) {
+		t.Error("filter admins still lists bob, or chip not pressed")
+	}
+
+	// bob's panel, a reset link shown once, the reset page once
+	panel := e.get("/admin/users?edit="+bob.ID, false)
+	panel.has(t, `<h2>Edit Bob Jansen</h2><p>bob · local account · homelab member</p>`, `<input type="checkbox" name="is_admin" value="1" form="user-form">`, `<span class="vk-state vk-state--paused">`, `>Make a reset link</button>`, `data-confirm="Really disable?" form="disable-form">Disable account</button>`)
+	if strings.Contains(panel.body, "Reset two-factor") {
+		t.Error("reset two-factor offered without two-factor")
+	}
+	made := e.post("/admin/users/"+bob.ID+"/reset-link", url.Values{}, false)
+	if made.code != 200 {
+		t.Fatalf("reset link: %d", made.code)
+	}
+	made.has(t, `<b class="vk-notice__title">Reset link created.</b> It works once, until `, `<code class="vk-ping__url">http://localhost:8080/reset/rs_`)
+	token := regexp.MustCompile(`/reset/(rs_[A-Za-z0-9_-]+)`).FindStringSubmatch(made.body)[1]
+	e.do("GET", "/reset/"+token, nil, false, false).has(t, `<h1>Set a new password</h1>`, `<b>Jaro</b> made this link for <b>Bob Jansen (bob)</b>`, `name="password"`, `>Save password</button>`)
+	if r := e.do("POST", "/reset/"+token, url.Values{"password": {"short"}}, false, false); r.code != 422 || !strings.Contains(r.body, "at least") {
+		t.Fatalf("short password: %d", r.code)
+	}
+	done := e.do("POST", "/reset/"+token, url.Values{"password": {"a brand new passphrase"}}, false, false)
+	if done.code != 303 || done.hdr.Get("Location") != "/" || len(done.hdr.Values("Set-Cookie")) == 0 {
+		t.Fatalf("reset: %d %s", done.code, done.hdr.Get("Location"))
+	}
+	if r := e.do("GET", "/reset/"+token, nil, false, false); r.code != 410 || !strings.Contains(r.body, "This reset link has expired") {
+		t.Fatalf("used link: %d", r.code)
+	}
+	if _, err := e.svc.VerifyPassword(ctx, "bob", "a brand new passphrase"); err != nil {
+		t.Fatalf("new password: %v", err)
+	}
+
+	// disable signs bob out everywhere; you cannot disable yourself
+	rec := httptest.NewRecorder()
+	if _, err := e.authn.Login(rec, httptest.NewRequest("POST", "/login", nil), "bob", "a brand new passphrase"); err != nil {
+		t.Fatal(err)
+	}
+	bobCookie := rec.Result().Cookies()[0]
+	asBob := func() int {
+		req := httptest.NewRequest("GET", projPath, nil)
+		req.AddCookie(bobCookie)
+		w := httptest.NewRecorder()
+		e.srv.ServeHTTP(w, req)
+		return w.Code
+	}
+	if code := asBob(); code != 200 {
+		t.Fatalf("bob before disable: %d", code)
+	}
+	if r := e.post("/admin/users/"+bob.ID+"/disable", url.Values{}, false); r.code != 303 || !strings.Contains(r.hdr.Get("Location"), "signed+out") {
+		t.Fatalf("disable: %d %s", r.code, r.hdr.Get("Location"))
+	}
+	if code := asBob(); code != 303 {
+		t.Fatalf("bob after disable: %d", code)
+	}
+	e.get("/admin/users", false).has(t, `title="bob@example.com · local · disabled by j on 27 Sep"`, `<span class="vk-tag">disabled</span>`, `value="disabled">disabled<span class="vk-chip__n">1</span>`)
+	e.get("/admin/users?edit="+bob.ID, false).has(t, `>Enable account</button>`)
+	if r := e.post("/admin/users/"+bob.ID+"/enable", url.Values{}, false); r.code != 303 {
+		t.Fatalf("enable: %d", r.code)
+	}
+	j, _ := e.svc.UserBySubject(ctx, "j")
+	if r := e.post("/admin/users/"+j.ID+"/disable", url.Values{}, false); r.code != 422 || !strings.Contains(r.body, "You cannot disable yourself.") {
+		t.Fatalf("self disable: %d", r.code)
+	}
+	self := e.get("/admin/users?edit="+j.ID, false)
+	self.has(t, `name="is_admin" value="1" checked disabled form="user-form"`, `You cannot take instance admin from yourself.`)
+	if strings.Contains(self.body, "Disable account") {
+		t.Error("self panel offers Disable")
+	}
+	if r := e.post("/admin/users/"+bob.ID, url.Values{"is_admin": {"1"}}, false); r.code != 303 {
+		t.Fatalf("save: %d", r.code)
+	}
+	if u, _ := e.svc.UserByID(ctx, bob.ID); !u.InstanceAdmin {
+		t.Fatal("bob not instance admin after save")
+	}
+
+	// the server tab: facts and the backup warning
+	e.web.SetServerFacts(func(context.Context) ServerFacts {
+		return ServerFacts{Build: [][2]string{{"version", "test"}}, Database: [][2]string{{"path", "/tmp/x.db"}}, SignIn: [][2]string{{"local accounts", "on"}}, Network: [][2]string{{"base url", "http://localhost:8080"}}}
+	})
+	server := e.get("/admin/server", false)
+	server.has(t, `aria-current="page">Server</a>`, `<span class="vk-mono">vink serve --print-config</span>`, `<b class="vk-notice__title">No backup yet.</b> Run vink admin backup on the server`,
+		`<dl class="vk-kv"><dt>version</dt><dd>test</dd></dl>`, `<dt>path</dt><dd>/tmp/x.db</dd><dt>last backup</dt><dd>never</dd></dl>`, `<dt>local accounts</dt><dd>on</dd>`, `<dt>base url</dt><dd>http://localhost:8080</dd>`)
+	if err := db.New(e.db.Writer).SetInstanceMeta(ctx, db.SetInstanceMetaParams{Name: service.MetaLastBackup, Value: e.now.Add(-3 * time.Hour).Format(time.RFC3339), UpdatedAt: e.now.UnixMilli()}); err != nil {
+		t.Fatal(err)
+	}
+	fresh := e.get("/admin/server", false)
+	fresh.has(t, `<dt>last backup</dt><dd>Sun 27 Sep 09:00, 3 h ago</dd>`)
+	if strings.Contains(fresh.body, "vk-notice--warn") {
+		t.Error("warning with a fresh backup")
+	}
+	e.now = e.now.Add(48 * time.Hour)
+	e.get("/admin/server", false).has(t, `<b class="vk-notice__title">No backup for 2 d.</b>`)
 }

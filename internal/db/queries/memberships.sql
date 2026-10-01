@@ -35,3 +35,9 @@ ORDER BY u.subject;
 -- name: CountOwners :one
 -- tenancy: org
 SELECT COUNT(*) FROM memberships WHERE org_id = ? AND role = 'owner';
+
+-- name: ListAllMemberships :many
+-- tenancy: root (instance admin: every user's roles)
+SELECT m.*, o.slug AS org_slug, o.name AS org_name
+FROM memberships m JOIN orgs o ON o.id = m.org_id
+ORDER BY o.slug;

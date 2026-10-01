@@ -123,7 +123,7 @@ func runServe(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 
 	gw := agentgw.New(svc, logging.Sub(log, "agents"))
 	gw.OfflineAfter = cfg.Agents.OfflineAfter.Std()
-	deps := vhttp.Deps{Cfg: cfg, Svc: svc, Auth: authn, Log: log, Sched: sched, Pool: pool, Metrics: m, Mount: []func(*http.ServeMux){gw.Mount}}
+	deps := vhttp.Deps{Cfg: cfg, Svc: svc, Auth: authn, Log: log, Sched: sched, Pool: pool, Metrics: m, Gateway: gw, Mount: []func(*http.ServeMux){gw.Mount}}
 	withPing := cfg.Ping.Listen == ""
 
 	ctx, cancel := context.WithCancel(ctx)
