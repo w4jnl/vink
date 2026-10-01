@@ -22,12 +22,18 @@ type serverFlags struct {
 }
 
 func (f *serverFlags) add(cmd *cobra.Command) {
-	cmd.PersistentFlags().StringVar(&f.config, "config", "", "path to vink.toml (default: built-in defaults plus VINK_* env)")
+	cmd.PersistentFlags().StringVar(&f.config, "config", "", "path to vink.toml (default: $VINK_CONFIG_FILE, else built-in defaults plus VINK_* env)")
 	cmd.PersistentFlags().StringVar(&f.dbPath, "db", "", "database file (overrides db.path)")
 }
 
 func (f *serverFlags) load() (*config.Config, error) {
-	cfg, err := config.Load(f.config)
+	path := f.config
+	if path == "" {
+		// make dev and containers point at a file this way instead of
+		// passing --config to every command
+		path = os.Getenv("VINK_CONFIG_FILE")
+	}
+	cfg, err := config.Load(path)
 	if err != nil {
 		return nil, err
 	}

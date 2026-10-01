@@ -27,7 +27,7 @@ build:
 
 dev:
 	@mkdir -p data
-	VINK_DB_PATH=$(DB) $(AIR)
+	VINK_DB_PATH=$(DB) $(if $(wildcard data/vink.toml),VINK_CONFIG_FILE=data/vink.toml,) $(AIR)
 
 generate:
 	$(SQLC) generate

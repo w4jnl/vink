@@ -1,6 +1,8 @@
 # vink.toml — every key can also be set as VINK_<SECTION>_<KEY>, for example
-# VINK_SERVER_LISTEN. `vink serve --print-config` shows the effective config
-# with secrets redacted. Values shown are the defaults unless noted.
+# VINK_SERVER_LISTEN, and the environment wins over the file. Pass the file
+# with --config, or point VINK_CONFIG_FILE at it for every vink command.
+# `vink serve --print-config` shows the effective config with secrets
+# redacted. Values shown are the defaults unless noted.
 
 [server]
 listen = ":8080"
