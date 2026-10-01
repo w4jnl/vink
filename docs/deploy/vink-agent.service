@@ -1,0 +1,41 @@
+# systemd unit for a vink probe agent on a host inside a closed network.
+# Install the binary at /usr/local/bin/vink; put the token from Org
+# settings → Agents in /etc/vink/agent.token (mode 0600) and the server
+# URL and labels in /etc/vink/agent.env:
+#   VINK_AGENT_SERVER=wss://vink.example.com
+#   VINK_AGENT_LABELS=site=dc2,zone=dmz
+#   VINK_AGENT_EXTRA=--ca /etc/vink/corp-ca.pem      # or --pin <sha256>, --proxy http://…
+# The agent dials out, keeps nothing on disk and never listens.
+[Unit]
+Description=vink probe agent
+Documentation=https://github.com/w4jnl/vink
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+EnvironmentFile=/etc/vink/agent.env
+ExecStart=/usr/local/bin/vink agent --server ${VINK_AGENT_SERVER} --token-file /etc/vink/agent.token --labels ${VINK_AGENT_LABELS} $VINK_AGENT_EXTRA
+Restart=always
+RestartSec=5
+DynamicUser=yes
+ConfigurationDirectory=vink
+# Hardening; the agent needs no state directory.
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+# icmp monitors: either grant the capability …
+#   AmbientCapabilities=CAP_NET_RAW
+#   CapabilityBoundingSet=CAP_NET_RAW
+# … or allow unprivileged ICMP for every group: sysctl net.ipv4.ping_group_range="0 2147483647"
+CapabilityBoundingSet=
+
+[Install]
+WantedBy=multi-user.target

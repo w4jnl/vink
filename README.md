@@ -140,11 +140,23 @@ Channels: `smtp`, `webhook`, `ntfy`, `gotify`, `matrix`, `slackhook` (Slack, Mat
 | `/ping/<key>/<slug>/log` | store a message without touching the state |
 | `/ping/id/<monitor id>` | the same by id |
 
+## Agents
+
+A probe agent runs pull checks from a network vink cannot reach: a DMZ, a site behind NAT, a lab. It is the same binary, dials out to `wss://vink.example.com/agent/v1` with its token, runs the checks it is given with the same checkers the server uses, and keeps nothing on disk.
+
+1. Org settings → Agents → Add agent. The token and the full command show once.
+2. On the host: `vink agent --server wss://vink.example.com --token vat_… --labels site=dc2,zone=dmz` (or `VINK_AGENT_TOKEN`, `--token-file`; `docs/deploy/vink-agent.service` is a hardened unit). `--ca` trusts a private CA, `--pin` a certificate by its SHA-256, `--proxy` an http proxy.
+3. On a monitor, Advanced → Run from: an agent by name, or agents with labels (`site=dc2`; the least loaded one runs it). In `vink.yaml`: `location: agent:dc2-probe` or `location: site=dc2`.
+
+An agent quiet for `[agents] offline_after` (2 min) turns its monitors late with reason agent offline; they never go down for lack of an agent. Revoking the agent disconnects it at once.
+
 ## Operating
 
 - `vink serve --print-config` shows the effective configuration. `docs/deploy/vink.toml.example` lists every key; each is also an environment variable, `VINK_SERVER_LISTEN` for `[server] listen`.
-- `docs/deploy/vink.service` is a hardened systemd unit with `DynamicUser` and `StateDirectory=vink`.
-- Behind a reverse proxy that authenticates people, turn on `[auth.proxy]` and map groups named `vink:<org>:<role>` to roles; see the auth section of `docs/design.md` for Traefik + Authelia and Apache + Kerberos.
+- `docs/deploy/` holds a hardened systemd unit (`vink.service`, `DynamicUser` and `StateDirectory=vink`), the agent's unit (`vink-agent.service`), `compose.yaml`, a Nomad job (`vink.nomad.hcl`), and the reverse-proxy snippets `traefik-authelia.yaml` and `apache-kerberos.conf`. The container image is `ghcr.io/w4jnl/vink`, built `FROM scratch` with the binary and CA certificates; it serves, runs an agent or acts as the CLI by its arguments.
+- Behind a reverse proxy that authenticates people, turn on `[auth.proxy]` and map groups named `vink:<org>:<role>` to roles; the deploy snippets show the headers, the shared secret and which paths stay open.
+- Air-gapped: vink makes no connection you did not configure (no telemetry, update checks or CDN assets). Set `[outbound] egress_log` to a file and it records every connection the server opens; an idle install leaves it empty. `make lint` runs the same gate over the source.
+- Moving in: `vink import healthchecks -f checks.json` (the API listing) or `vink import kuma -f backup.json` writes an apply file and lists what could not carry over; `--apply` sends it to the current context.
 - The database file and the secret key file are the state. `vink admin backup --out vink-backup.db` writes a consistent snapshot while the server runs; copy the key file (`secret_key_file` in the config) alongside.
 - `GET /metrics` serves Prometheus metrics: monitors by state, pings, checks with latency, deliveries, open incidents, scheduler lag. Set `[metrics] token` to require a bearer token.
 - Observations are pruned after `retention.observations_days` (90) and stored ping bodies after `retention.bodies_days` (14); events and incidents are kept.

@@ -38,7 +38,12 @@ archives:
     files:
       - README.md
       - docs/deploy/vink.service
+      - docs/deploy/vink-agent.service
       - docs/deploy/vink.toml.example
+      - docs/deploy/compose.yaml
+      - docs/deploy/vink.nomad.hcl
+      - docs/deploy/traefik-authelia.yaml
+      - docs/deploy/apache-kerberos.conf
 
 checksum:
   name_template: checksums.txt

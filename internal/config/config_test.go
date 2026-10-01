@@ -172,3 +172,21 @@ func TestByteSize(t *testing.T) {
 		t.Error("String() rendering")
 	}
 }
+
+func TestDisabledProxySecretNeedsNoEnv(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "vink.toml")
+	if err := os.WriteFile(path, []byte("[auth.proxy]\nenabled = false\nsecret = \"env:VINK_PROXY_SECRET\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	none := func(string) (string, bool) { return "", false }
+	cfg, err := LoadWith(path, none)
+	if err != nil || cfg.Auth.Proxy.Secret != "" {
+		t.Fatalf("disabled proxy: %v %q", err, cfg.Auth.Proxy.Secret)
+	}
+	if err := os.WriteFile(path, []byte("[auth.proxy]\nenabled = true\nsecret = \"env:VINK_PROXY_SECRET\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadWith(path, none); err == nil || !strings.Contains(err.Error(), "VINK_PROXY_SECRET is not set") {
+		t.Fatalf("enabled proxy must need the secret: %v", err)
+	}
+}

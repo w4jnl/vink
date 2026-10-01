@@ -38,8 +38,12 @@ tls = "starttls"                       # starttls, tls or none
 
 [outbound]
 proxy = ""                             # http://proxy.corp:3128 for notifiers and http checks
-ca_pem = ""                            # extra CA bundle
+ca_pem = ""                            # extra CA bundle, also trusted for SMTP
 allow_private_targets = true           # false refuses webhooks to loopback, link-local and RFC 1918 targets
+egress_log = ""                        # a file that gets one line per connection vink opens; proof for an air-gapped install
+
+[agents]
+offline_after = "2m"                   # an agent quiet this long turns its monitors late (reason agent offline)
 
 [auth.local]
 enabled = true                         # password sign-in; keep on for break-glass even behind a proxy

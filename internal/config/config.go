@@ -197,6 +197,12 @@ func LoadWith(path string, lookup func(string) (string, bool)) (*Config, error) 
 	if err := applyEnv(reflect.ValueOf(cfg).Elem(), EnvPrefix, lookup); err != nil {
 		return nil, err
 	}
+	if !cfg.Auth.Proxy.Enabled {
+		// A disabled proxy needs no secret, so a reference to an env var
+		// that is only set once the proxy is turned on does not stop a
+		// fresh install from starting.
+		cfg.Auth.Proxy.Secret = ""
+	}
 	if err := resolveEnvRefs(reflect.ValueOf(cfg).Elem(), lookup); err != nil {
 		return nil, err
 	}

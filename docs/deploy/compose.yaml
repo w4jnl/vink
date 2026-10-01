@@ -1,0 +1,43 @@
+# docker compose for vink: one container, one volume. The image is
+# FROM scratch (the static binary and CA certificates), so there is no
+# shell inside; health is checked from outside at /readyz.
+#
+#   docker compose up -d
+#   docker compose exec vink /vink admin init --org homelab --user j --password-stdin
+#
+# Put Traefik + Authelia in front for sign-in (traefik-authelia.yaml), or
+# keep [auth.local] and the built-in login page.
+services:
+  vink:
+    image: ghcr.io/w4jnl/vink:latest
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - vink-data:/data
+    environment:
+      VINK_SERVER_BASE_URL: "https://vink.example.com"
+      VINK_SERVER_TRUSTED_PROXIES: "172.16.0.0/12"
+      VINK_DB_PATH: /data/vink.db
+      VINK_SECRETS_KEY_FILE: /data/secret.key
+      VINK_LOG_FORMAT: json
+      # VINK_OUTBOUND_PROXY: "http://proxy.corp:3128"
+      # VINK_OUTBOUND_CA_PEM: /data/corp-ca.pem
+      # VINK_OUTBOUND_EGRESS_LOG: /data/egress.log   # prove nothing leaves
+      # VINK_METRICS_TOKEN: "change-me"
+    # icmp monitors need CAP_NET_RAW in the container:
+    # cap_add: [NET_RAW]
+    stop_grace_period: 15s
+
+  # A probe agent on the same host, for a network vink cannot reach from
+  # here. Create the agent in Org settings → Agents and paste its token.
+  # agent:
+  #   image: ghcr.io/w4jnl/vink:latest
+  #   command: ["agent", "--server", "wss://vink.example.com", "--labels", "site=home"]
+  #   environment:
+  #     VINK_AGENT_TOKEN: "vat_…"
+  #   network_mode: host
+  #   restart: unless-stopped
+
+volumes:
+  vink-data:

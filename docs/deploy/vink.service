@@ -28,6 +28,10 @@ RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
 LockPersonality=yes
 MemoryDenyWriteExecute=yes
 SystemCallArchitectures=native
+# icmp monitors: either grant the capability …
+#   AmbientCapabilities=CAP_NET_RAW
+#   CapabilityBoundingSet=CAP_NET_RAW
+# … or allow unprivileged ICMP: sysctl net.ipv4.ping_group_range="0 2147483647"
 CapabilityBoundingSet=
 
 [Install]
