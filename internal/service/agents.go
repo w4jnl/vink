@@ -143,6 +143,9 @@ func (s *Service) RevokeAgent(ctx context.Context, sc domain.Scope, name string)
 	if n == 0 {
 		return domain.NotFound("agent")
 	}
+	if _, err := s.db.Write().ClearAgentMonitors(ctx, ptrs(cur.ID)); err != nil {
+		return err
+	}
 	s.agentCache.drop(cur.ID)
 	s.log.Info("agent revoked", "org_id", sc.OrgID, "agent", cur.Name, "actor", sc.Actor)
 	s.bus.Publish(engineChanged(""))
@@ -228,4 +231,21 @@ func (s *Service) SetAgentPresence(fn func(agentID string) bool) { s.agentPresen
 // AgentConnected reports whether the gateway holds the agent's socket.
 func (s *Service) AgentConnected(id string) bool {
 	return s.agentPresence != nil && s.agentPresence(id)
+}
+
+// AdoptAgentLabels stores the labels an agent announced on first contact,
+// when the admin has set none yet.
+func (s *Service) AdoptAgentLabels(ctx context.Context, orgID, agentID string, labels map[string]string) (*domain.Agent, error) {
+	probe := &domain.Agent{Name: "probe", Labels: labels}
+	probe.Normalize()
+	if err := probe.Validate(); err != nil {
+		return nil, err
+	}
+	row, err := s.db.Write().UpdateAgentLabels(ctx, db.UpdateAgentLabelsParams{Labels: domain.LabelsJSON(probe.Labels), OrgID: orgID, ID: agentID})
+	if err != nil {
+		return nil, notFoundIfNoRows(err, "agent")
+	}
+	s.agentCache.drop(agentID)
+	s.log.Info("agent labels adopted", "org_id", orgID, "agent", row.Name, "labels", domain.LabelsString(probe.Labels))
+	return agentFromRow(row), nil
 }

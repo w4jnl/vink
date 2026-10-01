@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"strings"
 	"sync"
 	"time"
@@ -17,6 +18,7 @@ import (
 	"github.com/w4jnl/vink/internal/db"
 	"github.com/w4jnl/vink/internal/engine"
 	vhttp "github.com/w4jnl/vink/internal/http"
+	"github.com/w4jnl/vink/internal/http/agentgw"
 	"github.com/w4jnl/vink/internal/logging"
 	"github.com/w4jnl/vink/internal/metrics"
 	"github.com/w4jnl/vink/internal/notify"
@@ -113,7 +115,9 @@ func runServe(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 		return fmt.Errorf("auth: %w", err)
 	}
 
-	deps := vhttp.Deps{Cfg: cfg, Svc: svc, Auth: authn, Log: log, Sched: sched, Pool: pool, Metrics: m}
+	gw := agentgw.New(svc, logging.Sub(log, "agents"))
+	gw.OfflineAfter = cfg.Agents.OfflineAfter.Std()
+	deps := vhttp.Deps{Cfg: cfg, Svc: svc, Auth: authn, Log: log, Sched: sched, Pool: pool, Metrics: m, Mount: []func(*http.ServeMux){gw.Mount}}
 	withPing := cfg.Ping.Listen == ""
 
 	ctx, cancel := context.WithCancel(ctx)
@@ -136,6 +140,7 @@ func runServe(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 		return svc.RunRetention(ctx, 6*time.Hour, cfg.Retention.ObservationsDays, cfg.Retention.BodiesDays)
 	})
 	run("dispatcher", dispatcher.Run)
+	run("agents", gw.Run)
 	run("http", func(ctx context.Context) error {
 		return vhttp.Run(ctx, log, "http", cfg.Server.Listen, vhttp.Handler(deps, withPing))
 	})

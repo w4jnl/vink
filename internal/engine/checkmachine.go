@@ -78,3 +78,19 @@ func ApplyCheck(m *domain.Monitor, obs *domain.Observation, warn bool, at time.T
 	d.ExpectedAt = &next
 	return d, nil
 }
+
+// ApplyAgentOffline is the decision for a remote check whose agent went
+// quiet: a new or up monitor turns late with the reason, a late or down
+// one stays as it is, and nothing counts as a failed attempt, so the
+// monitor never goes down for lack of an agent.
+func ApplyAgentOffline(m *domain.Monitor, reason string) Decision {
+	d := Decision{From: m.State, To: m.State, BaseAt: m.BaseAt, LastOkAt: m.LastOkAt, FailStreak: m.FailStreak, OkStreak: m.OkStreak, NextDueAt: m.NextDueAt, ExpectedAt: m.NextDueAt}
+	if m.Paused {
+		return d
+	}
+	switch m.State {
+	case domain.StateNew, domain.StateUp:
+		d.To, d.Changed, d.Reason = domain.StateLate, true, reason
+	}
+	return d
+}

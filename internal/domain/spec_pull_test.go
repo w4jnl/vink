@@ -72,7 +72,10 @@ func TestPullSpecValidate(t *testing.T) {
 		{"icmp ok", KindICMP, PullSpec{ICMP: &ICMPCheck{Host: "10.0.0.1"}}, ""},
 		{"icmp loss", KindICMP, PullSpec{ICMP: &ICMPCheck{Host: "10.0.0.1", LossThreshold: 2}}, "icmp.loss_threshold"},
 		{"icmp count", KindICMP, PullSpec{ICMP: &ICMPCheck{Host: "10.0.0.1", Count: 50}}, "icmp.count"},
-		{"location", KindHTTP, PullSpec{Location: "dc1", HTTP: &HTTPCheck{URL: "https://example.com"}}, "location"},
+		{"location agent", KindHTTP, PullSpec{Location: "dc1", HTTP: &HTTPCheck{URL: "https://example.com"}}, ""},
+		{"location selector", KindHTTP, PullSpec{Location: "site=dc1,zone=dmz", HTTP: &HTTPCheck{URL: "https://example.com"}}, ""},
+		{"location bad", KindHTTP, PullSpec{Location: "DC 1", HTTP: &HTTPCheck{URL: "https://example.com"}}, "location"},
+		{"location bad selector", KindHTTP, PullSpec{Location: "site=", HTTP: &HTTPCheck{URL: "https://example.com"}}, "location"},
 		{"confirm retries", KindHTTP, PullSpec{Confirm: Confirm{Retries: 9, Delay: Duration(time.Second)}, HTTP: &HTTPCheck{URL: "https://example.com"}}, "confirm.retries"},
 	}
 	for _, c := range cases {

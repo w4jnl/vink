@@ -218,6 +218,45 @@ func (q *Queries) ListAgentsByPrefix(ctx context.Context, tokenPrefix string) ([
 	return items, nil
 }
 
+const listAgentsSeenBefore = `-- name: ListAgentsSeenBefore :many
+SELECT id, org_id, name, token_hash, last_seen_at, version, labels, created_at, token_prefix, last_addr FROM agents WHERE last_seen_at IS NULL OR last_seen_at < ?
+`
+
+// tenancy: root (offline sweep, instance-wide)
+func (q *Queries) ListAgentsSeenBefore(ctx context.Context, lastSeenAt *int64) ([]Agent, error) {
+	rows, err := q.db.QueryContext(ctx, listAgentsSeenBefore, lastSeenAt)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Agent
+	for rows.Next() {
+		var i Agent
+		if err := rows.Scan(
+			&i.ID,
+			&i.OrgID,
+			&i.Name,
+			&i.TokenHash,
+			&i.LastSeenAt,
+			&i.Version,
+			&i.Labels,
+			&i.CreatedAt,
+			&i.TokenPrefix,
+			&i.LastAddr,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const touchAgent = `-- name: TouchAgent :exec
 UPDATE agents SET last_seen_at = ?, last_addr = ?, version = ? WHERE id = ?
 `

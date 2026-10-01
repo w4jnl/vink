@@ -53,16 +53,42 @@ SELECT CAST(COALESCE(MIN(next_due_at), 0) AS INTEGER) AS next_due_at
 FROM monitors WHERE kind = 'heartbeat' AND paused = 0 AND next_due_at IS NOT NULL;
 
 -- name: ListDueChecks :many
--- tenancy: root (checker pool)
+-- tenancy: root (checker pool; remote checks belong to an agent)
 SELECT id FROM monitors
 WHERE kind <> 'heartbeat' AND paused = 0 AND next_due_at IS NOT NULL AND next_due_at <= ?
+  AND COALESCE(json_extract(spec, '$.location'), '') = ''
 ORDER BY next_due_at
 LIMIT ?;
 
 -- name: NextCheckDueAt :one
 -- tenancy: root (checker pool)
 SELECT CAST(COALESCE(MIN(next_due_at), 0) AS INTEGER) AS next_due_at
-FROM monitors WHERE kind <> 'heartbeat' AND paused = 0 AND next_due_at IS NOT NULL;
+FROM monitors WHERE kind <> 'heartbeat' AND paused = 0 AND next_due_at IS NOT NULL
+  AND COALESCE(json_extract(spec, '$.location'), '') = '';
+
+-- name: ListRemoteMonitors :many
+-- tenancy: root (agent gateway assigns per org)
+SELECT * FROM monitors
+WHERE org_id = ? AND kind <> 'heartbeat' AND COALESCE(json_extract(spec, '$.location'), '') <> ''
+ORDER BY id;
+
+-- name: ListAgentMonitors :many
+-- tenancy: root (agent gateway, for a verified agent)
+SELECT * FROM monitors WHERE agent_id = ? ORDER BY id;
+
+-- name: ListUnassignedRemoteMonitors :many
+-- tenancy: root (offline sweep)
+SELECT * FROM monitors
+WHERE agent_id IS NULL AND kind <> 'heartbeat' AND paused = 0 AND state IN ('new', 'up')
+  AND COALESCE(json_extract(spec, '$.location'), '') <> '' AND updated_at <= ?;
+
+-- name: SetMonitorAgent :exec
+-- tenancy: root (agent gateway)
+UPDATE monitors SET agent_id = ? WHERE id = ?;
+
+-- name: ClearAgentMonitors :execrows
+-- tenancy: root (agent gateway)
+UPDATE monitors SET agent_id = NULL WHERE agent_id = ?;
 
 -- name: ListRunningMonitors :many
 -- tenancy: root (scheduler, max_runtime)

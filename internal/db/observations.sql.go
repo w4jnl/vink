@@ -9,6 +9,24 @@ import (
 	"context"
 )
 
+const countObservationsAt = `-- name: CountObservationsAt :one
+SELECT COUNT(*) FROM observations WHERE monitor_id = ? AND at = ? AND source = ?
+`
+
+type CountObservationsAtParams struct {
+	MonitorID string
+	At        int64
+	Source    string
+}
+
+// tenancy: root (agent results dedupe by monitor, attempt time and source)
+func (q *Queries) CountObservationsAt(ctx context.Context, arg CountObservationsAtParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countObservationsAt, arg.MonitorID, arg.At, arg.Source)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const deleteObservationsBefore = `-- name: DeleteObservationsBefore :execrows
 DELETE FROM observations WHERE at < ?
 `

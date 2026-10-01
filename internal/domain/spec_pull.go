@@ -3,6 +3,7 @@ package domain
 import (
 	"crypto/x509"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"net/url"
@@ -55,7 +56,8 @@ type PullSpec struct {
 	FailureThreshold  int      `json:"failure_threshold" yaml:"failure_threshold"`
 	Confirm           Confirm  `json:"confirm" yaml:"confirm"`
 	RecoveryThreshold int      `json:"recovery_threshold" yaml:"recovery_threshold"`
-	// Location is local or an agent id (phase 2).
+	// Location is where the check runs: empty for this server, an agent
+	// name, or a label selector like site=dc1 (see ParseLocation).
 	Location string `json:"location,omitempty" yaml:"location,omitempty"`
 
 	HTTP *HTTPCheck `json:"http,omitempty" yaml:"http,omitempty"`
@@ -305,8 +307,8 @@ func (s PullSpec) Validate(kind Kind) error {
 	if s.Confirm.Delay < 0 || s.Confirm.Delay > MaxConfirmDelay {
 		ve.Addf("confirm.delay", "must be between 0 and %s", MaxConfirmDelay)
 	}
-	if s.Location != "" {
-		ve.Add("location", "agents arrive in phase 2; leave it empty for a local check")
+	if _, err := ParseLocation(s.Location); err != nil {
+		ve.Add("location", err.Error())
 	}
 	blocks := map[Kind]bool{KindHTTP: s.HTTP != nil, KindTCP: s.TCP != nil, KindDNS: s.DNS != nil, KindTLS: s.TLS != nil, KindICMP: s.ICMP != nil}
 	for k, set := range blocks {
@@ -479,3 +481,58 @@ func (r StatusRange) MarshalYAML() (any, error) {
 	}
 	return r.String(), nil
 }
+
+// Location is a parsed spec.location: local, one agent by name, or the
+// agents matching a label selector.
+type Location struct {
+	Agent  string
+	Labels map[string]string
+}
+
+// IsLocal reports whether this server runs the check.
+func (l Location) IsLocal() bool { return l.Agent == "" && len(l.Labels) == 0 }
+
+// String writes the location back in its canonical form.
+func (l Location) String() string {
+	switch {
+	case l.Agent != "":
+		return "agent:" + l.Agent
+	case len(l.Labels) > 0:
+		return LabelsString(l.Labels)
+	}
+	return ""
+}
+
+// ParseLocation reads "", "local", "agent:<name>", a bare agent name, or
+// a selector "site=dc1,zone=dmz".
+func ParseLocation(s string) (Location, error) {
+	s = strings.TrimSpace(s)
+	if s == "" || s == "local" {
+		return Location{}, nil
+	}
+	if strings.Contains(s, "=") {
+		labels, err := ParseLabels(s)
+		if err != nil {
+			return Location{}, fmt.Errorf("selector: %w", err)
+		}
+		return Location{Labels: labels}, nil
+	}
+	name := strings.TrimPrefix(s, "agent:")
+	if !slugRe.MatchString(name) {
+		return Location{}, errors.New("want local, an agent name, or a selector like site=dc1")
+	}
+	return Location{Agent: name}, nil
+}
+
+// Location parses the spec's location; an invalid one counts as local
+// because Validate refused it already.
+func (s *PullSpec) ParsedLocation() Location {
+	if s == nil {
+		return Location{}
+	}
+	l, _ := ParseLocation(s.Location)
+	return l
+}
+
+// Remote reports whether an agent runs this check.
+func (s *PullSpec) Remote() bool { return !s.ParsedLocation().IsLocal() }

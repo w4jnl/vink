@@ -32,3 +32,7 @@ LIMIT 1;
 -- name: DeleteObservationsBefore :execrows
 -- tenancy: root (retention job)
 DELETE FROM observations WHERE at < ?;
+
+-- name: CountObservationsAt :one
+-- tenancy: root (agent results dedupe by monitor, attempt time and source)
+SELECT COUNT(*) FROM observations WHERE monitor_id = ? AND at = ? AND source = ?;

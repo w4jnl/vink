@@ -27,7 +27,7 @@ func monitorFromRow(r db.Monitor) (*domain.Monitor, error) {
 		Tags: domain.ParseTags(r.Tags), State: domain.State(r.State), StateSince: domain.FromMillis(r.StateSince),
 		BaseAt: domain.FromMillis(r.BaseAt), LastObsAt: domain.FromMillisPtr(r.LastObsAt), LastOkAt: domain.FromMillisPtr(r.LastOkAt),
 		NextDueAt: domain.FromMillisPtr(r.NextDueAt), Paused: r.Paused, FailStreak: int(r.FailStreak), OkStreak: int(r.OkStreak),
-		RunStartedAt: domain.FromMillisPtr(r.RunStartedAt), RunID: strp(r.RunID),
+		RunStartedAt: domain.FromMillisPtr(r.RunStartedAt), RunID: strp(r.RunID), AgentID: strp(r.AgentID),
 		CreatedAt: domain.FromMillis(r.CreatedAt), UpdatedAt: domain.FromMillis(r.UpdatedAt),
 	}
 	if m.Tags == nil {

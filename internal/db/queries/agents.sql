@@ -35,3 +35,7 @@ SELECT * FROM agents WHERE token_prefix = ?;
 -- name: TouchAgent :exec
 -- tenancy: root (the gateway acts for a verified agent)
 UPDATE agents SET last_seen_at = ?, last_addr = ?, version = ? WHERE id = ?;
+
+-- name: ListAgentsSeenBefore :many
+-- tenancy: root (offline sweep, instance-wide)
+SELECT * FROM agents WHERE last_seen_at IS NULL OR last_seen_at < ?;

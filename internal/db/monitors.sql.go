@@ -9,6 +9,19 @@ import (
 	"context"
 )
 
+const clearAgentMonitors = `-- name: ClearAgentMonitors :execrows
+UPDATE monitors SET agent_id = NULL WHERE agent_id = ?
+`
+
+// tenancy: root (agent gateway)
+func (q *Queries) ClearAgentMonitors(ctx context.Context, agentID *string) (int64, error) {
+	result, err := q.db.ExecContext(ctx, clearAgentMonitors, agentID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const countMonitorsByState = `-- name: CountMonitorsByState :many
 SELECT state, COUNT(*) AS n FROM monitors WHERE project_id = ? GROUP BY state
 `
@@ -288,9 +301,61 @@ func (q *Queries) GetMonitorBySlug(ctx context.Context, arg GetMonitorBySlugPara
 	return i, err
 }
 
+const listAgentMonitors = `-- name: ListAgentMonitors :many
+SELECT id, project_id, org_id, slug, name, kind, spec, tags, state, state_since, base_at, last_obs_at, last_ok_at, next_due_at, paused, fail_streak, ok_streak, run_started_at, run_id, agent_id, created_at, updated_at FROM monitors WHERE agent_id = ? ORDER BY id
+`
+
+// tenancy: root (agent gateway, for a verified agent)
+func (q *Queries) ListAgentMonitors(ctx context.Context, agentID *string) ([]Monitor, error) {
+	rows, err := q.db.QueryContext(ctx, listAgentMonitors, agentID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Monitor
+	for rows.Next() {
+		var i Monitor
+		if err := rows.Scan(
+			&i.ID,
+			&i.ProjectID,
+			&i.OrgID,
+			&i.Slug,
+			&i.Name,
+			&i.Kind,
+			&i.Spec,
+			&i.Tags,
+			&i.State,
+			&i.StateSince,
+			&i.BaseAt,
+			&i.LastObsAt,
+			&i.LastOkAt,
+			&i.NextDueAt,
+			&i.Paused,
+			&i.FailStreak,
+			&i.OkStreak,
+			&i.RunStartedAt,
+			&i.RunID,
+			&i.AgentID,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listDueChecks = `-- name: ListDueChecks :many
 SELECT id FROM monitors
 WHERE kind <> 'heartbeat' AND paused = 0 AND next_due_at IS NOT NULL AND next_due_at <= ?
+  AND COALESCE(json_extract(spec, '$.location'), '') = ''
 ORDER BY next_due_at
 LIMIT ?
 `
@@ -300,7 +365,7 @@ type ListDueChecksParams struct {
 	Limit     int64
 }
 
-// tenancy: root (checker pool)
+// tenancy: root (checker pool; remote checks belong to an agent)
 func (q *Queries) ListDueChecks(ctx context.Context, arg ListDueChecksParams) ([]string, error) {
 	rows, err := q.db.QueryContext(ctx, listDueChecks, arg.NextDueAt, arg.Limit)
 	if err != nil {
@@ -480,6 +545,59 @@ func (q *Queries) ListMonitorsForMetrics(ctx context.Context) ([]ListMonitorsFor
 	return items, nil
 }
 
+const listRemoteMonitors = `-- name: ListRemoteMonitors :many
+SELECT id, project_id, org_id, slug, name, kind, spec, tags, state, state_since, base_at, last_obs_at, last_ok_at, next_due_at, paused, fail_streak, ok_streak, run_started_at, run_id, agent_id, created_at, updated_at FROM monitors
+WHERE org_id = ? AND kind <> 'heartbeat' AND COALESCE(json_extract(spec, '$.location'), '') <> ''
+ORDER BY id
+`
+
+// tenancy: root (agent gateway assigns per org)
+func (q *Queries) ListRemoteMonitors(ctx context.Context, orgID string) ([]Monitor, error) {
+	rows, err := q.db.QueryContext(ctx, listRemoteMonitors, orgID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Monitor
+	for rows.Next() {
+		var i Monitor
+		if err := rows.Scan(
+			&i.ID,
+			&i.ProjectID,
+			&i.OrgID,
+			&i.Slug,
+			&i.Name,
+			&i.Kind,
+			&i.Spec,
+			&i.Tags,
+			&i.State,
+			&i.StateSince,
+			&i.BaseAt,
+			&i.LastObsAt,
+			&i.LastOkAt,
+			&i.NextDueAt,
+			&i.Paused,
+			&i.FailStreak,
+			&i.OkStreak,
+			&i.RunStartedAt,
+			&i.RunID,
+			&i.AgentID,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listRunningMonitors = `-- name: ListRunningMonitors :many
 SELECT id, project_id, org_id, slug, name, kind, spec, tags, state, state_since, base_at, last_obs_at, last_ok_at, next_due_at, paused, fail_streak, ok_streak, run_started_at, run_id, agent_id, created_at, updated_at FROM monitors WHERE paused = 0 AND run_started_at IS NOT NULL AND run_started_at <= ?
 `
@@ -531,9 +649,63 @@ func (q *Queries) ListRunningMonitors(ctx context.Context, runStartedAt *int64) 
 	return items, nil
 }
 
+const listUnassignedRemoteMonitors = `-- name: ListUnassignedRemoteMonitors :many
+SELECT id, project_id, org_id, slug, name, kind, spec, tags, state, state_since, base_at, last_obs_at, last_ok_at, next_due_at, paused, fail_streak, ok_streak, run_started_at, run_id, agent_id, created_at, updated_at FROM monitors
+WHERE agent_id IS NULL AND kind <> 'heartbeat' AND paused = 0 AND state IN ('new', 'up')
+  AND COALESCE(json_extract(spec, '$.location'), '') <> '' AND updated_at <= ?
+`
+
+// tenancy: root (offline sweep)
+func (q *Queries) ListUnassignedRemoteMonitors(ctx context.Context, updatedAt int64) ([]Monitor, error) {
+	rows, err := q.db.QueryContext(ctx, listUnassignedRemoteMonitors, updatedAt)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Monitor
+	for rows.Next() {
+		var i Monitor
+		if err := rows.Scan(
+			&i.ID,
+			&i.ProjectID,
+			&i.OrgID,
+			&i.Slug,
+			&i.Name,
+			&i.Kind,
+			&i.Spec,
+			&i.Tags,
+			&i.State,
+			&i.StateSince,
+			&i.BaseAt,
+			&i.LastObsAt,
+			&i.LastOkAt,
+			&i.NextDueAt,
+			&i.Paused,
+			&i.FailStreak,
+			&i.OkStreak,
+			&i.RunStartedAt,
+			&i.RunID,
+			&i.AgentID,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const nextCheckDueAt = `-- name: NextCheckDueAt :one
 SELECT CAST(COALESCE(MIN(next_due_at), 0) AS INTEGER) AS next_due_at
 FROM monitors WHERE kind <> 'heartbeat' AND paused = 0 AND next_due_at IS NOT NULL
+  AND COALESCE(json_extract(spec, '$.location'), '') = ''
 `
 
 // tenancy: root (checker pool)
@@ -555,6 +727,21 @@ func (q *Queries) NextDueAt(ctx context.Context) (int64, error) {
 	var next_due_at int64
 	err := row.Scan(&next_due_at)
 	return next_due_at, err
+}
+
+const setMonitorAgent = `-- name: SetMonitorAgent :exec
+UPDATE monitors SET agent_id = ? WHERE id = ?
+`
+
+type SetMonitorAgentParams struct {
+	AgentID *string
+	ID      string
+}
+
+// tenancy: root (agent gateway)
+func (q *Queries) SetMonitorAgent(ctx context.Context, arg SetMonitorAgentParams) error {
+	_, err := q.db.ExecContext(ctx, setMonitorAgent, arg.AgentID, arg.ID)
+	return err
 }
 
 const setMonitorPaused = `-- name: SetMonitorPaused :exec

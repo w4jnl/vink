@@ -67,6 +67,9 @@ func (s *Service) CreateMonitor(ctx context.Context, sc domain.Scope, m *domain.
 	if err := s.checkQuota(ctx, project.OrgID); err != nil {
 		return nil, err
 	}
+	if err := s.checkLocation(ctx, project.OrgID, m); err != nil {
+		return nil, err
+	}
 	now := s.now()
 	m.ID = domain.NewID()
 	m.ProjectID, m.OrgID = project.ID, project.OrgID
@@ -214,6 +217,9 @@ func (s *Service) UpdateMonitor(ctx context.Context, sc domain.Scope, slug strin
 		if err := s.checkPull(&next); err != nil {
 			return err
 		}
+		if err := s.checkLocation(ctx, project.OrgID, &next); err != nil {
+			return err
+		}
 		_, due, err := s.plan(&next, project.Timezone, s.now())
 		if err != nil {
 			return err
@@ -229,6 +235,13 @@ func (s *Service) UpdateMonitor(ctx context.Context, sc domain.Scope, slug strin
 		})
 		if err != nil {
 			return err
+		}
+		if cur.AgentID != "" && (next.Pull == nil || !next.Pull.Remote()) {
+			// Back to this server: the agent is told to drop it.
+			if err := q.SetMonitorAgent(ctx, db.SetMonitorAgentParams{AgentID: nil, ID: cur.ID}); err != nil {
+				return err
+			}
+			saved.AgentID = nil
 		}
 		out, err = monitorFromRow(saved)
 		return err

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -91,10 +92,17 @@ func ParseLabels(s string) (map[string]string, error) {
 			continue
 		}
 		k, v, ok := strings.Cut(part, "=")
-		if !ok {
+		k, v = strings.ToLower(strings.TrimSpace(k)), strings.TrimSpace(v)
+		if !ok || k == "" || v == "" {
 			return nil, (&ValidationError{Errors: []FieldError{{Field: "labels", Msg: part + " is not key=value"}}}).OrNil()
 		}
-		out[strings.ToLower(strings.TrimSpace(k))] = strings.TrimSpace(v)
+		if !labelKeyRe.MatchString(k) {
+			return nil, (&ValidationError{Errors: []FieldError{{Field: "labels", Msg: strconv.Quote(k) + " is not a label name"}}}).OrNil()
+		}
+		if strings.ContainsAny(v, ", =") {
+			return nil, (&ValidationError{Errors: []FieldError{{Field: "labels", Msg: k + " needs a value without commas, spaces or ="}}}).OrNil()
+		}
+		out[k] = v
 	}
 	return out, nil
 }

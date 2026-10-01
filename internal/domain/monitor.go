@@ -33,8 +33,11 @@ type Monitor struct {
 	// RunStartedAt and RunID track an open start signal for max_runtime.
 	RunStartedAt *time.Time
 	RunID        string
-	CreatedAt    time.Time
-	UpdatedAt    time.Time
+	// AgentID is the agent assigned to run a remote check; server state,
+	// never part of the spec.
+	AgentID   string
+	CreatedAt time.Time
+	UpdatedAt time.Time
 }
 
 // Validate checks the identity fields and the kind-specific spec.

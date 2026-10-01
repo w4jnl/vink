@@ -10,6 +10,8 @@ import (
 
 type Querier interface {
 	AckIncident(ctx context.Context, arg AckIncidentParams) (int64, error)
+	// tenancy: root (agent gateway)
+	ClearAgentMonitors(ctx context.Context, agentID *string) (int64, error)
 	// tenancy: org
 	CountAgents(ctx context.Context, orgID string) (int64, error)
 	// tenancy: root (dispatcher keeps per-monitor order)
@@ -17,6 +19,8 @@ type Querier interface {
 	CountMonitorsByState(ctx context.Context, projectID string) ([]CountMonitorsByStateRow, error)
 	// tenancy: org (quota check)
 	CountMonitorsInOrg(ctx context.Context, orgID string) (int64, error)
+	// tenancy: root (agent results dedupe by monitor, attempt time and source)
+	CountObservationsAt(ctx context.Context, arg CountObservationsAtParams) (int64, error)
 	CountOpenIncidents(ctx context.Context, projectID string) (int64, error)
 	// tenancy: root (metrics endpoint, instance-wide)
 	CountOpenIncidentsByProject(ctx context.Context) ([]CountOpenIncidentsByProjectRow, error)
@@ -105,15 +109,19 @@ type Querier interface {
 	ListAPIKeys(ctx context.Context, projectID string) ([]ApiKey, error)
 	// tenancy: root (bearer lookup establishes the scope)
 	ListAPIKeysByPrefix(ctx context.Context, prefix string) ([]ApiKey, error)
+	// tenancy: root (agent gateway, for a verified agent)
+	ListAgentMonitors(ctx context.Context, agentID *string) ([]Monitor, error)
 	// tenancy: org
 	ListAgents(ctx context.Context, orgID string) ([]Agent, error)
 	// tenancy: root (bearer lookup establishes the org)
 	ListAgentsByPrefix(ctx context.Context, tokenPrefix string) ([]Agent, error)
+	// tenancy: root (offline sweep, instance-wide)
+	ListAgentsSeenBefore(ctx context.Context, lastSeenAt *int64) ([]Agent, error)
 	// tenancy: root (instance admin)
 	ListAllProjects(ctx context.Context) ([]ListAllProjectsRow, error)
 	ListChannels(ctx context.Context, projectID string) ([]Channel, error)
 	ListDeliveriesForEvent(ctx context.Context, arg ListDeliveriesForEventParams) ([]Delivery, error)
-	// tenancy: root (checker pool)
+	// tenancy: root (checker pool; remote checks belong to an agent)
 	ListDueChecks(ctx context.Context, arg ListDueChecksParams) ([]string, error)
 	// tenancy: root (dispatcher)
 	ListDueDeliveries(ctx context.Context, arg ListDueDeliveriesParams) ([]Delivery, error)
@@ -141,11 +149,15 @@ type Querier interface {
 	// tenancy: root (the user's memberships are the scope)
 	ListProjectsForUser(ctx context.Context, userID string) ([]ListProjectsForUserRow, error)
 	ListRecentDeliveries(ctx context.Context, arg ListRecentDeliveriesParams) ([]ListRecentDeliveriesRow, error)
+	// tenancy: root (agent gateway assigns per org)
+	ListRemoteMonitors(ctx context.Context, orgID string) ([]Monitor, error)
 	ListRouteChannels(ctx context.Context, projectID string) ([]ListRouteChannelsRow, error)
 	ListRoutes(ctx context.Context, projectID string) ([]Route, error)
 	// tenancy: root (scheduler, max_runtime)
 	ListRunningMonitors(ctx context.Context, runStartedAt *int64) ([]Monitor, error)
 	ListStatusPages(ctx context.Context, projectID string) ([]StatusPage, error)
+	// tenancy: root (offline sweep)
+	ListUnassignedRemoteMonitors(ctx context.Context, updatedAt int64) ([]Monitor, error)
 	ListUsers(ctx context.Context) ([]User, error)
 	// tenancy: root (dispatcher)
 	MarkDeliveryDelivered(ctx context.Context, arg MarkDeliveryDeliveredParams) error
@@ -162,6 +174,8 @@ type Querier interface {
 	RevokeAPIKey(ctx context.Context, arg RevokeAPIKeyParams) (int64, error)
 	RotatePingKey(ctx context.Context, arg RotatePingKeyParams) error
 	SetInstanceAdmin(ctx context.Context, arg SetInstanceAdminParams) (int64, error)
+	// tenancy: root (agent gateway)
+	SetMonitorAgent(ctx context.Context, arg SetMonitorAgentParams) error
 	SetMonitorPaused(ctx context.Context, arg SetMonitorPausedParams) error
 	SetOrgQuotas(ctx context.Context, arg SetOrgQuotasParams) error
 	SetSessionProject(ctx context.Context, arg SetSessionProjectParams) error

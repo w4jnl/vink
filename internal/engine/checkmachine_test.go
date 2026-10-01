@@ -90,3 +90,25 @@ func TestApplyCheckPausedAndMissingSpec(t *testing.T) {
 		t.Fatal("missing spec must fail")
 	}
 }
+
+func TestApplyAgentOffline(t *testing.T) {
+	for _, c := range []struct {
+		from, to domain.State
+		changed  bool
+	}{
+		{domain.StateNew, domain.StateLate, true},
+		{domain.StateUp, domain.StateLate, true},
+		{domain.StateLate, domain.StateLate, false},
+		{domain.StateDown, domain.StateDown, false},
+	} {
+		m := &domain.Monitor{Slug: "m", State: c.from, FailStreak: 2, Pull: &domain.PullSpec{}}
+		d := ApplyAgentOffline(m, "agent offline")
+		if d.To != c.to || d.Changed != c.changed || d.FailStreak != 2 || (c.changed && d.Reason != "agent offline") {
+			t.Errorf("%s: %+v", c.from, d)
+		}
+	}
+	paused := &domain.Monitor{State: domain.StateUp, Paused: true}
+	if d := ApplyAgentOffline(paused, "x"); d.Changed {
+		t.Error("paused must not flip")
+	}
+}
