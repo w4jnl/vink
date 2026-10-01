@@ -326,3 +326,62 @@ func TestApplyAndExport(t *testing.T) {
 		t.Fatalf("ro export with secrets: %d %s", code, errs)
 	}
 }
+
+func TestImportCommands(t *testing.T) {
+	e := newCLIEnv(t)
+	dir := t.TempDir()
+	kuma := filepath.Join(dir, "kuma.json")
+	if err := os.WriteFile(kuma, []byte(`{"version":"1.23.3","notificationList":[{"id":1,"name":"Phone","config":"{\"type\":\"gotify\",\"gotifyserverurl\":\"https://gotify.lan\",\"gotifyapplicationToken\":\"AbC\"}"},{"id":2,"name":"Tg","config":"{\"type\":\"telegram\"}"}],
+"monitorList":[{"id":1,"name":"Home page","type":"http","url":"https://example.com/","interval":60,"accepted_statuscodes":["200-299"]},{"id":2,"name":"Docker","type":"docker"},{"id":3,"name":"Backup job","type":"push","interval":3600,"retryInterval":60,"maxretries":3}]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	out, errs, code := e.run("", "import", "kuma", "-f", kuma)
+	if code != 0 {
+		t.Fatalf("import kuma: %d %s", code, errs)
+	}
+	for _, want := range []string{"version: 1", "name: Phone", "kind: gotify", "slug: home-page", "kind: http", "url: https://example.com/", "slug: backup-job", "schedule: {period: 1h}"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("yaml lacks %q:\n%s", want, out)
+		}
+	}
+	if !strings.Contains(errs, "skipped  Docker (docker): vink has no kind for a docker monitor") || !strings.Contains(errs, "skipped  notification Tg: vink has no channel kind for telegram") || !strings.Contains(errs, "note     Backup job (backup-job): a push monitor") {
+		t.Errorf("stderr: %s", errs)
+	}
+	saved := filepath.Join(dir, "out.yaml")
+	if out, errs, code := e.run("", "import", "kuma", "-f", kuma, "-o", saved); code != 0 || !strings.Contains(out, "wrote "+saved+": 2 monitors, 1 channels") {
+		t.Fatalf("import -o: %d %s %s", code, out, errs)
+	}
+	if b, err := os.ReadFile(saved); err != nil || !strings.Contains(string(b), "slug: home-page") {
+		t.Fatalf("saved file: %v", err)
+	}
+	out, errs, code = e.run("", "import", "kuma", "-f", kuma, "--apply", "--dry-run")
+	if code != 0 || !strings.Contains(out, "+ ") || !strings.Contains(out, "(dry run, nothing applied)") {
+		t.Fatalf("dry run: %d %s %s", code, out, errs)
+	}
+	if _, err := e.svc.MonitorBySlug(context.Background(), e.scope, "home-page"); err == nil {
+		t.Fatal("dry run must not create")
+	}
+	out, errs, code = e.run("", "import", "kuma", "-f", kuma, "--apply")
+	if code != 0 || !strings.Contains(out, "3 created") {
+		t.Fatalf("apply: %d %s %s", code, out, errs)
+	}
+	m, err := e.svc.MonitorBySlug(context.Background(), e.scope, "home-page")
+	if err != nil || m.Kind != domain.KindHTTP || m.Pull.HTTP.URL != "https://example.com/" {
+		t.Fatalf("imported: %+v %v", m, err)
+	}
+
+	hc := filepath.Join(dir, "hc.json")
+	if err := os.WriteFile(hc, []byte(`{"checks":[{"name":"Nightly","slug":"nightly","tags":"prod","grace":1800,"kind":"simple","timeout":86400}]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	out, errs, code = e.run("", "import", "healthchecks", "-f", hc)
+	if code != 0 || !strings.Contains(out, "slug: nightly") || !strings.Contains(out, "schedule: {period: 1d}") || !strings.Contains(out, "grace: 30m") || !strings.Contains(out, "tags: [prod]") {
+		t.Fatalf("import healthchecks: %d %s %s", code, out, errs)
+	}
+	if _, errs, code := e.run("", "import", "healthchecks", "-f", kuma); code != 1 || !strings.Contains(errs, "not a Healthchecks listing") {
+		t.Fatalf("wrong format: %d %s", code, errs)
+	}
+	if _, errs, code := e.run("", "import", "kuma", "-f", filepath.Join(dir, "missing.json")); code != 1 || !strings.Contains(errs, "no such file") {
+		t.Fatalf("missing file: %d %s", code, errs)
+	}
+}

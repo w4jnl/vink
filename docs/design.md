@@ -298,6 +298,7 @@ One binary, three personalities: `vink serve` runs the server, `vink agent` runs
 | `vink get <slug>` | monitor detail + last 10 events |
 | `vink logs <slug> [-n 50] [--follow]` | observations newest first; `--follow` polls every 5 s |
 | `vink pause <slug>` · `vink resume <slug>` · `vink check <slug>` · `vink ack <incident>` | actions |
+| `vink import healthchecks -f checks.json` · `vink import kuma -f backup.json` `[-o vink.yaml | --apply [--dry-run]]` | phase 2; converts a Healthchecks API listing or an Uptime Kuma backup into an apply file, listing what vink cannot carry over |
 | `vink apply -f vink.yaml [--dry-run] [--prune]` | declarative config; prints the diff; exit 1 on validation error, 2 on server error |
 | `vink export [-o vink.yaml]` | round-trips with apply |
 | `vink ping <slug> [--start] [--fail] [--exit N] [--msg …]` | sends a ping using the context's project ping key (fetched once from `/me`, cached) — for shell scripts on hosts with the CLI |

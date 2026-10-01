@@ -71,24 +71,7 @@ func newApplyCmd(g *globals) *cobra.Command {
 			if f.quiet {
 				return nil
 			}
-			out := cmd.OutOrStdout()
-			for _, name := range diff.Created {
-				fmt.Fprintf(out, "+ %s\n", name)
-			}
-			for _, name := range diff.Updated {
-				fmt.Fprintf(out, "~ %s\n", name)
-			}
-			for _, name := range diff.Recreated {
-				fmt.Fprintf(out, "! %s (recreated, state reset)\n", name)
-			}
-			for _, name := range diff.Deleted {
-				fmt.Fprintf(out, "- %s\n", name)
-			}
-			summary := fmt.Sprintf("%d created, %d updated, %d recreated, %d deleted, %d unchanged", len(diff.Created), len(diff.Updated), len(diff.Recreated), len(diff.Deleted), len(diff.Unchanged))
-			if diff.DryRun {
-				summary += " (dry run, nothing applied)"
-			}
-			fmt.Fprintln(out, summary)
+			printDiff(cmd.OutOrStdout(), diff)
 			return nil
 		},
 	}
@@ -141,4 +124,25 @@ func newExportCmd(g *globals) *cobra.Command {
 	cmd.Flags().StringVarP(&out, "out", "o", "", "write to this file instead of stdout")
 	cmd.Flags().BoolVar(&secrets, "secrets", false, "include channel secrets (needs an rw key); the file is written with mode 0600")
 	return cmd
+}
+
+// printDiff writes the apply diff the way apply and import show it.
+func printDiff(out io.Writer, diff apply.Diff) {
+	for _, name := range diff.Created {
+		fmt.Fprintf(out, "+ %s\n", name)
+	}
+	for _, name := range diff.Updated {
+		fmt.Fprintf(out, "~ %s\n", name)
+	}
+	for _, name := range diff.Recreated {
+		fmt.Fprintf(out, "! %s (recreated, state reset)\n", name)
+	}
+	for _, name := range diff.Deleted {
+		fmt.Fprintf(out, "- %s\n", name)
+	}
+	summary := fmt.Sprintf("%d created, %d updated, %d recreated, %d deleted, %d unchanged", len(diff.Created), len(diff.Updated), len(diff.Recreated), len(diff.Deleted), len(diff.Unchanged))
+	if diff.DryRun {
+		summary += " (dry run, nothing applied)"
+	}
+	fmt.Fprintln(out, summary)
 }
