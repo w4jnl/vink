@@ -13,7 +13,7 @@ import (
 
 func apiKeyFromRow(r db.ApiKey) *domain.APIKey {
 	return &domain.APIKey{
-		ID: r.ID, ProjectID: r.ProjectID, Name: r.Name, Prefix: r.Prefix, Access: domain.Access(r.Access), CreatedBy: strp(r.CreatedBy),
+		ID: r.ID, ProjectID: strp(r.ProjectID), OrgID: r.OrgID, Name: r.Name, Prefix: r.Prefix, Access: domain.Access(r.Access), CreatedBy: strp(r.CreatedBy),
 		CreatedAt: domain.FromMillis(r.CreatedAt), LastUsedAt: domain.FromMillisPtr(r.LastUsedAt), RevokedAt: domain.FromMillisPtr(r.RevokedAt),
 	}
 }
@@ -43,7 +43,7 @@ func (s *Service) CreateAPIKey(ctx context.Context, sc domain.Scope, name string
 		createdBy = &sc.UserID
 	}
 	row, err := s.db.Write().CreateAPIKey(ctx, db.CreateAPIKeyParams{
-		ID: domain.NewID(), ProjectID: sc.ProjectID, OrgID: sc.OrgID, Name: name, Prefix: prefix, Hash: secrets.HashToken(token),
+		ID: domain.NewID(), ProjectID: ptrs(sc.ProjectID), OrgID: sc.OrgID, Name: name, Prefix: prefix, Hash: secrets.HashToken(token),
 		Access: string(access), CreatedBy: createdBy, CreatedAt: domain.Millis(s.now()),
 	})
 	if err != nil {
@@ -61,7 +61,7 @@ func (s *Service) ListAPIKeys(ctx context.Context, sc domain.Scope) ([]*domain.A
 	if !sc.CanSeePingKey() {
 		return nil, domain.ErrForbidden
 	}
-	rows, err := s.db.Read().ListAPIKeys(ctx, sc.ProjectID)
+	rows, err := s.db.Read().ListAPIKeys(ctx, ptrs(sc.ProjectID))
 	if err != nil {
 		return nil, err
 	}
@@ -77,14 +77,14 @@ func (s *Service) RevokeAPIKey(ctx context.Context, sc domain.Scope, id string) 
 	if err := requireProject(sc); err != nil {
 		return err
 	}
-	row, err := s.db.Read().GetAPIKey(ctx, db.GetAPIKeyParams{ProjectID: sc.ProjectID, ID: id})
+	row, err := s.db.Read().GetAPIKey(ctx, db.GetAPIKeyParams{ProjectID: ptrs(sc.ProjectID), ID: id})
 	if err != nil {
 		return notFoundIfNoRows(err, "api key")
 	}
 	if (row.Access == string(domain.AccessRW) && !sc.CanAdminProject()) || !sc.CanSeePingKey() {
 		return domain.ErrForbidden
 	}
-	n, err := s.db.Write().RevokeAPIKey(ctx, db.RevokeAPIKeyParams{RevokedAt: ptri(domain.Millis(s.now())), ProjectID: sc.ProjectID, ID: id})
+	n, err := s.db.Write().RevokeAPIKey(ctx, db.RevokeAPIKeyParams{RevokedAt: ptri(domain.Millis(s.now())), ProjectID: ptrs(sc.ProjectID), ID: id})
 	if err != nil {
 		return err
 	}
@@ -189,4 +189,80 @@ func (c *keyCache) forget(prefix string) {
 			delete(c.entries, fp)
 		}
 	}
+}
+
+// CreateOrgAPIKey issues a key bound to the org and no project: it may
+// export and apply every project of the org, and nothing else. Org admins
+// and owners only; the plaintext is returned once.
+func (s *Service) CreateOrgAPIKey(ctx context.Context, sc domain.Scope, name string, access domain.Access) (*domain.APIKey, string, error) {
+	if err := requireOrgAdmin(sc); err != nil {
+		return nil, "", err
+	}
+	if !access.Valid() {
+		return nil, "", (&domain.ValidationError{Errors: []domain.FieldError{{Field: "access", Msg: "must be ro or rw"}}}).OrNil()
+	}
+	name = strings.TrimSpace(name)
+	if name == "" {
+		name = "org key"
+	}
+	token, prefix, err := secrets.NewAPIKey()
+	if err != nil {
+		return nil, "", err
+	}
+	var createdBy *string
+	if sc.UserID != "" {
+		createdBy = &sc.UserID
+	}
+	row, err := s.db.Write().CreateAPIKey(ctx, db.CreateAPIKeyParams{
+		ID: domain.NewID(), ProjectID: nil, OrgID: sc.OrgID, Name: name, Prefix: prefix, Hash: secrets.HashToken(token),
+		Access: string(access), CreatedBy: createdBy, CreatedAt: domain.Millis(s.now()),
+	})
+	if err != nil {
+		return nil, "", err
+	}
+	s.log.Info("org api key created", "org_id", sc.OrgID, "prefix", prefix, "access", access, "actor", sc.Actor)
+	return apiKeyFromRow(row), token, nil
+}
+
+// ListOrgAPIKeys lists the org's live org keys; project keys are not among them.
+func (s *Service) ListOrgAPIKeys(ctx context.Context, sc domain.Scope) ([]*domain.APIKey, error) {
+	if err := requireOrgAdmin(sc); err != nil {
+		return nil, err
+	}
+	rows, err := s.db.Read().ListOrgAPIKeys(ctx, sc.OrgID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*domain.APIKey, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, apiKeyFromRow(r))
+	}
+	return out, nil
+}
+
+// RevokeOrgAPIKey revokes an org key; a project key's id is not found.
+func (s *Service) RevokeOrgAPIKey(ctx context.Context, sc domain.Scope, id string) error {
+	if err := requireOrgAdmin(sc); err != nil {
+		return err
+	}
+	keys, err := s.db.Read().ListOrgAPIKeys(ctx, sc.OrgID)
+	if err != nil {
+		return err
+	}
+	prefix := ""
+	for _, k := range keys {
+		if k.ID == id {
+			prefix = k.Prefix
+		}
+	}
+	n, err := s.db.Write().RevokeOrgAPIKey(ctx, db.RevokeOrgAPIKeyParams{RevokedAt: ptri(domain.Millis(s.now())), OrgID: sc.OrgID, ID: id})
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return domain.NotFound("api key")
+	}
+	s.keyCache.forget(prefix)
+	s.log.Info("org api key revoked", "org_id", sc.OrgID, "prefix", prefix, "actor", sc.Actor)
+	return nil
 }

@@ -360,13 +360,18 @@ func (a *Authenticator) KeyScope(ctx context.Context, token string) (domain.Scop
 	if err != nil {
 		return domain.Scope{}, err
 	}
-	project, err := a.svc.ProjectByID(ctx, key.ProjectID)
-	if err != nil {
-		return domain.Scope{}, domain.ErrUnauthorized
-	}
 	role := domain.RoleViewer
 	if key.Access == domain.AccessRW {
 		role = domain.RoleAdmin
+	}
+	if key.IsOrg() {
+		// An org key: bound to the org, no project. Routes decide what
+		// it may do (export and apply).
+		return domain.Scope{OrgID: key.OrgID, Role: role, Actor: "key:" + key.Prefix, KeyID: key.ID, KeyAccess: key.Access}, nil
+	}
+	project, err := a.svc.ProjectByID(ctx, key.ProjectID)
+	if err != nil {
+		return domain.Scope{}, domain.ErrUnauthorized
 	}
 	return domain.Scope{
 		OrgID: project.OrgID, ProjectID: project.ID, Role: role, Actor: "key:" + key.Prefix, KeyID: key.ID, KeyAccess: key.Access,

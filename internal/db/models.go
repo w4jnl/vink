@@ -19,7 +19,7 @@ type Agent struct {
 
 type ApiKey struct {
 	ID         string
-	ProjectID  string
+	ProjectID  *string
 	OrgID      string
 	Name       string
 	Prefix     string

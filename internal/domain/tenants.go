@@ -53,8 +53,11 @@ type Membership struct {
 // APIKey is a project-scoped bearer token. Plaintext is only ever
 // returned once, on creation.
 type APIKey struct {
-	ID         string
+	ID string
+	// ProjectID is empty for an org key, which may only export and
+	// apply the org's projects.
 	ProjectID  string
+	OrgID      string
 	Name       string
 	Prefix     string
 	Access     Access
@@ -63,6 +66,9 @@ type APIKey struct {
 	LastUsedAt *time.Time
 	RevokedAt  *time.Time
 }
+
+// IsOrg reports whether the key spans the org rather than one project.
+func (k *APIKey) IsOrg() bool { return k.ProjectID == "" }
 
 // ChannelKind is a notifier kind.
 type ChannelKind string

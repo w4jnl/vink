@@ -38,21 +38,6 @@ CREATE TABLE projects (
   UNIQUE (org_id, slug)
 );
 CREATE INDEX projects_ping_key_prev ON projects(ping_key_prev);
-CREATE TABLE api_keys (
-  id TEXT PRIMARY KEY,
-  project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-  org_id TEXT NOT NULL REFERENCES orgs(id) ON DELETE CASCADE,
-  name TEXT NOT NULL,
-  prefix TEXT NOT NULL,
-  hash TEXT NOT NULL,
-  access TEXT NOT NULL CHECK (access IN ('ro', 'rw')),
-  created_by TEXT,
-  created_at INTEGER NOT NULL,
-  last_used_at INTEGER,
-  revoked_at INTEGER
-);
-CREATE INDEX api_keys_prefix ON api_keys(prefix);
-CREATE INDEX api_keys_project ON api_keys(project_id);
 CREATE TABLE monitors (
   id TEXT PRIMARY KEY,
   project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
@@ -233,9 +218,26 @@ CREATE TABLE "routes" (
 );
 CREATE INDEX routes_project ON routes(project_id, priority DESC);
 CREATE INDEX agents_token_prefix ON agents(token_prefix);
+CREATE TABLE "api_keys" (
+  id TEXT PRIMARY KEY,
+  project_id TEXT REFERENCES projects(id) ON DELETE CASCADE,
+  org_id TEXT NOT NULL REFERENCES orgs(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  prefix TEXT NOT NULL,
+  hash TEXT NOT NULL,
+  access TEXT NOT NULL CHECK (access IN ('ro', 'rw')),
+  created_by TEXT,
+  created_at INTEGER NOT NULL,
+  last_used_at INTEGER,
+  revoked_at INTEGER
+);
+CREATE INDEX api_keys_prefix ON api_keys(prefix);
+CREATE INDEX api_keys_project ON api_keys(project_id);
+CREATE INDEX api_keys_org ON api_keys(org_id);
 -- Dbmate schema migrations
 INSERT INTO "schema_migrations" (version) VALUES
   ('20260927000000'),
   ('20260930000000'),
   ('20261001000000'),
-  ('20261002000000');
+  ('20261002000000'),
+  ('20261003000000');

@@ -25,6 +25,7 @@ import (
 type tenant struct {
 	org, project        string
 	rw, ro              string
+	orgRW, orgRO        string
 	cookie              *http.Cookie
 	csrf                string
 	monitor, obs, event string
@@ -56,6 +57,9 @@ func TestCrossTenantIsolation(t *testing.T) {
 		tn := &tenant{org: name, project: "prod"}
 		_, tn.rw, _ = svc.CreateAPIKey(ctx, sc, "rw", domain.AccessRW)
 		_, tn.ro, _ = svc.CreateAPIKey(ctx, sc, "ro", domain.AccessRO)
+		orgAdmin := domain.Scope{OrgID: org.ID, Role: domain.RoleAdmin, Actor: "seed"}
+		_, tn.orgRW, _ = svc.CreateOrgAPIKey(ctx, orgAdmin, "org rw", domain.AccessRW)
+		_, tn.orgRO, _ = svc.CreateOrgAPIKey(ctx, orgAdmin, "org ro", domain.AccessRO)
 		user, _ := svc.CreateLocalUser(ctx, admin, name+"-user", "", "", "correct horse", false)
 		_ = svc.SetMembership(ctx, admin, user.ID, org.ID, domain.RoleAdmin)
 		rec := httptest.NewRecorder()
@@ -126,16 +130,19 @@ func TestCrossTenantIsolation(t *testing.T) {
 	spec.Mount(http.NewServeMux())
 
 	type caller struct {
-		name  string
-		apply func(r *http.Request)
-		path  func(p string) string
-		ro    bool
+		name   string
+		apply  func(r *http.Request)
+		path   func(p string) string
+		ro     bool
+		orgKey bool
 	}
 	callers := []caller{
-		{"rw key", func(r *http.Request) { r.Header.Set("Authorization", "Bearer "+b.rw) }, func(p string) string { return "/api/v1" + p }, false},
-		{"ro key", func(r *http.Request) { r.Header.Set("Authorization", "Bearer "+b.ro) }, func(p string) string { return "/api/v1" + p }, true},
-		{"session", func(r *http.Request) { r.AddCookie(b.cookie); r.Header.Set(auth.CSRFHeader, b.csrf) }, func(p string) string { return "/api/v1/orgs/beta/projects/prod" + p }, false},
-		{"session via A's org path", func(r *http.Request) { r.AddCookie(b.cookie); r.Header.Set(auth.CSRFHeader, b.csrf) }, func(p string) string { return "/api/v1/orgs/alpha/projects/prod" + p }, false},
+		{"rw key", func(r *http.Request) { r.Header.Set("Authorization", "Bearer "+b.rw) }, func(p string) string { return "/api/v1" + p }, false, false},
+		{"ro key", func(r *http.Request) { r.Header.Set("Authorization", "Bearer "+b.ro) }, func(p string) string { return "/api/v1" + p }, true, false},
+		{"org rw key", func(r *http.Request) { r.Header.Set("Authorization", "Bearer "+b.orgRW) }, func(p string) string { return "/api/v1" + p }, false, true},
+		{"org ro key", func(r *http.Request) { r.Header.Set("Authorization", "Bearer "+b.orgRO) }, func(p string) string { return "/api/v1" + p }, true, true},
+		{"session", func(r *http.Request) { r.AddCookie(b.cookie); r.Header.Set(auth.CSRFHeader, b.csrf) }, func(p string) string { return "/api/v1/orgs/beta/projects/prod" + p }, false, false},
+		{"session via A's org path", func(r *http.Request) { r.AddCookie(b.cookie); r.Header.Set(auth.CSRFHeader, b.csrf) }, func(p string) string { return "/api/v1/orgs/alpha/projects/prod" + p }, false, false},
 	}
 	checked := 0
 	for _, route := range spec.Routes {
@@ -157,6 +164,15 @@ func TestCrossTenantIsolation(t *testing.T) {
 				checked++
 				viaAlpha := strings.Contains(c.name, "A's org")
 				switch {
+				case c.orgKey:
+					// an org key sees /me and nothing of any project
+					want := 403
+					if path == "/me" {
+						want = 200
+					}
+					if rec.Code != want || (want == 200 && (bytes.Contains(rec.Body.Bytes(), []byte(a.monitor)) || bytes.Contains(rec.Body.Bytes(), []byte(`"project"`)))) {
+						t.Fatalf("org key on a project route: %d %s", rec.Code, rec.Body.String())
+					}
 				case c.ro && method != "GET":
 					if rec.Code != 403 {
 						t.Fatalf("ro key write: %d %s", rec.Code, rec.Body.String())
@@ -205,6 +221,8 @@ func TestCrossTenantIsolation(t *testing.T) {
 			{"A's org", "/api/v1/orgs/alpha", "", 404},
 			{"rw key", "/api/v1/orgs/beta", b.rw, 403},
 			{"ro key", "/api/v1/orgs/alpha", b.ro, 403},
+			{"org rw key, own org", "/api/v1/orgs/beta", b.orgRW, 403},
+			{"org rw key, A's org", "/api/v1/orgs/alpha", b.orgRW, 404},
 		} {
 			t.Run(c.name+" "+route, func(t *testing.T) {
 				var body io.Reader

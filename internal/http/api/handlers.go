@@ -81,6 +81,13 @@ func (a *API) me(w http.ResponseWriter, r *http.Request) error {
 			out.Project.PingKey = project.PingKey
 			out.Project.PingBase = a.svc.Config().PingBaseURL + "/ping/"
 		}
+	} else if sc.OrgID != "" {
+		// an org key: the org, no project
+		org, err := a.svc.OrgByID(ctx, sc.OrgID)
+		if err != nil {
+			return err
+		}
+		out.Org = &meRef{ID: org.ID, Slug: org.Slug}
 	}
 	writeJSON(w, http.StatusOK, out)
 	return nil

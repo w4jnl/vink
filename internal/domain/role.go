@@ -71,6 +71,10 @@ type Scope struct {
 // IsKey reports whether the caller is an API key.
 func (s Scope) IsKey() bool { return s.KeyID != "" }
 
+// IsOrgKey reports whether the caller is an org key: an API key bound to
+// the org and no project, allowed to export and apply the org's projects.
+func (s Scope) IsOrgKey() bool { return s.KeyID != "" && s.ProjectID == "" }
+
 // CanOperate: ack incidents, pause/resume, check now.
 func (s Scope) CanOperate() bool { return s.Role.AtLeast(RoleMember) }
 

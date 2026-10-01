@@ -664,6 +664,34 @@ func TestAgentsAPI(t *testing.T) {
 	}
 }
 
+func TestOrgKeys(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	orgAdmin := domain.Scope{OrgID: e.org.ID, Role: domain.RoleAdmin, Actor: "seed"}
+	_, token, err := e.svc.CreateOrgAPIKey(ctx, orgAdmin, "gitops", domain.AccessRW)
+	if err != nil {
+		t.Fatal(err)
+	}
+	me := e.key(token, "GET", "/me", nil)
+	if me.code != 200 || !strings.Contains(string(me.body), `"kind":"key"`) || !strings.Contains(string(me.body), `"slug":"homelab"`) || strings.Contains(string(me.body), `"project"`) {
+		t.Fatalf("org key me: %d %s", me.code, me.body)
+	}
+	for _, p := range []string{"/monitors", "/channels", "/status", "/export"} {
+		if r := e.key(token, "GET", p, nil); r.code != 403 || !strings.Contains(string(r.body), "org key may only export and apply") {
+			t.Fatalf("org key on %s: %d %s", p, r.code, r.body)
+		}
+	}
+	if r := e.key(token, "GET", "/orgs/homelab/agents", nil); r.code != 403 {
+		t.Fatalf("org key on agents: %d %s", r.code, r.body)
+	}
+	if r := e.key(token, "GET", "/orgs/acme/agents", nil); r.code != 404 {
+		t.Fatalf("org key on another org: %d %s", r.code, r.body)
+	}
+	if r := e.key(e.rw, "GET", "/orgs/homelab/agents", nil); r.code != 403 || !strings.Contains(string(r.body), "project key acts as its project") {
+		t.Fatalf("project key on an org route: %d %s", r.code, r.body)
+	}
+}
+
 func TestChannelsRoutesKeysPingKey(t *testing.T) {
 	e := newEnv(t)
 	r := e.key(e.rw, "POST", "/channels", map[string]any{"name": "ntfy", "kind": "ntfy", "config": map[string]any{"url": "https://ntfy.example.com", "topic": "vink", "token": "tk_secret"}})

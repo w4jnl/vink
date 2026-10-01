@@ -96,11 +96,11 @@ func (a *API) Mount(mux *http.ServeMux) {
 	a.register(mux, "DELETE", "/keys/{id}", a.deleteKey, false)
 	a.register(mux, "POST", "/ping-key/rotate", a.rotatePingKey, false)
 	a.register(mux, "GET", "/status", a.status, false)
-	a.registerOrg(mux, "GET", "/agents", a.listAgents)
-	a.registerOrg(mux, "POST", "/agents", a.createAgent)
-	a.registerOrg(mux, "GET", "/agents/{name}", a.getAgent)
-	a.registerOrg(mux, "PUT", "/agents/{name}/labels", a.putAgentLabels)
-	a.registerOrg(mux, "DELETE", "/agents/{name}", a.deleteAgent)
+	a.registerOrg(mux, "GET", "/agents", a.listAgents, false)
+	a.registerOrg(mux, "POST", "/agents", a.createAgent, false)
+	a.registerOrg(mux, "GET", "/agents/{name}", a.getAgent, false)
+	a.registerOrg(mux, "PUT", "/agents/{name}/labels", a.putAgentLabels, false)
+	a.registerOrg(mux, "DELETE", "/agents/{name}", a.deleteAgent, false)
 	mux.HandleFunc("GET "+Prefix+"/openapi.yaml", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/yaml")
 		_, _ = w.Write(openAPI)
@@ -122,20 +122,21 @@ func (a *API) register(mux *http.ServeMux, method, path string, h handlerFunc, m
 	if meRoute {
 		mode = modeMe
 	}
-	mux.Handle(method+" "+Prefix+path, a.wrap(h, mode, false))
-	mux.Handle(method+" "+Prefix+"/orgs/{org}/projects/{project}"+path, a.wrap(h, mode, true))
+	mux.Handle(method+" "+Prefix+path, a.wrap(h, mode, false, false))
+	mux.Handle(method+" "+Prefix+"/orgs/{org}/projects/{project}"+path, a.wrap(h, mode, true, false))
 }
 
 // registerOrg mounts an org-level route under /orgs/{org}, for sessions
-// of org admins and owners; API keys act as a project and are refused.
-func (a *API) registerOrg(mux *http.ServeMux, method, path string, h handlerFunc) {
+// of org admins and owners. Project keys are refused; org keys are
+// accepted only where orgKeys is true (export and apply).
+func (a *API) registerOrg(mux *http.ServeMux, method, path string, h handlerFunc, orgKeys bool) {
 	a.OrgRoutes = append(a.OrgRoutes, method+" "+path)
-	mux.Handle(method+" "+Prefix+"/orgs/{org}"+path, a.wrap(h, modeOrg, true))
+	mux.Handle(method+" "+Prefix+"/orgs/{org}"+path, a.wrap(h, modeOrg, true, orgKeys))
 }
 
 // wrap resolves the caller's scope, applies the rate limit, the read-only
 // and CSRF rules, and turns handler errors into problems.
-func (a *API) wrap(h handlerFunc, mode scopeMode, sessionPath bool) http.Handler {
+func (a *API) wrap(h handlerFunc, mode scopeMode, sessionPath, orgKeys bool) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("Cache-Control", "no-store")
@@ -148,12 +149,12 @@ func (a *API) wrap(h handlerFunc, mode scopeMode, sessionPath bool) http.Handler
 			err       error
 		)
 		if token, ok := auth.BearerToken(r); ok {
-			if mode == modeOrg {
-				writeError(w, r, a.log, errors.Join(domain.ErrForbidden, errors.New("API keys act as a project; org routes take a session")))
-				return
-			}
 			sc, err = a.auth.KeyScope(ctx, token)
 			if err != nil {
+				writeError(w, r, a.log, err)
+				return
+			}
+			if err := a.keyAllowed(r, sc, mode, orgKeys); err != nil {
 				writeError(w, r, a.log, err)
 				return
 			}
@@ -208,6 +209,33 @@ func (a *API) wrap(h handlerFunc, mode scopeMode, sessionPath bool) http.Handler
 			writeError(w, r, a.log, err)
 		}
 	})
+}
+
+// keyAllowed says whether an API key may call this route: a project key
+// acts as its project and never for the org; an org key may see /me and
+// the org routes marked for it, on its own org only, and nothing else.
+func (a *API) keyAllowed(r *http.Request, sc domain.Scope, mode scopeMode, orgKeys bool) error {
+	if !sc.IsOrgKey() {
+		if mode == modeOrg {
+			return errors.Join(domain.ErrForbidden, errors.New("a project key acts as its project; org routes take a session or an org key"))
+		}
+		return nil
+	}
+	switch mode {
+	case modeMe:
+		return nil
+	case modeOrg:
+		org, err := a.svc.OrgBySlug(r.Context(), r.PathValue("org"))
+		if err != nil || org.ID != sc.OrgID {
+			return domain.NotFound("org")
+		}
+		if !orgKeys {
+			return errors.Join(domain.ErrForbidden, errors.New("an org key may only export and apply the org"))
+		}
+		return nil
+	default:
+		return errors.Join(domain.ErrForbidden, errors.New("an org key may only export and apply the org; use a project key"))
+	}
 }
 
 // orgScope resolves the org from the path for a principal; a principal

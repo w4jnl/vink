@@ -17,7 +17,7 @@ RETURNING id, project_id, org_id, name, prefix, hash, access, created_by, create
 
 type CreateAPIKeyParams struct {
 	ID        string
-	ProjectID string
+	ProjectID *string
 	OrgID     string
 	Name      string
 	Prefix    string
@@ -61,7 +61,7 @@ SELECT id, project_id, org_id, name, prefix, hash, access, created_by, created_a
 `
 
 type GetAPIKeyParams struct {
-	ProjectID string
+	ProjectID *string
 	ID        string
 }
 
@@ -88,7 +88,7 @@ const listAPIKeys = `-- name: ListAPIKeys :many
 SELECT id, project_id, org_id, name, prefix, hash, access, created_by, created_at, last_used_at, revoked_at FROM api_keys WHERE project_id = ? AND revoked_at IS NULL ORDER BY created_at
 `
 
-func (q *Queries) ListAPIKeys(ctx context.Context, projectID string) ([]ApiKey, error) {
+func (q *Queries) ListAPIKeys(ctx context.Context, projectID *string) ([]ApiKey, error) {
 	rows, err := q.db.QueryContext(ctx, listAPIKeys, projectID)
 	if err != nil {
 		return nil, err
@@ -163,18 +163,77 @@ func (q *Queries) ListAPIKeysByPrefix(ctx context.Context, prefix string) ([]Api
 	return items, nil
 }
 
+const listOrgAPIKeys = `-- name: ListOrgAPIKeys :many
+SELECT id, project_id, org_id, name, prefix, hash, access, created_by, created_at, last_used_at, revoked_at FROM api_keys WHERE org_id = ? AND project_id IS NULL AND revoked_at IS NULL ORDER BY created_at
+`
+
+// tenancy: org (org keys have no project)
+func (q *Queries) ListOrgAPIKeys(ctx context.Context, orgID string) ([]ApiKey, error) {
+	rows, err := q.db.QueryContext(ctx, listOrgAPIKeys, orgID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ApiKey
+	for rows.Next() {
+		var i ApiKey
+		if err := rows.Scan(
+			&i.ID,
+			&i.ProjectID,
+			&i.OrgID,
+			&i.Name,
+			&i.Prefix,
+			&i.Hash,
+			&i.Access,
+			&i.CreatedBy,
+			&i.CreatedAt,
+			&i.LastUsedAt,
+			&i.RevokedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const revokeAPIKey = `-- name: RevokeAPIKey :execrows
 UPDATE api_keys SET revoked_at = ? WHERE project_id = ? AND id = ? AND revoked_at IS NULL
 `
 
 type RevokeAPIKeyParams struct {
 	RevokedAt *int64
-	ProjectID string
+	ProjectID *string
 	ID        string
 }
 
 func (q *Queries) RevokeAPIKey(ctx context.Context, arg RevokeAPIKeyParams) (int64, error) {
 	result, err := q.db.ExecContext(ctx, revokeAPIKey, arg.RevokedAt, arg.ProjectID, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const revokeOrgAPIKey = `-- name: RevokeOrgAPIKey :execrows
+UPDATE api_keys SET revoked_at = ? WHERE org_id = ? AND project_id IS NULL AND id = ? AND revoked_at IS NULL
+`
+
+type RevokeOrgAPIKeyParams struct {
+	RevokedAt *int64
+	OrgID     string
+	ID        string
+}
+
+// tenancy: org (org keys have no project)
+func (q *Queries) RevokeOrgAPIKey(ctx context.Context, arg RevokeOrgAPIKeyParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, revokeOrgAPIKey, arg.RevokedAt, arg.OrgID, arg.ID)
 	if err != nil {
 		return 0, err
 	}

@@ -106,7 +106,7 @@ type Querier interface {
 	LastDeliveryForRoute(ctx context.Context, arg LastDeliveryForRouteParams) (Delivery, error)
 	LastObservation(ctx context.Context, arg LastObservationParams) (Observation, error)
 	LastSentForChannel(ctx context.Context, arg LastSentForChannelParams) (int64, error)
-	ListAPIKeys(ctx context.Context, projectID string) ([]ApiKey, error)
+	ListAPIKeys(ctx context.Context, projectID *string) ([]ApiKey, error)
 	// tenancy: root (bearer lookup establishes the scope)
 	ListAPIKeysByPrefix(ctx context.Context, prefix string) ([]ApiKey, error)
 	// tenancy: root (agent gateway, for a verified agent)
@@ -142,6 +142,8 @@ type Querier interface {
 	ListOpenIncidents(ctx context.Context, projectID string) ([]ListOpenIncidentsRow, error)
 	// tenancy: root (dispatcher schedules repeat notifications)
 	ListOpenUnackedIncidents(ctx context.Context) ([]ListOpenUnackedIncidentsRow, error)
+	// tenancy: org (org keys have no project)
+	ListOrgAPIKeys(ctx context.Context, orgID string) ([]ApiKey, error)
 	ListOrgs(ctx context.Context) ([]Org, error)
 	ListProjectEvents(ctx context.Context, arg ListProjectEventsParams) ([]ListProjectEventsRow, error)
 	ListProjectEventsSince(ctx context.Context, arg ListProjectEventsSinceParams) ([]Event, error)
@@ -172,6 +174,8 @@ type Querier interface {
 	RescheduleDelivery(ctx context.Context, arg RescheduleDeliveryParams) error
 	ResolveIncident(ctx context.Context, arg ResolveIncidentParams) error
 	RevokeAPIKey(ctx context.Context, arg RevokeAPIKeyParams) (int64, error)
+	// tenancy: org (org keys have no project)
+	RevokeOrgAPIKey(ctx context.Context, arg RevokeOrgAPIKeyParams) (int64, error)
 	RotatePingKey(ctx context.Context, arg RotatePingKeyParams) error
 	SetInstanceAdmin(ctx context.Context, arg SetInstanceAdminParams) (int64, error)
 	// tenancy: root (agent gateway)
