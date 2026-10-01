@@ -5,7 +5,9 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/w4jnl/vink/internal/auth"
 	"github.com/w4jnl/vink/internal/domain"
+	"github.com/w4jnl/vink/internal/service"
 )
 
 // home sends the person to their last project, their only project, or
@@ -101,6 +103,12 @@ func (h *Web) loginForm(c *reqCtx) error {
 	}
 	data := loginData{base: h.baseFor(c, "Sign in", ""), Next: safeNext(c.r.URL.Query().Get("next"))}
 	data.Fill = true
+	switch c.r.URL.Query().Get("code") {
+	case "locked":
+		data.Error = "Too many wrong codes. Sign in again."
+	case "expired":
+		data.Error = "The sign-in timed out. Start again."
+	}
 	return h.render(c, http.StatusOK, "login", "layout", data)
 }
 
@@ -113,7 +121,11 @@ func (h *Web) login(c *reqCtx) error {
 	}
 	user := strings.TrimSpace(c.r.PostFormValue("username"))
 	next := safeNext(c.r.PostFormValue("next"))
-	_, err := h.authn.Login(c.w, c.r, user, c.r.PostFormValue("password"))
+	_, err := h.authn.LoginNext(c.w, c.r, user, c.r.PostFormValue("password"), next)
+	if errors.Is(err, auth.ErrNeedsCode) {
+		http.Redirect(c.w, c.r, "/login/code", http.StatusSeeOther)
+		return nil
+	}
 	if err != nil {
 		data := loginData{base: h.baseFor(c, "Sign in", ""), User: user, Next: next}
 		data.Fill = true
@@ -130,6 +142,67 @@ func (h *Web) login(c *reqCtx) error {
 		return h.render(c, status, "login", "layout", data)
 	}
 	http.Redirect(c.w, c.r, next, http.StatusSeeOther)
+	return nil
+}
+
+// The code step: after a correct password for an account with two-factor.
+
+type codeData struct {
+	base
+	Subject  string
+	Recovery bool
+	Error    string
+}
+
+func (h *Web) codeForm(c *reqCtx) error {
+	ch, err := h.authn.Challenge(c.r)
+	if err != nil {
+		if errors.Is(err, domain.ErrNotFound) {
+			http.Redirect(c.w, c.r, "/login?code=expired", http.StatusSeeOther)
+			return nil
+		}
+		return err
+	}
+	data := codeData{base: h.baseFor(c, "Two-factor sign-in", ""), Subject: ch.Subject, Recovery: c.r.URL.Query().Get("recovery") == "1"}
+	data.Fill = true
+	return h.render(c, http.StatusOK, "login_code", "layout", data)
+}
+
+func (h *Web) code(c *reqCtx) error {
+	if err := c.r.ParseForm(); err != nil {
+		return err
+	}
+	recovery := c.r.PostFormValue("recovery") != ""
+	code := c.r.PostFormValue("otp")
+	if recovery {
+		code = c.r.PostFormValue("recovery")
+	}
+	_, next, err := h.authn.CompleteChallenge(c.w, c.r, code)
+	if err != nil {
+		switch {
+		case errors.Is(err, service.ErrCodeLocked):
+			http.Redirect(c.w, c.r, "/login?code=locked", http.StatusSeeOther)
+			return nil
+		case errors.Is(err, domain.ErrNotFound):
+			http.Redirect(c.w, c.r, "/login?code=expired", http.StatusSeeOther)
+			return nil
+		case errors.Is(err, domain.ErrUnauthorized):
+			ch, cerr := h.authn.Challenge(c.r)
+			if cerr != nil {
+				http.Redirect(c.w, c.r, "/login?code=expired", http.StatusSeeOther)
+				return nil
+			}
+			data := codeData{base: h.baseFor(c, "Two-factor sign-in", ""), Subject: ch.Subject, Recovery: recovery}
+			data.Fill = true
+			data.Error = "That code didn’t work. Use the code on screen now; it changes every 30 seconds."
+			if recovery {
+				data.Error = "That recovery code didn’t work. Each one works once."
+			}
+			return h.render(c, http.StatusUnauthorized, "login_code", "layout", data)
+		}
+		return err
+	}
+	http.Redirect(c.w, c.r, safeNext(next), http.StatusSeeOther)
 	return nil
 }
 

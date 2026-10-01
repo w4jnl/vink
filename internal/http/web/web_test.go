@@ -24,6 +24,7 @@ import (
 	"github.com/w4jnl/vink/internal/notify"
 	"github.com/w4jnl/vink/internal/outbound"
 	"github.com/w4jnl/vink/internal/service"
+	"github.com/w4jnl/vink/internal/totp"
 )
 
 type env struct {
@@ -42,6 +43,12 @@ type env struct {
 }
 
 func newEnv(t *testing.T) *env {
+	t.Helper()
+	return newEnvAuth(t, config.Default().Auth)
+}
+
+// newEnvAuth is newEnv with its own auth config.
+func newEnvAuth(t *testing.T, authCfg config.Auth) *env {
 	t.Helper()
 	d := dbtest.Open(t)
 	logOut := io.Discard
@@ -66,7 +73,7 @@ func newEnv(t *testing.T) *env {
 	user, _ := svc.CreateLocalUser(ctx, admin, "j", "j@example.com", "Jaro", "correct horse", false)
 	_ = svc.SetMembership(ctx, admin, user.ID, e.org.ID, domain.RoleAdmin)
 	e.scope = domain.Scope{OrgID: e.org.ID, ProjectID: e.project.ID, UserID: user.ID, Role: domain.RoleAdmin, Actor: "test"}
-	authn, err := auth.New(svc, config.Default().Auth, "http://localhost:8080", quiet)
+	authn, err := auth.New(svc, authCfg, "http://localhost:8080", quiet)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1705,5 +1712,233 @@ func TestAuditLogPages(t *testing.T) {
 	}
 	if r := e.get("/admin/audit?org=nope", false); r.code != 404 {
 		t.Errorf("unknown org: %d", r.code)
+	}
+}
+
+func cookieNamed(hdr http.Header, name string) *http.Cookie {
+	for _, c := range (&http.Response{Header: hdr}).Cookies() {
+		if c.Name == name && c.Value != "" {
+			return c
+		}
+	}
+	return nil
+}
+
+// doWith sends a request with explicit cookies and no CSRF token.
+func (e *env) doWith(method, path string, form url.Values, cookies ...*http.Cookie) page {
+	e.t.Helper()
+	var body io.Reader
+	if form != nil {
+		body = strings.NewReader(form.Encode())
+	}
+	req := httptest.NewRequest(method, path, body)
+	req.RemoteAddr = "203.0.113.9:1"
+	if form != nil {
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	}
+	for _, c := range cookies {
+		req.AddCookie(c)
+	}
+	rec := httptest.NewRecorder()
+	e.srv.ServeHTTP(rec, req)
+	return page{code: rec.Code, body: rec.Body.String(), hdr: rec.Header()}
+}
+
+func TestAccountAndTwoFactor(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+
+	acc := e.get("/account", false)
+	if acc.code != 200 {
+		t.Fatalf("account: %d", acc.code)
+	}
+	acc.has(t, `<main class="vk-main vk-narrow" id="account">`, `<h1>Account</h1><span class="vk-muted vk-mono">j · local account</span>`,
+		`<section class="vk-section"><h2>Profile</h2>`, `id="acc_name" name="acc_name"`, `value="Jaro"`, `id="acc_email" name="acc_email"`, `value="j@example.com"`, `Shown to other members. Alert mail goes to channels, not here.`, `>Save profile</button>`,
+		`<section class="vk-section"><h2>Password</h2>`, `<form class="vk-inlineform vk-inlineform--even" action="/account/password" method="post">`, `id="pw_old" name="pw_old"`, `autocomplete="current-password"`, `>Change password</button>`,
+		`<h2>Two-factor sign-in</h2><p class="vk-lede">Ask for a code from an authenticator app after the password.`,
+		`<span class="vk-srow__title">Authenticator app</span><span class="vk-srow__sub" title="off · a code from your phone after the password">`, `<span class="vk-state vk-state--paused">`, `href="/account?setup=1">Turn on</a>`,
+		`<h2>Sessions <span>1</span></h2>`, `<span class="vk-tag">this session</span>`, `since Sun 27 Sep 14:00 · 203.0.113.9`, `vk-srow__cell--mono">active now</span><span class="vk-srow__actions"></span>`)
+	if strings.Contains(acc.body, "Sign out everywhere else") {
+		t.Error("nothing else to sign out")
+	}
+	e.get(projPath, false).has(t, `<a class="vk-menu__item" href="/account">`)
+
+	// profile and password
+	if r := e.post("/account/profile", url.Values{"acc_name": {"Jaro Z"}, "acc_email": {"nope"}}, false); r.code != 422 || !strings.Contains(r.body, `id="acc_email-msg"`) {
+		t.Fatalf("bad email: %d", r.code)
+	}
+	if r := e.post("/account/profile", url.Values{"acc_name": {"Jaro Z"}, "acc_email": {"jz@example.com"}}, false); r.code != 303 {
+		t.Fatalf("profile: %d", r.code)
+	}
+	if u, _ := e.svc.UserBySubject(ctx, "j"); u.DisplayName != "Jaro Z" || u.Email != "jz@example.com" {
+		t.Fatalf("saved: %+v", u)
+	}
+	if r := e.post("/account/password", url.Values{"pw_old": {"wrong"}, "pw_new": {"a brand new passphrase"}}, false); r.code != 422 || !strings.Contains(r.body, `id="pw_old-msg"`) {
+		t.Fatalf("wrong current: %d", r.code)
+	}
+	rec := httptest.NewRecorder()
+	phone := httptest.NewRequest("POST", "/login", nil)
+	phone.Header.Set("User-Agent", "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Version/17.0 Mobile/15E148 Safari/604.1")
+	phone.RemoteAddr = "10.0.4.31:1"
+	if _, err := e.authn.Login(rec, phone, "j", "correct horse"); err != nil {
+		t.Fatal(err)
+	}
+	other := rec.Result().Cookies()[0]
+	e.get("/account", false).has(t, `<h2>Sessions <span>2</span></h2>`, `<span class="vk-srow__title">Safari on iPhone</span><span class="vk-srow__sub" title="since Sun 27 Sep 14:00 · 10.0.4.31">`, `action="/account/sessions/`+other.Value+`/delete"`, `>Sign out</button>`, `data-confirm="Really sign out 1 session?">Sign out everywhere else</button>`)
+	if r := e.post("/account/password", url.Values{"pw_old": {"correct horse"}, "pw_new": {"a brand new passphrase"}}, false); r.code != 303 {
+		t.Fatalf("password: %d", r.code)
+	}
+	if _, err := e.svc.Session(ctx, other.Value); err == nil {
+		t.Fatal("the phone stayed signed in")
+	}
+
+	// setup: QR, key, a wrong code, then the right one with the codes shown once
+	setup := e.get("/account?setup=1", false)
+	setup.has(t, `<h2>Set up two-factor sign-in</h2></div><div class="vk-two">`, `<figure class="vk-qr"><div class="vk-qr__code" role="img" aria-label="QR code for localhost:8080, account j"><svg viewBox="0 0 `, `shape-rendering="crispEdges" aria-hidden="true"><path fill="currentColor" d="M`,
+		`<figcaption>Scan with an authenticator app.</figcaption></figure>`, `<span class="vk-field__label">Or type this key</span><div class="vk-field__row"><code class="vk-ping__url">`, `Account j at localhost:8080 · 6 digits · a new code every 30 s`,
+		`class="vk-input vk-input--otp" id="otp" name="otp"`, `inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code"`, `placeholder="000000"`, `>Turn on two-factor</button>`, `href="/account">Cancel</a>`)
+	secret := regexp.MustCompile(`data-copy="([A-Z2-7]{32})"`).FindStringSubmatch(setup.body)
+	if secret == nil {
+		t.Fatal("no key on the page")
+	}
+	if again := e.get("/account?setup=1", false); !strings.Contains(again.body, secret[1]) {
+		t.Error("the pending key must stay the same")
+	}
+	if r := e.post("/account/totp/confirm", url.Values{"otp": {"000000"}}, false); r.code != 422 || !strings.Contains(r.body, `That code didn’t work`) || !strings.Contains(r.body, secret[1]) {
+		t.Fatalf("wrong code: %d", r.code)
+	}
+	code, _ := totp.Code(secret[1], e.now)
+	on := e.post("/account/totp/confirm", url.Values{"otp": {code}}, false)
+	if on.code != 200 {
+		t.Fatalf("confirm: %d", on.code)
+	}
+	on.has(t, `<div class="vk-srow__note"><div class="vk-notice vk-notice--ok" role="status">`, `<b class="vk-notice__title">Two-factor is on.</b> Keep these recovery codes somewhere safe`, `<div class="vk-codes"><ol class="vk-codes__list"><li>`, `>Copy codes</button>`,
+		`title="on since just now · 10 of 10 recovery codes left"`, `<span class="vk-state vk-state--up">`, `data-confirm="Really replace the codes?" form="codes-form">New codes</button>`, `href="/account?off=1">Turn off</a>`)
+	codes := regexp.MustCompile(`<li>([A-Z2-9]{4}-[A-Z2-9]{4})</li>`).FindAllStringSubmatch(on.body, -1)
+	if len(codes) != 10 {
+		t.Fatalf("%d recovery codes", len(codes))
+	}
+	if r := e.get("/account", false); strings.Contains(r.body, "vk-codes__list") {
+		t.Error("codes shown twice")
+	}
+
+	// signing in: the password opens the code step
+	if r := e.get("/logout", false); r.code != 303 {
+		t.Fatal("logout")
+	}
+	login := e.doWith("POST", "/login", url.Values{"username": {"j"}, "password": {"a brand new passphrase"}, "next": {"/account"}})
+	if login.code != 303 || login.hdr.Get("Location") != "/login/code" || cookieNamed(login.hdr, auth.CookieName) != nil {
+		t.Fatalf("password step: %d %s", login.code, login.hdr.Get("Location"))
+	}
+	ch := cookieNamed(login.hdr, auth.ChallengeCookie)
+	if ch == nil || !ch.HttpOnly {
+		t.Fatal("no challenge cookie")
+	}
+	step := e.doWith("GET", "/login/code", nil, ch)
+	step.has(t, `<h1>Two-factor sign-in</h1>`, `Enter the code from your authenticator app for <b>j</b>.`, `class="vk-input vk-input--otp" id="otp" name="otp"`, `>Verify</button>`, `href="/login/code?recovery=1">Use a recovery code</a>`, `href="/login">Back to sign in</a>`)
+	if r := e.doWith("GET", "/login/code", nil); r.code != 303 || r.hdr.Get("Location") != "/login?code=expired" {
+		t.Fatalf("code page without a challenge: %d %s", r.code, r.hdr.Get("Location"))
+	}
+	// the setup code is spent; a wrong code says the same as a reused one
+	if r := e.doWith("POST", "/login/code", url.Values{"otp": {code}}, ch); r.code != 401 || !strings.Contains(r.body, `<span class="vk-field__error" id="otp-msg"><i class="vk-glyph vk-glyph--down" aria-hidden="true"></i>That code didn’t work. Use the code on screen now; it changes every 30 seconds.</span>`) {
+		t.Fatalf("spent code: %d", r.code)
+	}
+	e.now = e.now.Add(90 * time.Second)
+	fresh, _ := totp.Code(secret[1], e.now)
+	ok := e.doWith("POST", "/login/code", url.Values{"otp": {fresh}}, ch)
+	sessCookie := cookieNamed(ok.hdr, auth.CookieName)
+	if ok.code != 303 || ok.hdr.Get("Location") != "/account" || sessCookie == nil {
+		t.Fatalf("code step: %d %s", ok.code, ok.hdr.Get("Location"))
+	}
+	if r := e.doWith("GET", "/login/code", nil, ch); r.code != 303 || r.hdr.Get("Location") != "/login?code=expired" {
+		t.Fatalf("challenge after use: %d", r.code)
+	}
+	// replay at a new sign-in
+	login2 := e.doWith("POST", "/login", url.Values{"username": {"j"}, "password": {"a brand new passphrase"}})
+	ch2 := cookieNamed(login2.hdr, auth.ChallengeCookie)
+	if r := e.doWith("POST", "/login/code", url.Values{"otp": {fresh}}, ch2); r.code != 401 {
+		t.Fatalf("replay: %d", r.code)
+	}
+	// a recovery code, once
+	e.doWith("GET", "/login/code?recovery=1", nil, ch2).has(t, `Enter one of your recovery codes for <b>j</b>.`, `class="vk-input vk-input--mono" id="recovery" name="recovery"`, `placeholder="XXXX-XXXX"`, `href="/login/code">Use the app</a>`)
+	if r := e.doWith("POST", "/login/code", url.Values{"recovery": {strings.ToLower(codes[0][1])}}, ch2); r.code != 303 || r.hdr.Get("Location") != "/" {
+		t.Fatalf("recovery: %d %s", r.code, r.hdr.Get("Location"))
+	}
+	login3 := e.doWith("POST", "/login", url.Values{"username": {"j"}, "password": {"a brand new passphrase"}})
+	ch3 := cookieNamed(login3.hdr, auth.ChallengeCookie)
+	if r := e.doWith("POST", "/login/code", url.Values{"recovery": {codes[0][1]}}, ch3); r.code != 401 || !strings.Contains(r.body, "Each one works once") {
+		t.Fatalf("recovery twice: %d", r.code)
+	}
+	// five wrong codes end the attempt
+	for i := 0; i < 3; i++ {
+		if r := e.doWith("POST", "/login/code", url.Values{"otp": {"000000"}}, ch3); r.code != 401 {
+			t.Fatalf("wrong %d: %d", i, r.code)
+		}
+	}
+	locked := e.doWith("POST", "/login/code", url.Values{"otp": {"000000"}}, ch3)
+	if locked.code != 303 || locked.hdr.Get("Location") != "/login?code=locked" {
+		t.Fatalf("lock: %d %s", locked.code, locked.hdr.Get("Location"))
+	}
+	e.doWith("GET", "/login?code=locked", nil).has(t, `Too many wrong codes. Sign in again.`)
+
+	// the log says how each sign-in went
+	e.cookie = sessCookie
+	sess, err := e.svc.Session(ctx, sessCookie.Value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.csrf = sess.CSRF
+	e.get("/o/homelab/admin/audit?kind=access", false).has(t, `turned on two-factor sign-in`, `signed in with a code`, `signed in with a recovery code; 9 left`, `failed to sign in as j with a code`, `changed the password of j`, `changed name, email of the account j`)
+
+	// new codes replace the set; turning off needs the password
+	e.post("/account/totp/codes", url.Values{}, false).has(t, `<b class="vk-notice__title">New recovery codes.</b>`, `title="on since 1 min ago · 10 of 10 recovery codes left"`)
+	e.get("/account?off=1", false).has(t, `<h2>Turn off two-factor sign-in</h2>`, `id="password" name="password"`, `>Turn off two-factor</button>`)
+	if r := e.post("/account/totp/off", url.Values{"password": {"wrong"}}, false); r.code != 422 || !strings.Contains(r.body, "That is not your password.") {
+		t.Fatalf("off with a wrong password: %d", r.code)
+	}
+	if r := e.post("/account/totp/off", url.Values{"password": {"a brand new passphrase"}}, false); r.code != 303 {
+		t.Fatalf("off: %d", r.code)
+	}
+	if u, _ := e.svc.UserBySubject(ctx, "j"); u.TOTPOn() {
+		t.Fatal("still on")
+	}
+
+	// sessions: sign out one, then everywhere else
+	var extra *service.Session
+	for i := 0; i < 2; i++ {
+		extra, err = e.svc.CreateSessionWith(ctx, sess.UserID, "10.0.4.31", "curl/8.4.0")
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	// this session, the one the recovery code started, and the two above
+	e.get("/account", false).has(t, `<h2>Sessions <span>4</span></h2>`, `<span class="vk-srow__title">curl</span>`, `data-confirm="Really sign out 3 sessions?"`)
+	if r := e.post("/account/sessions/"+extra.ID+"/delete", url.Values{}, false); r.code != 303 {
+		t.Fatalf("sign out one: %d", r.code)
+	}
+	if r := e.post("/account/sessions/"+sessCookie.Value+"/delete", url.Values{}, false); r.code != 404 {
+		t.Fatalf("sign out this session: %d", r.code)
+	}
+	if r := e.post("/account/sessions/others", url.Values{}, false); r.code != 303 || !strings.Contains(r.hdr.Get("Location"), "2+other+sessions") {
+		t.Fatalf("others: %d %s", r.code, r.hdr.Get("Location"))
+	}
+	if list, _ := e.svc.Sessions(ctx, sess.UserID); len(list) != 1 {
+		t.Fatalf("%d sessions left", len(list))
+	}
+}
+
+func TestTOTPRequiredGate(t *testing.T) {
+	cfg := config.Default().Auth
+	cfg.Local.TOTP = "required"
+	e := newEnvAuth(t, cfg)
+	if r := e.get(projPath, false); r.code != 303 || r.hdr.Get("Location") != "/account?setup=1" {
+		t.Fatalf("gate: %d %s", r.code, r.hdr.Get("Location"))
+	}
+	if r := e.post("/o/homelab/admin/members/invites", url.Values{"inv_for": {"x"}}, false); r.code != 303 {
+		t.Fatalf("gate on POST: %d", r.code)
+	}
+	e.get("/account?setup=1", false).has(t, `<h2>Set up two-factor sign-in</h2>`)
+	if r := e.get("/logout", false); r.code != 303 || r.hdr.Get("Location") != "/login" {
+		t.Fatalf("logout through the gate: %d", r.code)
 	}
 }

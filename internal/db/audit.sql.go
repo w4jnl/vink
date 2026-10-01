@@ -14,7 +14,7 @@ SELECT
   CAST(COALESCE(SUM(CASE WHEN act LIKE 'user.%' OR act LIKE 'member.%' OR act LIKE 'invite.%' OR act LIKE '%key.%' THEN 1 ELSE 0 END), 0) AS INTEGER) AS access,
   CAST(COALESCE(SUM(CASE WHEN act LIKE 'user.%' OR act LIKE 'member.%' OR act LIKE 'invite.%' OR act LIKE '%key.%' THEN 0 ELSE 1 END), 0) AS INTEGER) AS changes
 FROM audit a
-WHERE (?1 = '' OR a.org_id = ?1 OR (a.org_id IS NULL AND a.act LIKE 'user.sign%' AND a.target IN (SELECT u.subject FROM users u JOIN memberships m ON m.user_id = u.id WHERE m.org_id = ?1)))
+WHERE (?1 = '' OR a.org_id = ?1 OR (a.org_id IS NULL AND (a.act LIKE 'user.sign%' OR a.act LIKE 'user.totp_%' OR a.act IN ('user.recovery_codes', 'user.password', 'user.profile')) AND a.target IN (SELECT u.subject FROM users u JOIN memberships m ON m.user_id = u.id WHERE m.org_id = ?1)))
   AND (?2 = '' OR a.project_id = ?2)
   AND (?3 = 0 OR a.project_id IS NULL)
   AND (?4 = 0 OR project_id IS NOT NULL)
@@ -131,7 +131,7 @@ func (q *Queries) InsertAudit(ctx context.Context, arg InsertAuditParams) error 
 const listAudit = `-- name: ListAudit :many
 SELECT a.id, a.at, 'audit' AS source, a.actor, a.actor_kind, a.actor_id, a.org_id, a.project_id, a.act, a.target, a.target_id, a.spec_before, a.spec_after, a.detail, a.via, a.request_id, a.remote_addr
 FROM audit a
-WHERE (?1 = '' OR a.org_id = ?1 OR (a.org_id IS NULL AND a.act LIKE 'user.sign%' AND a.target IN (SELECT u.subject FROM users u JOIN memberships m ON m.user_id = u.id WHERE m.org_id = ?1)))
+WHERE (?1 = '' OR a.org_id = ?1 OR (a.org_id IS NULL AND (a.act LIKE 'user.sign%' OR a.act LIKE 'user.totp_%' OR a.act IN ('user.recovery_codes', 'user.password', 'user.profile')) AND a.target IN (SELECT u.subject FROM users u JOIN memberships m ON m.user_id = u.id WHERE m.org_id = ?1)))
   AND (?2 = '' OR a.project_id = ?2)
   AND (?3 = 0 OR a.project_id IS NULL)
   AND (?4 = 0 OR a.project_id IS NOT NULL)
@@ -192,8 +192,9 @@ type ListAuditRow struct {
 
 // tenancy: root (the service scopes by org_id and project_id below)
 // The log: admin actions from audit and state flips from events, newest
-// first, 51 rows so the caller knows whether an older page exists. Sign-ins
-// carry no org; an org's log shows those of its members.
+// first, 51 rows so the caller knows whether an older page exists. Account
+// rows (sign-ins, two-factor, passwords) carry no org; an org's log shows
+// those of its members.
 func (q *Queries) ListAudit(ctx context.Context, arg ListAuditParams) ([]ListAuditRow, error) {
 	rows, err := q.db.QueryContext(ctx, listAudit,
 		arg.OrgID,
@@ -249,7 +250,7 @@ func (q *Queries) ListAudit(ctx context.Context, arg ListAuditParams) ([]ListAud
 
 const listAuditActors = `-- name: ListAuditActors :many
 SELECT DISTINCT a.actor FROM audit a
-WHERE (?1 = '' OR a.org_id = ?1 OR (a.org_id IS NULL AND a.act LIKE 'user.sign%' AND a.target IN (SELECT u.subject FROM users u JOIN memberships m ON m.user_id = u.id WHERE m.org_id = ?1)))
+WHERE (?1 = '' OR a.org_id = ?1 OR (a.org_id IS NULL AND (a.act LIKE 'user.sign%' OR a.act LIKE 'user.totp_%' OR a.act IN ('user.recovery_codes', 'user.password', 'user.profile')) AND a.target IN (SELECT u.subject FROM users u JOIN memberships m ON m.user_id = u.id WHERE m.org_id = ?1)))
   AND (?2 = '' OR a.project_id = ?2)
   AND at >= ?3
 ORDER BY actor

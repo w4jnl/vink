@@ -492,6 +492,10 @@ func (h *Web) acceptInvite(c *reqCtx) error {
 	if _, err := h.authn.Login(c.w, c.r, values["username"], password); err != nil {
 		return err
 	}
+	if h.authn.TOTPRequired() {
+		http.Redirect(c.w, c.r, "/account?setup=1", http.StatusSeeOther)
+		return nil
+	}
 	http.Redirect(c.w, c.r, "/", http.StatusSeeOther)
 	return nil
 }

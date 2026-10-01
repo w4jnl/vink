@@ -32,6 +32,9 @@ const CookieName = "vink_session"
 const (
 	CSRFHeader = "X-CSRF-Token"
 	CSRFField  = "_csrf"
+	// ChallengeCookie carries the sign-in challenge between the password
+	// and the code step.
+	ChallengeCookie = "vink_login"
 )
 
 // Principal is an authenticated person.
@@ -108,6 +111,13 @@ func New(svc *service.Service, cfg config.Auth, baseURL string, log *slog.Logger
 	}
 	return a, nil
 }
+
+// ErrNeedsCode says the password matched and the code step comes next;
+// the challenge cookie is set.
+var ErrNeedsCode = errors.New("two-factor code needed")
+
+// TOTPRequired reports whether every local account must have two-factor.
+func (a *Authenticator) TOTPRequired() bool { return a.cfg.Local.TOTP == "required" }
 
 // LocalEnabled reports whether the password form is available.
 func (a *Authenticator) LocalEnabled() bool { return a.cfg.Local.Enabled }
@@ -304,9 +314,11 @@ func (a *Authenticator) fromSession(r *http.Request) (*Principal, error) {
 	return &Principal{User: *user, InstanceAdmin: user.InstanceAdmin, Memberships: memberships, Session: sess, Source: "session"}, nil
 }
 
-// Login verifies a local password, rate-limited per IP and per subject,
-// and starts a fresh session (any previous cookie is replaced).
-func (a *Authenticator) Login(w http.ResponseWriter, r *http.Request, subject, password string) (*Principal, error) {
+// LoginNext verifies a local password, rate-limited per IP and per
+// subject, and starts a fresh session (any previous cookie is replaced),
+// or opens the code step when the account has two-factor on. next is
+// where the person goes afterwards.
+func (a *Authenticator) LoginNext(w http.ResponseWriter, r *http.Request, subject, password, next string) (*Principal, error) {
 	if !a.cfg.Local.Enabled {
 		return nil, domain.ErrForbidden
 	}
@@ -324,6 +336,26 @@ func (a *Authenticator) Login(w http.ResponseWriter, r *http.Request, subject, p
 		_ = a.svc.RecordSignIn(ctx, nil, subject, "password", false)
 		return nil, err
 	}
+	if user.TOTPOn() {
+		id, err := a.svc.StartChallenge(ctx, user.ID, middleware.ClientIP(r), r.UserAgent(), next)
+		if err != nil {
+			return nil, err
+		}
+		a.setNamedCookie(w, ChallengeCookie, id, a.now().Add(service.ChallengeTTL))
+		return nil, ErrNeedsCode
+	}
+	return a.startSession(w, r, user, "password", nil)
+}
+
+// Login is LoginNext with the home page as the destination.
+func (a *Authenticator) Login(w http.ResponseWriter, r *http.Request, subject, password string) (*Principal, error) {
+	return a.LoginNext(w, r, subject, password, "/")
+}
+
+// startSession replaces any session cookie with a fresh session and
+// writes the sign-in to the audit log.
+func (a *Authenticator) startSession(w http.ResponseWriter, r *http.Request, user *domain.User, method string, extra map[string]any) (*Principal, error) {
+	ctx := r.Context()
 	if old, err := r.Cookie(CookieName); err == nil && old.Value != "" {
 		_ = a.svc.DeleteSession(ctx, old.Value)
 	}
@@ -336,11 +368,50 @@ func (a *Authenticator) Login(w http.ResponseWriter, r *http.Request, subject, p
 	if err != nil {
 		return nil, err
 	}
-	a.log.Info("login", "subject", user.Subject, "ip", middleware.ClientIP(r))
-	if err := a.svc.RecordSignIn(ctx, user, user.Subject, "password", true); err != nil {
+	a.log.Info("login", "subject", user.Subject, "method", method, "ip", middleware.ClientIP(r))
+	if err := a.svc.RecordSignInDetail(ctx, user, user.Subject, method, true, extra); err != nil {
 		return nil, err
 	}
 	return &Principal{User: *user, InstanceAdmin: user.InstanceAdmin, Memberships: memberships, Session: sess, Source: "session"}, nil
+}
+
+// Challenge returns the open code step of this browser, if any.
+func (a *Authenticator) Challenge(r *http.Request) (*service.LoginChallenge, error) {
+	c, err := r.Cookie(ChallengeCookie)
+	if err != nil || c.Value == "" {
+		return nil, domain.NotFound("sign-in")
+	}
+	return a.svc.Challenge(r.Context(), c.Value)
+}
+
+// CompleteChallenge checks the code (from the app or a recovery code) and
+// starts the session. A wrong code is ErrUnauthorized; too many wrong
+// codes end the attempt with service.ErrCodeLocked and clear the cookie.
+func (a *Authenticator) CompleteChallenge(w http.ResponseWriter, r *http.Request, code string) (*Principal, string, error) {
+	c, err := r.Cookie(ChallengeCookie)
+	if err != nil || c.Value == "" {
+		return nil, "", domain.NotFound("sign-in")
+	}
+	ctx := r.Context()
+	res, err := a.svc.CompleteChallenge(ctx, c.Value, code)
+	if err != nil {
+		if errors.Is(err, service.ErrCodeLocked) || errors.Is(err, domain.ErrNotFound) {
+			a.setNamedCookie(w, ChallengeCookie, "", time.Unix(0, 0))
+		}
+		if errors.Is(err, domain.ErrUnauthorized) || errors.Is(err, service.ErrCodeLocked) {
+			if ch, cerr := a.svc.Challenge(ctx, c.Value); cerr == nil {
+				_ = a.svc.RecordSignIn(ctx, nil, ch.Subject, "totp", false)
+			}
+		}
+		return nil, "", err
+	}
+	a.setNamedCookie(w, ChallengeCookie, "", time.Unix(0, 0))
+	var extra map[string]any
+	if res.Method == "recovery" {
+		extra = map[string]any{"left": res.Left}
+	}
+	p, err := a.startSession(w, r, res.User, res.Method, extra)
+	return p, res.Next, err
 }
 
 // Logout ends the session and clears the cookie.
@@ -358,8 +429,12 @@ func (a *Authenticator) Logout(w http.ResponseWriter, r *http.Request) error {
 }
 
 func (a *Authenticator) setCookie(w http.ResponseWriter, value string, exp time.Time) {
+	a.setNamedCookie(w, CookieName, value, exp)
+}
+
+func (a *Authenticator) setNamedCookie(w http.ResponseWriter, name, value string, exp time.Time) {
 	c := &http.Cookie{ //nolint:gosec // G124: Secure follows server.base_url's scheme; plain http is legitimate on a LAN install
-		Name: CookieName, Value: value, Path: "/", HttpOnly: true, Secure: a.secure, SameSite: http.SameSiteLaxMode, Expires: exp,
+		Name: name, Value: value, Path: "/", HttpOnly: true, Secure: a.secure, SameSite: http.SameSiteLaxMode, Expires: exp,
 	}
 	if value == "" {
 		c.MaxAge = -1

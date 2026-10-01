@@ -10,6 +10,7 @@ import (
 
 type Querier interface {
 	AckIncident(ctx context.Context, arg AckIncidentParams) (int64, error)
+	BumpLoginChallenge(ctx context.Context, id string) (int64, error)
 	// tenancy: root (agent gateway)
 	ClearAgentMonitors(ctx context.Context, agentID *string) (int64, error)
 	// tenancy: org
@@ -32,6 +33,7 @@ type Querier interface {
 	// tenancy: root (metrics endpoint)
 	CountPendingDeliveries(ctx context.Context) (int64, error)
 	CountProjects(ctx context.Context, orgID string) (int64, error)
+	CountRecoveryCodes(ctx context.Context, userID string) (CountRecoveryCodesRow, error)
 	CountRoutesForChannel(ctx context.Context, arg CountRoutesForChannelParams) (int64, error)
 	// tenancy: root (the service scopes by org_id and project_id)
 	CountStateEvents(ctx context.Context, arg CountStateEventsParams) (int64, error)
@@ -42,6 +44,7 @@ type Querier interface {
 	CreateChannel(ctx context.Context, arg CreateChannelParams) (Channel, error)
 	// tenancy: org
 	CreateInvite(ctx context.Context, arg CreateInviteParams) (Invite, error)
+	CreateLoginChallenge(ctx context.Context, arg CreateLoginChallengeParams) error
 	CreateMaintenance(ctx context.Context, arg CreateMaintenanceParams) (Maintenance, error)
 	CreateMonitor(ctx context.Context, arg CreateMonitorParams) (Monitor, error)
 	CreateOrg(ctx context.Context, arg CreateOrgParams) (Org, error)
@@ -57,10 +60,12 @@ type Querier interface {
 	// tenancy: root (retention job)
 	DeleteBodiesBefore(ctx context.Context, createdAt int64) (int64, error)
 	DeleteChannel(ctx context.Context, arg DeleteChannelParams) (int64, error)
+	DeleteExpiredLoginChallenges(ctx context.Context, expiresAt int64) (int64, error)
 	DeleteExpiredSessions(ctx context.Context, expiresAt int64) (int64, error)
 	DeleteHeaderMembershipsForUser(ctx context.Context, userID string) error
 	// tenancy: org
 	DeleteInvite(ctx context.Context, arg DeleteInviteParams) (int64, error)
+	DeleteLoginChallenge(ctx context.Context, id string) error
 	DeleteMaintenance(ctx context.Context, arg DeleteMaintenanceParams) (int64, error)
 	DeleteMembership(ctx context.Context, arg DeleteMembershipParams) (int64, error)
 	DeleteMonitor(ctx context.Context, arg DeleteMonitorParams) (int64, error)
@@ -68,6 +73,7 @@ type Querier interface {
 	DeleteObservationsBefore(ctx context.Context, at int64) (int64, error)
 	DeleteOrg(ctx context.Context, id string) (int64, error)
 	DeleteOrphanRoutes(ctx context.Context, projectID string) (int64, error)
+	DeleteOtherSessions(ctx context.Context, arg DeleteOtherSessionsParams) (int64, error)
 	DeleteProject(ctx context.Context, arg DeleteProjectParams) (int64, error)
 	// tenancy: root (follows the user)
 	DeleteRecoveryCodes(ctx context.Context, userID string) error
@@ -76,6 +82,7 @@ type Querier interface {
 	DeleteSession(ctx context.Context, id string) error
 	DeleteStatusPage(ctx context.Context, arg DeleteStatusPageParams) (int64, error)
 	DeleteUserSessions(ctx context.Context, userID string) error
+	EnableUserTOTP(ctx context.Context, arg EnableUserTOTPParams) error
 	GetAPIKey(ctx context.Context, arg GetAPIKeyParams) (ApiKey, error)
 	// tenancy: org
 	GetAgent(ctx context.Context, arg GetAgentParams) (Agent, error)
@@ -92,6 +99,7 @@ type Querier interface {
 	GetInvite(ctx context.Context, arg GetInviteParams) (Invite, error)
 	// tenancy: root (the link's token establishes the org)
 	GetInviteByHash(ctx context.Context, tokenHash string) (GetInviteByHashRow, error)
+	GetLoginChallenge(ctx context.Context, arg GetLoginChallengeParams) (LoginChallenge, error)
 	GetMaintenance(ctx context.Context, arg GetMaintenanceParams) (Maintenance, error)
 	GetMembership(ctx context.Context, arg GetMembershipParams) (Membership, error)
 	GetMonitor(ctx context.Context, arg GetMonitorParams) (Monitor, error)
@@ -125,6 +133,7 @@ type Querier interface {
 	InsertDelivery(ctx context.Context, arg InsertDeliveryParams) error
 	InsertEvent(ctx context.Context, arg InsertEventParams) error
 	InsertObservation(ctx context.Context, arg InsertObservationParams) error
+	InsertRecoveryCode(ctx context.Context, arg InsertRecoveryCodeParams) error
 	InsertRouteChannel(ctx context.Context, arg InsertRouteChannelParams) error
 	// tenancy: root (dispatcher, repeat_every)
 	LastDeliveryForRoute(ctx context.Context, arg LastDeliveryForRouteParams) (Delivery, error)
@@ -147,8 +156,9 @@ type Querier interface {
 	ListAllProjects(ctx context.Context) ([]ListAllProjectsRow, error)
 	// tenancy: root (the service scopes by org_id and project_id below)
 	// The log: admin actions from audit and state flips from events, newest
-	// first, 51 rows so the caller knows whether an older page exists. Sign-ins
-	// carry no org; an org's log shows those of its members.
+	// first, 51 rows so the caller knows whether an older page exists. Account
+	// rows (sign-ins, two-factor, passwords) carry no org; an org's log shows
+	// those of its members.
 	ListAudit(ctx context.Context, arg ListAuditParams) ([]ListAuditRow, error)
 	// tenancy: root (the service scopes by org_id and project_id)
 	ListAuditActors(ctx context.Context, arg ListAuditActorsParams) ([]string, error)
@@ -188,6 +198,7 @@ type Querier interface {
 	// tenancy: root (the user's memberships are the scope)
 	ListProjectsForUser(ctx context.Context, userID string) ([]ListProjectsForUserRow, error)
 	ListRecentDeliveries(ctx context.Context, arg ListRecentDeliveriesParams) ([]ListRecentDeliveriesRow, error)
+	ListRecoveryCodes(ctx context.Context, userID string) ([]ListRecoveryCodesRow, error)
 	// tenancy: root (agent gateway assigns per org)
 	ListRemoteMonitors(ctx context.Context, orgID string) ([]Monitor, error)
 	ListRouteChannels(ctx context.Context, projectID string) ([]ListRouteChannelsRow, error)
@@ -197,6 +208,7 @@ type Querier interface {
 	ListStatusPages(ctx context.Context, projectID string) ([]StatusPage, error)
 	// tenancy: root (offline sweep)
 	ListUnassignedRemoteMonitors(ctx context.Context, updatedAt int64) ([]Monitor, error)
+	ListUserSessions(ctx context.Context, arg ListUserSessionsParams) ([]Session, error)
 	ListUsers(ctx context.Context) ([]User, error)
 	// tenancy: root (instance admin)
 	ListUsersWithSeen(ctx context.Context) ([]ListUsersWithSeenRow, error)
@@ -231,6 +243,10 @@ type Querier interface {
 	// tenancy: root (instance admin)
 	SetUserDisabled(ctx context.Context, arg SetUserDisabledParams) error
 	SetUserPassword(ctx context.Context, arg SetUserPasswordParams) error
+	SetUserTOTPLastStep(ctx context.Context, arg SetUserTOTPLastStepParams) error
+	// Account: two-factor secrets, recovery codes, sign-in challenges and a
+	// person's own sessions. All keyed by user, never by org.
+	SetUserTOTPSecret(ctx context.Context, arg SetUserTOTPSecretParams) error
 	// tenancy: root (called after the key was verified)
 	TouchAPIKey(ctx context.Context, arg TouchAPIKeyParams) error
 	// tenancy: root (the gateway acts for a verified agent)
@@ -251,6 +267,7 @@ type Querier interface {
 	UpsertMembership(ctx context.Context, arg UpsertMembershipParams) error
 	// tenancy: root (the link's token establishes the org; the row must still be open)
 	UseInvite(ctx context.Context, arg UseInviteParams) (int64, error)
+	UseRecoveryCode(ctx context.Context, arg UseRecoveryCodeParams) (int64, error)
 	// tenancy: root (the link's token establishes the user)
 	UseResetToken(ctx context.Context, arg UseResetTokenParams) (int64, error)
 }

@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/w4jnl/vink/internal/auth"
 	"github.com/w4jnl/vink/internal/domain"
 	"github.com/w4jnl/vink/internal/http/web/ui"
 	"github.com/w4jnl/vink/internal/http/web/view"
@@ -649,6 +650,10 @@ func (h *Web) resetPassword(c *reqCtx) error {
 		return err
 	}
 	if _, err := h.authn.Login(c.w, c.r, u.Subject, password); err != nil {
+		if errors.Is(err, auth.ErrNeedsCode) {
+			http.Redirect(c.w, c.r, "/login/code", http.StatusSeeOther)
+			return nil
+		}
 		http.Redirect(c.w, c.r, "/login", http.StatusSeeOther)
 		return nil
 	}

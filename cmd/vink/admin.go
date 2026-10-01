@@ -451,7 +451,46 @@ func newAdminUserCmd(f *serverFlags) *cobra.Command {
 	}
 	revoke.Flags().StringVar(&revokeOrg, "org", "", "org slug (required)")
 	_ = revoke.MarkFlagRequired("org")
-	cmd.AddCommand(ls, promote, create, grant, revoke)
+	totpReset := &cobra.Command{
+		Use:   "totp-reset <user>",
+		Short: "Turn two-factor off for a user who lost the phone; they set it up again at the next sign-in",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return f.withService(cmd, func(svc *service.Service, _ *config.Config) error {
+				u, err := svc.UserBySubject(cmd.Context(), args[0])
+				if err != nil {
+					return err
+				}
+				if err := svc.ResetTOTP(cmd.Context(), adminScope, u.ID); err != nil {
+					return err
+				}
+				fmt.Fprintf(cmd.OutOrStdout(), "two-factor is off for %s\n", u.Subject)
+				return nil
+			})
+		},
+	}
+
+	resetLink := &cobra.Command{
+		Use:   "reset-link <user>",
+		Short: "Print a one-time password reset link for a local account, valid for a day",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return f.withService(cmd, func(svc *service.Service, cfg *config.Config) error {
+				u, err := svc.UserBySubject(cmd.Context(), args[0])
+				if err != nil {
+					return err
+				}
+				token, expires, err := svc.CreateResetLink(cmd.Context(), adminScope, u.ID)
+				if err != nil {
+					return err
+				}
+				fmt.Fprintf(cmd.OutOrStdout(), "%s/reset/%s\nworks once, until %s\n", strings.TrimRight(cfg.Server.BaseURL, "/"), token, expires.UTC().Format(time.RFC3339))
+				return nil
+			})
+		},
+	}
+
+	cmd.AddCommand(ls, promote, create, grant, revoke, totpReset, resetLink)
 	return cmd
 }
 

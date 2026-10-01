@@ -60,7 +60,7 @@ func (s *Service) Session(ctx context.Context, id string) (*Session, error) {
 	if err != nil {
 		return nil, notFoundIfNoRows(err, "session")
 	}
-	sess := &Session{ID: row.ID, UserID: row.UserID, CSRF: row.Csrf, ExpiresAt: domain.FromMillis(row.ExpiresAt), LastProjectID: strp(row.LastProjectID), CreatedAt: domain.FromMillis(row.CreatedAt), UserAgent: row.UserAgent, IP: row.Ip, LastSeenAt: domain.FromMillisPtr(row.LastSeenAt)}
+	sess := sessionFromRow(row)
 	if sess.ExpiresAt.Sub(now) < SessionTTL-24*time.Hour {
 		sess.ExpiresAt = now.Add(SessionTTL)
 		if err := s.db.Write().TouchSession(ctx, db.TouchSessionParams{ExpiresAt: domain.Millis(sess.ExpiresAt), ID: id}); err != nil {
@@ -68,6 +68,10 @@ func (s *Service) Session(ctx context.Context, id string) (*Session, error) {
 		}
 	}
 	return sess, nil
+}
+
+func sessionFromRow(row db.Session) *Session {
+	return &Session{ID: row.ID, UserID: row.UserID, CSRF: row.Csrf, ExpiresAt: domain.FromMillis(row.ExpiresAt), LastProjectID: strp(row.LastProjectID), CreatedAt: domain.FromMillis(row.CreatedAt), UserAgent: row.UserAgent, IP: row.Ip, LastSeenAt: domain.FromMillisPtr(row.LastSeenAt)}
 }
 
 // SeenSession records activity on a session at most once a minute, with
@@ -96,5 +100,6 @@ func (s *Service) SetSessionProject(ctx context.Context, sessionID, projectID st
 
 // DeleteExpiredSessions is the housekeeping call.
 func (s *Service) DeleteExpiredSessions(ctx context.Context) (int64, error) {
+	_, _ = s.db.Write().DeleteExpiredLoginChallenges(ctx, domain.Millis(s.now()))
 	return s.db.Write().DeleteExpiredSessions(ctx, domain.Millis(s.now()))
 }

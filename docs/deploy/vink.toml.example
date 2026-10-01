@@ -49,6 +49,7 @@ offline_after = "2m"                   # an agent quiet this long turns its moni
 
 [auth.local]
 enabled = true                         # password sign-in; keep on for break-glass even behind a proxy
+totp = "optional"                      # or "required": a local account without two-factor is sent to set it up first
 
 [auth.proxy]
 enabled = false                        # trusted reverse-proxy identity headers (Authelia, oauth2-proxy, Apache + Kerberos)

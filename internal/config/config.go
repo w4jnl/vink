@@ -99,6 +99,9 @@ type Auth struct {
 
 type AuthLocal struct {
 	Enabled bool `toml:"enabled"`
+	// TOTP is optional (people turn two-factor on themselves) or required
+	// (a local account without it is sent to the setup page first).
+	TOTP string `toml:"totp"`
 }
 
 type AuthProxy struct {
@@ -151,7 +154,7 @@ func Default() *Config {
 		Outbound:  Outbound{AllowPrivateTargets: true},
 		Log:       Log{Level: "info", Format: "json"},
 		Auth: Auth{
-			Local: AuthLocal{Enabled: true},
+			Local: AuthLocal{Enabled: true, TOTP: "optional"},
 			Proxy: AuthProxy{ //nolint:gosec // G101: header names, not credentials
 				TrustedCIDRs:       []string{"127.0.0.1/32", "::1/128"},
 				SecretHeader:       "X-Auth-Proxy-Secret",
@@ -283,6 +286,11 @@ func (c *Config) Validate() error {
 	}
 	if !c.Auth.Local.Enabled && !c.Auth.Proxy.Enabled {
 		fail("auth: enable auth.local or auth.proxy, otherwise nobody can sign in")
+	}
+	switch c.Auth.Local.TOTP {
+	case "optional", "required":
+	default:
+		fail("auth.local.totp must be optional or required, got %q", c.Auth.Local.TOTP)
 	}
 	if c.Auth.Proxy.Enabled {
 		if c.Auth.Proxy.Secret == "" {

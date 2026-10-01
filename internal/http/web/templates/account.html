@@ -1,0 +1,37 @@
+{{define "content"}}<div class="vk-page vk-page--full" id="page"><main class="vk-main vk-narrow" id="account">
+<div class="vk-main__head"><h1>Account</h1><span class="vk-muted vk-mono">{{.Subject}} · {{.Source}}</span></div>
+{{if .Flash}}{{notice .Flash.Tone "" .Flash.Text ""}}{{end}}
+<section class="vk-section"><h2>Profile</h2>
+<form id="profile-form" class="vk-sr" method="post" action="/account/profile"><input type="hidden" name="_csrf" value="{{.CSRF}}"></form>
+{{fieldrow (list (field (dict "ID" "acc_name" "Label" "Name" "Value" .Name "Disabled" .ProfileLocked "Error" .Errors.acc_name "Attrs" (attrs "form" "profile-form"))) (field (dict "ID" "acc_email" "Label" "Email" "Value" .Email "Mono" true "Disabled" .ProfileLocked "Hint" .ProfileHint "Error" .Errors.acc_email "Attrs" (attrs "form" "profile-form")))) false}}
+{{if not .ProfileLocked}}<div class="vk-actions">{{button (dict "Label" "Save profile" "Type" "submit" "Attrs" (attrs "form" "profile-form"))}}</div>{{end}}</section>
+{{if .Local}}<section class="vk-section"><h2>Password</h2>
+<form class="vk-inlineform vk-inlineform--even" action="/account/password" method="post"><input type="hidden" name="_csrf" value="{{.CSRF}}">{{field (dict "ID" "pw_old" "Label" "Current password" "Type" "password" "Autocomplete" "current-password" "Error" .Errors.pw_old)}}{{field (dict "ID" "pw_new" "Label" "New password" "Type" "password" "Autocomplete" "new-password" "Error" .Errors.pw_new)}}{{button (dict "Label" "Change password" "Type" "submit")}}</form>
+<p class="vk-field__hint">12 characters or more. Changing it signs out your other sessions.</p></section>
+<section class="vk-section"><h2>Two-factor sign-in</h2><p class="vk-lede">Ask for a code from an authenticator app after the password. People who sign in through the proxy or OIDC get two-factor from their identity provider instead.</p>
+{{if .Setup}}{{template "totp-setup" .}}{{else if .Off}}{{template "totp-off" .}}{{else}}<form id="codes-form" class="vk-sr" method="post" action="/account/totp/codes"><input type="hidden" name="_csrf" value="{{.CSRF}}"></form>
+<div class="vk-srows">
+{{settingsrow (dict "Title" "Authenticator app" "Sub" .TOTPSub "Cells" .TOTPCells "Actions" .TOTPActions)}}
+{{if .Codes}}<div class="vk-srow__note">{{notice "ok" .CodesTitle "Keep these recovery codes somewhere safe, away from your phone. Each one works once, and this is the only time vink shows them." (recoverycodes .Codes)}}</div>{{end}}
+</div>{{end}}
+</section>{{end}}
+{{if .HasSessions}}<section class="vk-section"><h2>Sessions <span>{{len .Sessions}}</span></h2>
+<div class="vk-srows">
+{{range .Sessions}}{{settingsrow (dict "TitleHTML" .TitleHTML "Sub" .Sub "Cells" .Cells "Actions" .Actions)}}
+{{end}}</div>
+{{if .Others}}<form method="post" action="/account/sessions/others"><input type="hidden" name="_csrf" value="{{.CSRF}}"><div class="vk-actions">{{button (dict "Label" "Sign out everywhere else" "Type" "submit" "Confirm" .OthersConfirm)}}</div></form>{{end}}</section>{{end}}
+</main></div>{{end}}
+
+{{define "totp-setup"}}<form id="totp-form" class="vk-sr" method="post" action="/account/totp/confirm"><input type="hidden" name="_csrf" value="{{.CSRF}}"></form>
+<section class="vk-panel"><div class="vk-panel__head"><h2>Set up two-factor sign-in</h2></div><div class="vk-two">
+{{qr .Setup.QR .Setup.Label "Scan with an authenticator app."}}
+<div class="vk-form">
+<div class="vk-field"><span class="vk-field__label">Or type this key</span><div class="vk-field__row"><code class="vk-ping__url">{{.Setup.Key}}</code><button type="button" class="vk-btn vk-copy" data-copy="{{.Setup.KeyRaw}}">Copy</button></div><span class="vk-field__hint">{{.Setup.Hint}}</span></div>
+{{field (dict "ID" "otp" "Label" "Code from the app" "Otp" true "Placeholder" "000000" "Hint" "Proves the app and vink agree on the time." "Error" .Setup.Error "Attrs" (attrs "form" "totp-form" "required" "" "autofocus" ""))}}
+</div>
+</div><div class="vk-actions">{{button (dict "Label" "Turn on two-factor" "Variant" "primary" "Type" "submit" "Attrs" (attrs "form" "totp-form"))}}{{button (dict "Label" "Cancel" "Href" "/account")}}</div></section>{{end}}
+
+{{define "totp-off"}}<form id="off-form" class="vk-sr" method="post" action="/account/totp/off"><input type="hidden" name="_csrf" value="{{.CSRF}}"></form>
+<section class="vk-panel"><div class="vk-panel__head"><h2>Turn off two-factor sign-in</h2><p>Your password confirms it. The recovery codes stop working.</p></div>
+{{field (dict "ID" "password" "Label" "Password" "Type" "password" "Autocomplete" "current-password" "Error" .OffError "Attrs" (attrs "form" "off-form" "required" "" "autofocus" ""))}}
+<div class="vk-actions">{{button (dict "Label" "Turn off two-factor" "Variant" "danger" "Type" "submit" "Attrs" (attrs "form" "off-form"))}}{{button (dict "Label" "Cancel" "Href" "/account")}}</div></section>{{end}}

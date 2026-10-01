@@ -157,6 +157,12 @@ const MetaLastBackup = "last_backup_at"
 // RecordSignIn writes a sign-in (method password, totp, recovery, oidc)
 // or a failed one, which carries the subject tried and no user.
 func (s *Service) RecordSignIn(ctx context.Context, u *domain.User, subject, method string, ok bool) error {
+	return s.RecordSignInDetail(ctx, u, subject, method, ok, nil)
+}
+
+// RecordSignInDetail is RecordSignIn with extra facts, such as how many
+// recovery codes are left.
+func (s *Service) RecordSignInDetail(ctx context.Context, u *domain.User, subject, method string, ok bool, extra map[string]any) error {
 	sc := domain.Scope{Actor: "user:" + subject}
 	action := "user.signin"
 	if u != nil {
@@ -165,8 +171,12 @@ func (s *Service) RecordSignIn(ctx context.Context, u *domain.User, subject, met
 	if !ok {
 		action = "user.signin_failed"
 	}
+	detail := map[string]any{"method": method}
+	for k, v := range extra {
+		detail[k] = v
+	}
 	return s.db.Tx(ctx, func(q *db.Queries) error {
-		return s.record(ctx, q, sc, audit.Entry{Action: action, Target: subject, Detail: map[string]any{"method": method}})
+		return s.record(ctx, q, sc, audit.Entry{Action: action, Target: subject, Detail: detail})
 	})
 }
 

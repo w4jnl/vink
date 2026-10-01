@@ -62,7 +62,17 @@ func (h *Web) Mount(mux *http.ServeMux) {
 	mux.Handle("GET /login", h.public(h.loginForm))
 	mux.Handle("POST /login", h.public(h.login))
 	mux.Handle("POST /logout", h.user(h.logout))
+	mux.Handle("GET /login/code", h.public(h.codeForm))
+	mux.Handle("POST /login/code", h.public(h.code))
 	mux.Handle("GET /logout", h.user(h.logout))
+	mux.Handle("GET /account", h.user(h.account))
+	mux.Handle("POST /account/profile", h.user(h.saveProfile))
+	mux.Handle("POST /account/password", h.user(h.changePassword))
+	mux.Handle("POST /account/totp/confirm", h.user(h.confirmTOTP))
+	mux.Handle("POST /account/totp/codes", h.user(h.newRecoveryCodes))
+	mux.Handle("POST /account/totp/off", h.user(h.disableTOTP))
+	mux.Handle("POST /account/sessions/{id}/delete", h.user(h.deleteSession))
+	mux.Handle("POST /account/sessions/others", h.user(h.deleteOtherSessions))
 	mux.Handle("GET /admin", h.instanceAdmin(h.instanceHome))
 	mux.Handle("GET /admin/{tab}", h.instanceAdmin(h.instanceTab))
 	mux.Handle("POST /admin/orgs", h.instanceAdmin(h.createOrgAdmin))
@@ -187,6 +197,13 @@ func (h *Web) user(fn handlerFn) http.Handler {
 		}
 		if c.r.Method != http.MethodGet && c.r.Method != http.MethodHead && !h.authn.CheckCSRF(c.r, c.principal) {
 			return errCSRF
+		}
+		// auth.local.totp = "required": a local account without two-factor
+		// sets it up before anything else
+		if h.authn.TOTPRequired() && c.principal.Session != nil && c.principal.User.Source == "local" && !c.principal.User.TOTPOn() &&
+			!strings.HasPrefix(c.r.URL.Path, "/account") && c.r.URL.Path != "/logout" {
+			http.Redirect(c.w, c.r, "/account?setup=1", http.StatusSeeOther)
+			return nil
 		}
 		return fn(c)
 	})
@@ -371,7 +388,7 @@ func (h *Web) menus(c *reqCtx, b *base) {
 	if p.InstanceAdmin {
 		role = "instance admin"
 	}
-	items := []ui.MenuItem{}
+	items := []ui.MenuItem{{Label: "Account", Href: "/account"}}
 	if p.InstanceAdmin {
 		items = append(items, ui.MenuItem{Label: "Instance admin", Href: "/admin/orgs"})
 	}

@@ -87,8 +87,10 @@ func NewTemplates(static *Static) (*Templates, error) {
 		"disclosure": func(title, summary string, body any, open bool) ui.HTML {
 			return ui.Disclosure(title, summary, toHTML(body), open)
 		},
-		"notice": func(tone, title, text string, extra any) ui.HTML { return ui.Notice(tone, title, text, toHTML(extra)) },
-		"code":   ui.Code,
+		"notice":        func(tone, title, text string, extra any) ui.HTML { return ui.Notice(tone, title, text, toHTML(extra)) },
+		"qr":            func(svg any, label, caption string) ui.HTML { return ui.Qr(toHTML(svg), label, caption) },
+		"recoverycodes": ui.RecoveryCodes,
+		"code":          ui.Code,
 		"panel": func(title, note string, body, actions any, id string) ui.HTML {
 			return ui.Panel(title, note, toHTML(body), toHTML(actions), id)
 		},

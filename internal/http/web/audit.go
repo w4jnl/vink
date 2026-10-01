@@ -506,10 +506,28 @@ func auditText(e service.AuditEntry, now time.Time) ui.HTML {
 	case "user.reset_link":
 		return ui.HTML("made a reset link for " + who)
 	case "user.signin":
-		return ui.HTML("signed in " + esc(signInMethod(detailString(e.Detail, "method"))))
+		s := "signed in " + esc(signInMethod(detailString(e.Detail, "method")))
+		if detailString(e.Detail, "method") == "recovery" {
+			s += "; " + strconv.Itoa(detailInt(e.Detail, "left")) + " left"
+		}
+		return ui.HTML(s)
+	case "user.totp_on":
+		return ui.HTML("turned on two-factor sign-in")
+	case "user.totp_off":
+		return ui.HTML("turned off two-factor sign-in")
+	case "user.recovery_codes":
+		return ui.HTML("made a new set of recovery codes")
+	case "user.profile":
+		if fields != "" {
+			return ui.HTML("changed " + esc(fields) + " of the account " + who)
+		}
+		return ui.HTML("changed the account " + who)
 	case "user.signin_failed":
 		return ui.HTML("failed to sign in as " + who + " " + esc(signInMethod(detailString(e.Detail, "method"))))
 	case "user.signout":
+		if n := detailInt(e.Detail, "others"); n > 0 {
+			return ui.HTML("signed out " + strconv.Itoa(n) + " other " + pluralWord(n, "session"))
+		}
 		return ui.HTML("signed out")
 	}
 	if e.Source == "event" {
@@ -543,6 +561,13 @@ func auditText(e service.AuditEntry, now time.Time) ui.HTML {
 		return ui.HTML(s)
 	}
 	return ui.HTML(esc(strings.ReplaceAll(e.Action, ".", " ")) + " " + target)
+}
+
+func pluralWord(n int, word string) string {
+	if n == 1 {
+		return word
+	}
+	return word + "s"
 }
 
 func signInMethod(m string) string {

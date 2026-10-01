@@ -271,3 +271,26 @@ func TestAdminRefusesMissingDatabase(t *testing.T) {
 		t.Fatalf("error without the database: %d %s", code, errs)
 	}
 }
+
+func TestAdminUserBreakGlass(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "vink.db")
+	runCLI := func(stdin string, args ...string) (string, string, int) {
+		var out, errb bytes.Buffer
+		code := run(context.Background(), append([]string{"--color", "never"}, args...), strings.NewReader(stdin), &out, &errb)
+		return out.String(), errb.String(), code
+	}
+	if _, errs, code := runCLI("hunter2hunter2\n", "admin", "init", "--db", dbPath, "--org", "homelab", "--user", "j", "--password-stdin"); code != 0 {
+		t.Fatalf("init: %s", errs)
+	}
+	out, errs, code := runCLI("", "admin", "user", "totp-reset", "--db", dbPath, "j")
+	if code != 0 || !strings.Contains(out, "two-factor is off for j") {
+		t.Fatalf("totp-reset: %d %s %s", code, out, errs)
+	}
+	out, errs, code = runCLI("", "admin", "user", "reset-link", "--db", dbPath, "j")
+	if code != 0 || !strings.Contains(out, "http://localhost:8080/reset/rs_") || !strings.Contains(out, "works once, until") {
+		t.Fatalf("reset-link: %d %s %s", code, out, errs)
+	}
+	if _, errs, code := runCLI("", "admin", "user", "reset-link", "--db", dbPath, "nobody"); code == 0 || errs == "" {
+		t.Fatalf("unknown user: %d %s", code, errs)
+	}
+}
