@@ -1173,3 +1173,54 @@ func TestProjectsTab(t *testing.T) {
 		t.Fatalf("foreign org create: %d", r.code)
 	}
 }
+
+func TestSwitcherListsOrgsWithoutProjects(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	admin := domain.Scope{InstanceAdmin: true, Role: domain.RoleOwner}
+	empty, err := e.svc.CreateOrg(ctx, admin, "empty", "Empty")
+	if err != nil {
+		t.Fatal(err)
+	}
+	j, _ := e.svc.UserBySubject(ctx, "j")
+	if err := e.svc.SetMembership(ctx, admin, j.ID, empty.ID, domain.RoleAdmin); err != nil {
+		t.Fatal(err)
+	}
+	// the switcher shows the empty org with its admin items, before homelab's
+	p := e.get(projPath, false)
+	p.has(t, `<div class="vk-menu__label"><span>empty</span><span class="vk-tag">admin</span></div></div>`, `href="/o/empty/admin/projects?add=1"><span>New project</span>`, `href="/o/empty/admin/projects"><span>Org settings</span>`)
+	if strings.Index(p.body, "<span>empty</span>") > strings.Index(p.body, "<span>homelab</span>") {
+		t.Error("orgs are listed by slug")
+	}
+	// the chooser offers to add the first project
+	chooser := e.get("/projects", false)
+	chooser.has(t, `<a class="vk-row" href="/o/empty/admin/projects?add=1"><span class="vk-row__name"><span>Add the first project</span><span class="vk-row__slug">empty</span></span><span class="vk-row__data">no projects yet</span></a>`, `homelab / prod`)
+
+	// a viewer whose only org has no projects lands on the chooser, not the no-access page
+	v, _ := e.svc.CreateLocalUser(ctx, admin, "v", "v@example.com", "V", "correct horse", false)
+	_ = e.svc.SetMembership(ctx, admin, v.ID, empty.ID, domain.RoleViewer)
+	rec := httptest.NewRecorder()
+	if _, err := e.authn.Login(rec, httptest.NewRequest("POST", "/login", nil), "v", "correct horse"); err != nil {
+		t.Fatal(err)
+	}
+	e.cookie = rec.Result().Cookies()[0]
+	if r := e.get("/", false); r.code != 303 || r.hdr.Get("Location") != "/projects" {
+		t.Fatalf("viewer home: %d %s", r.code, r.hdr.Get("Location"))
+	}
+	r := e.get("/projects", false)
+	r.has(t, `empty has no projects yet. Ask an org admin to add one.`)
+	if strings.Contains(r.body, "New project") || strings.Contains(r.body, "Add the first project") {
+		t.Error("a viewer gets no add links")
+	}
+
+	// an instance admin sees every org, as owner
+	root, _ := e.svc.CreateLocalUser(ctx, admin, "root", "r@example.com", "Root", "correct horse", true)
+	_ = root
+	rec = httptest.NewRecorder()
+	if _, err := e.authn.Login(rec, httptest.NewRequest("POST", "/login", nil), "root", "correct horse"); err != nil {
+		t.Fatal(err)
+	}
+	e.cookie = rec.Result().Cookies()[0]
+	e.get("/projects", false).has(t, `href="/o/empty/admin/projects?add=1"`)
+	e.get(projPath, false).has(t, `<span>acme</span><span class="vk-tag">owner</span>`, `<span>empty</span><span class="vk-tag">owner</span>`, `<span>homelab</span><span class="vk-tag">owner</span>`, `href="/o/empty/admin/projects?add=1"><span>New project</span>`)
+}

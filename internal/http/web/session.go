@@ -16,7 +16,12 @@ func (h *Web) home(c *reqCtx) error {
 		return err
 	}
 	if len(list) == 0 {
-		return h.noAccess(c)
+		if len(h.orgsFor(c)) == 0 {
+			return h.noAccess(c)
+		}
+		// an org, but no project in it yet: the chooser says what to do
+		http.Redirect(c.w, c.r, "/projects", http.StatusSeeOther)
+		return nil
 	}
 	if c.principal.Session != nil && c.principal.Session.LastProjectID != "" {
 		for _, p := range list {
@@ -39,9 +44,16 @@ type projectRow struct {
 	Role                      domain.Role
 }
 
+// emptyOrg is an org the viewer is in that has no project yet; AddPath is
+// set when the viewer may add one.
+type emptyOrg struct {
+	Slug, AddPath string
+}
+
 type projectsData struct {
 	base
 	Projects []projectRow
+	Empty    []emptyOrg
 }
 
 func (h *Web) projects(c *reqCtx) error {
@@ -49,12 +61,25 @@ func (h *Web) projects(c *reqCtx) error {
 	if err != nil {
 		return err
 	}
-	if len(list) == 0 {
+	orgs := h.orgsFor(c)
+	if len(list) == 0 && len(orgs) == 0 {
 		return h.noAccess(c)
 	}
 	data := projectsData{base: h.baseFor(c, "Projects", "")}
+	seen := map[string]bool{}
 	for _, p := range list {
+		seen[p.OrgSlug] = true
 		data.Projects = append(data.Projects, projectRow{Name: p.Name, Slug: p.Slug, OrgSlug: p.OrgSlug, Path: "/o/" + p.OrgSlug + "/p/" + p.Slug, Role: p.Role})
+	}
+	for _, o := range orgs {
+		if seen[o.Slug] {
+			continue
+		}
+		e := emptyOrg{Slug: o.Slug}
+		if c.principal.InstanceAdmin || o.Role.AtLeast(domain.RoleAdmin) {
+			e.AddPath = "/o/" + o.Slug + "/admin/projects?add=1"
+		}
+		data.Empty = append(data.Empty, e)
 	}
 	return h.render(c, http.StatusOK, "projects", "layout", data)
 }

@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"sort"
 	"strings"
 	"time"
 
@@ -302,12 +303,18 @@ func (h *Web) menus(c *reqCtx, b *base) {
 			b.ProjectSlug, b.ProjectPath = "projects", "/projects"
 		}
 	}
+	// every org the viewer has a role in comes first, so an org without
+	// projects still shows with New project and Org settings
 	type orgGroup struct {
 		group ui.MenuGroup
 		role  domain.Role
 	}
 	var order []string
 	byOrg := map[string]*orgGroup{}
+	for _, o := range h.orgsFor(c) {
+		byOrg[o.Slug] = &orgGroup{group: ui.MenuGroup{Label: o.Slug, Role: string(o.Role)}, role: o.Role}
+		order = append(order, o.Slug)
+	}
 	for _, pr := range projects {
 		g, ok := byOrg[pr.OrgSlug]
 		if !ok {
@@ -456,4 +463,32 @@ func safeNext(s string) string {
 		return "/"
 	}
 	return s
+}
+
+// orgRef is one org the viewer can see, with the role there.
+type orgRef struct {
+	Slug, Name string
+	Role       domain.Role
+}
+
+// orgsFor lists the viewer's orgs by slug: every org for instance admins
+// (as owner), otherwise the memberships.
+func (h *Web) orgsFor(c *reqCtx) []orgRef {
+	p := c.principal
+	var out []orgRef
+	if p.InstanceAdmin {
+		orgs, err := h.svc.ListOrgs(c.r.Context(), domain.Scope{InstanceAdmin: true, Role: domain.RoleOwner, Actor: "user:" + p.User.Subject})
+		if err != nil {
+			return nil
+		}
+		for _, o := range orgs {
+			out = append(out, orgRef{Slug: o.Slug, Name: o.Name, Role: domain.RoleOwner})
+		}
+	} else {
+		for _, m := range p.Memberships {
+			out = append(out, orgRef{Slug: m.OrgSlug, Name: m.OrgName, Role: m.Role})
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Slug < out[j].Slug })
+	return out
 }
