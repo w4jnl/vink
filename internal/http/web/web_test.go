@@ -185,6 +185,56 @@ func TestLoginRedirectsAndSignsIn(t *testing.T) {
 	}
 }
 
+func TestTopBarMenusAndOrgShell(t *testing.T) {
+	e := newEnv(t)
+	e.monitor("job", "prod")
+	p := e.get(projPath, false)
+	p.has(t, `<details class="vk-popover"><summary class="vk-top__crumb" title="Switch project">homelab / <b>prod</b>`, `class="vk-menu"`, `<div class="vk-menu__label"><span>homelab</span><span class="vk-tag">admin</span></div>`,
+		`<a class="vk-menu__item" href="/o/homelab/p/prod" aria-current="page"><span>prod</span><span class="vk-menu__meta"><span class="vk-counts"><span class="vk-counts__n vk-counts__n--up">`, "all up",
+		`<a class="vk-menu__item vk-menu__item--quiet" href="/o/homelab/admin/projects?add=1"><span>New project</span></a>`, `href="/o/homelab/admin/projects"><span>Org settings</span>`,
+		`<details class="vk-popover vk-popover--end"><summary class="vk-top__user" title="Jaro">J</summary>`, `<span>Jaro</span>`, `href="/api/v1/openapi.yaml"><span>API reference</span>`, `href="/logout"><span>Sign out</span>`)
+	if strings.Contains(p.body, "Instance admin") || strings.Contains(p.body, `vk-tag">instance admin`) {
+		t.Error("an org admin is not an instance admin")
+	}
+	// the org shell: tabs, no current section, the switcher still on the project
+	if r := e.get("/o/homelab/admin", false); r.code != 303 || r.hdr.Get("Location") != "/o/homelab/admin/projects" {
+		t.Fatalf("org admin home: %d %s", r.code, r.hdr.Get("Location"))
+	}
+	shell := e.get("/o/homelab/admin/projects", false)
+	if shell.code != 200 {
+		t.Fatalf("org shell: %d %s", shell.code, shell.body)
+	}
+	shell.has(t, `<h1>homelab</h1><span class="vk-muted vk-mono">org settings</span>`, `aria-label="Org settings"`, `aria-current="page">Projects<span class="vk-tab__n">1</span>`, `href="/o/homelab/admin/agents">Agents</a>`, `homelab / <b>prod</b>`, `class="vk-top__link" href="/o/homelab/p/prod">Monitors</a>`)
+	if strings.Contains(shell.body, `vk-top__link" href="/o/homelab/p/prod" aria-current`) {
+		t.Error("no section is current on an org page")
+	}
+	if r := e.get("/o/homelab/admin/nope", false); r.code != 404 {
+		t.Fatalf("unknown tab: %d", r.code)
+	}
+	if r := e.get("/o/acme/admin/projects", false); r.code != 404 {
+		t.Fatalf("foreign org: %d", r.code)
+	}
+	// a member of the org without the role gets a 403; sign out is a link
+	ctx := context.Background()
+	admin := domain.Scope{InstanceAdmin: true, Role: domain.RoleOwner}
+	member, _ := e.svc.CreateLocalUser(ctx, admin, "m", "m@example.com", "M", "correct horse", false)
+	_ = e.svc.SetMembership(ctx, admin, member.ID, e.org.ID, domain.RoleMember)
+	rec := httptest.NewRecorder()
+	if _, err := e.authn.Login(rec, httptest.NewRequest("POST", "/login", nil), "m", "correct horse"); err != nil {
+		t.Fatal(err)
+	}
+	e.cookie = rec.Result().Cookies()[0]
+	if r := e.get("/o/homelab/admin/projects", false); r.code != 403 {
+		t.Fatalf("member on org settings: %d", r.code)
+	}
+	if r := e.get(projPath, false); strings.Contains(r.body, "New project") {
+		t.Error("members get no admin items")
+	}
+	if r := e.get("/logout", false); r.code != 303 || r.hdr.Get("Location") != "/login" {
+		t.Fatalf("sign out link: %d %s", r.code, r.hdr.Get("Location"))
+	}
+}
+
 func TestNoOrgYetPage(t *testing.T) {
 	e := newEnv(t)
 	ctx := context.Background()
@@ -402,7 +452,7 @@ func TestCreateAndEditForm(t *testing.T) {
 		t.Fatalf("duplicate: %d", dup.code)
 	}
 	edit := e.get(projPath+"/m/nightly-backup/edit", false)
-	edit.has(t, `value="0 3 * * *"`, `value="30m"`, `disabled`, `<details class="vk-details" open>`, `>Save<`, `Delete monitor`, `data-confirm="Really delete?"`, "it cannot change")
+	edit.has(t, `value="0 3 * * *"`, `value="30m"`, `disabled`, `<details class="vk-details" open>`, `>Save changes<`, `Delete monitor`, `data-confirm="Really delete?"`, "it cannot change", `<h1 class="vk-drawer__title">Nightly backup</h1>`, "nightly-backup · created 27 Sep")
 	saved := e.post(projPath+"/m/nightly-backup/edit", url.Values{"name": {"Nightly"}, "schedule_type": {"cron"}, "schedule": {"0 4 * * *"}, "grace": {"1h"}}, false)
 	if saved.code != 303 {
 		t.Fatalf("edit: %d %s", saved.code, saved.body)
@@ -485,7 +535,7 @@ func TestPullMonitorForms(t *testing.T) {
 		t.Fatalf("spec: %+v %+v", m.Pull, h)
 	}
 	edit := e.get(projPath+"/m/public-api/edit", false)
-	edit.has(t, `value="$.status"`, `name="body_match" value="jsonpath" checked`, `>Accept: application/json</textarea>`, `value="200, 300-399"`, `<details class="vk-details" open>`, "TLS unverified")
+	edit.has(t, `value="$.status"`, `name="body_match" value="jsonpath" checked`, `>Accept: application/json</textarea>`, `value="200, 300-399"`, `<details class="vk-details" open>`, "TLS unverified", `>Save changes<`)
 	if strings.Contains(edit.body, `name="verify_tls" value="1" checked`) {
 		t.Error("verify_tls must show as off")
 	}

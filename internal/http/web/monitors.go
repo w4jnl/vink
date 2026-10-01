@@ -530,6 +530,7 @@ type formData struct {
 	SchedulePlaceholder string
 	ScheduleHint        string
 	GraceHint           string
+	Created             string
 	IntervalHint        string
 	TimeoutHint         string
 	FailuresHint        string
@@ -608,8 +609,9 @@ func (h *Web) formFromMonitor(c *reqCtx, m *domain.Monitor) formData {
 	f.CancelPath = c.projectPath() + "/m/" + m.Slug
 	f.CancelHX = f.CancelPath
 	f.DeletePath = c.projectPath() + "/m/" + m.Slug + "/delete"
-	f.SubmitLabel = "Save"
+	f.SubmitLabel = "Save changes"
 	f.SlugHint = "Part of the ping URL; it cannot change."
+	f.Created = "created " + m.CreatedAt.In(h.location(c, m)).Format("2 Jan")
 	f.YAMLOpen = false
 	f.Values["name"], f.Values["slug"], f.Values["tags"] = m.Name, m.Slug, strings.Join(m.Tags, ", ")
 	if s := m.Heartbeat; s != nil {

@@ -864,5 +864,206 @@
    "lead": 0,
    "title": "zero lead"
   }
+ },
+ {
+  "name": "topbar-menus",
+  "component": "TopBar",
+  "props": {
+   "org": "w4j",
+   "project": "homelab",
+   "section": "none",
+   "user": "jaro",
+   "open": "switcher",
+   "menu": "<div class=\"vk-menu\"></div>",
+   "userMenu": "<div class=\"vk-menu\"><span>u</span></div>"
+  }
+ },
+ {
+  "name": "settingsrow-href-current",
+  "component": "SettingsRow",
+  "props": {
+   "title": "dc1-probe",
+   "href": "/o/w4j/admin/agents/dc1-probe",
+   "current": true,
+   "sub": "site=dc1 · zone=core",
+   "cells": [
+    {
+     "text": "12 monitors"
+    }
+   ],
+   "actions": "<button>Revoke</button>"
+  }
+ },
+ {
+  "name": "menu",
+  "component": "Menu",
+  "props": {
+   "groups": [
+    {
+     "label": "w4j",
+     "role": "owner",
+     "items": [
+      {
+       "label": "homelab",
+       "href": "/o/w4j/p/homelab",
+       "current": true,
+       "meta": "<span class=\"vk-counts\"><span class=\"vk-counts__none\">no monitors</span></span>"
+      },
+      {
+       "label": "office",
+       "href": "/o/w4j/p/office"
+      }
+     ]
+    },
+    {
+     "items": [
+      {
+       "label": "New project",
+       "href": "/o/w4j/admin/projects?add=1",
+       "quiet": true
+      },
+      {
+       "label": "Org settings",
+       "href": "/o/w4j/admin/members",
+       "quiet": true
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "menu-user",
+  "component": "Menu",
+  "props": {
+   "groups": [
+    {
+     "label": "jaro",
+     "role": "instance admin",
+     "items": [
+      {
+       "label": "Instance admin",
+       "href": "/admin/orgs"
+      },
+      {
+       "label": "API reference",
+       "href": "/api/v1/openapi.yaml",
+       "meta": "<span class=\"vk-counts__none\">openapi.yaml</span>"
+      }
+     ]
+    },
+    {
+     "items": [
+      {
+       "label": "Sign out",
+       "href": "/logout",
+       "quiet": true
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "statecounts",
+  "component": "StateCounts",
+  "props": {
+   "down": 2,
+   "late": 1,
+   "up": 2,
+   "paused": 1,
+   "new": 1
+  }
+ },
+ {
+  "name": "statecounts-problems",
+  "component": "StateCounts",
+  "props": {
+   "down": 2,
+   "late": 1,
+   "up": 5,
+   "problems": true
+  }
+ },
+ {
+  "name": "statecounts-allup",
+  "component": "StateCounts",
+  "props": {
+   "up": 3,
+   "problems": true
+  }
+ },
+ {
+  "name": "statecounts-none",
+  "component": "StateCounts",
+  "props": {
+   "problems": true
+  }
+ },
+ {
+  "name": "avatar",
+  "component": "Avatar",
+  "props": {
+   "name": "anne de vries"
+  }
+ },
+ {
+  "name": "inlineselect",
+  "component": "InlineSelect",
+  "props": {
+   "label": "Role for Bram Jansen",
+   "name": "role",
+   "options": [
+    {
+     "value": "owner",
+     "label": "owner"
+    },
+    {
+     "value": "admin",
+     "label": "admin"
+    },
+    {
+     "value": "member",
+     "label": "member"
+    }
+   ],
+   "value": "member"
+  }
+ },
+ {
+  "name": "inlineselect-disabled",
+  "component": "InlineSelect",
+  "props": {
+   "label": "Role for J",
+   "options": [
+    {
+     "value": "owner",
+     "label": "owner"
+    },
+    {
+     "value": "admin",
+     "label": "admin"
+    }
+   ],
+   "value": "owner",
+   "disabled": true
+  }
+ },
+ {
+  "name": "usage",
+  "component": "Usage",
+  "props": {
+   "value": 12,
+   "max": 100,
+   "label": "monitors"
+  }
+ },
+ {
+  "name": "usage-noquota",
+  "component": "Usage",
+  "props": {
+   "value": 4,
+   "label": "agents"
+  }
  }
 ]

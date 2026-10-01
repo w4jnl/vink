@@ -1,0 +1,7 @@
+{{define "content"}}<div class="vk-page vk-page--full" id="page"><main class="vk-main" id="admin">
+<div class="vk-main__head"><h1>{{.Org}}</h1><span class="vk-muted vk-mono">org settings</span></div>
+{{tabs .Tabs .Tab "Org settings"}}
+<div id="tab">{{template "admin-tab" .}}</div>
+</main></div>{{end}}
+
+{{define "admin-tab"}}<div class="vk-tabhead"><p class="vk-lede">{{.Lede}}</p></div><div class="vk-empty"><h3>Not yet</h3><p>{{.ComingSoon}}</p></div>{{end}}

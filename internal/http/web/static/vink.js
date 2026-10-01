@@ -44,6 +44,28 @@
     if (want && link.getAttribute('href') !== want) link.setAttribute('href', want);
   }
 
+  // The switcher and the user menu are <details> popovers: one open at a
+  // time, closed on Escape and on a click outside.
+  function popovers(root) {
+    root.querySelectorAll('details.vk-popover').forEach(function (d) {
+      if (d.__vk) return;
+      d.__vk = 1;
+      d.addEventListener('toggle', function () {
+        if (!d.open) return;
+        document.querySelectorAll('details.vk-popover[open]').forEach(function (o) { if (o !== d) o.open = false; });
+      });
+    });
+    if (document.__vkPop) return;
+    document.__vkPop = 1;
+    document.addEventListener('click', function (e) {
+      document.querySelectorAll('details.vk-popover[open]').forEach(function (d) { if (!d.contains(e.target)) d.open = false; });
+    });
+    document.addEventListener('keydown', function (e) {
+      if (e.key !== 'Escape') return;
+      document.querySelectorAll('details.vk-popover[open]').forEach(function (d) { d.open = false; var s = d.querySelector('summary'); if (s) s.focus(); });
+    });
+  }
+
   function csrf() {
     var m = document.querySelector('meta[name="csrf-token"]');
     return m ? m.getAttribute('content') : '';
@@ -68,8 +90,8 @@
     page.classList.toggle('vk-page--full', empty);
   }
 
-  document.addEventListener('DOMContentLoaded', function () { wire(document); favicon(); syncDrawer(); });
-  document.addEventListener('htmx:after:settle', function () { wire(document); favicon(); syncDrawer(); });
+  document.addEventListener('DOMContentLoaded', function () { wire(document); popovers(document); favicon(); syncDrawer(); });
+  document.addEventListener('htmx:after:settle', function () { wire(document); popovers(document); favicon(); syncDrawer(); });
   // htmx 4 hands the request context as e.detail.ctx (htmx 2 put headers
   // on e.detail). Set the header where it exists, and for a state-changing
   // request without a form put the token in the body too, so a bare

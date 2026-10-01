@@ -1,0 +1,13 @@
+<!-- @dsCard group="Settings" height=56 -->
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>vink</title></head>
+<body>
+<div id="root" class="vk-inline"></div>
+<script>
+  var V = window.Vink;
+  document.getElementById('root').innerHTML = ['J', 'Anne', 'Bram', 'ci-reader'].map(function (n) { return V.Avatar({ name: n }); }).join('');
+  V.wire(document);
+</script>
+</body>
+</html>

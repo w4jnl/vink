@@ -36,15 +36,25 @@ export declare function Notice(props: { tone?: 'ok' | 'error' | 'warn' | 'info';
 export declare function Code(props: { text: string; copy?: boolean; copyLabel?: string; yaml?: boolean }): string;
 /** Inline add/edit form on surface. `body`/`actions` are trusted HTML. */
 export declare function Panel(props: { title?: string; note?: string; body?: string; actions?: string; id?: string }): string;
-/** Signed-in header: mark, project switcher + Monitors / Incidents / Settings, search, user. */
-export declare function TopBar(props: { org?: string; project?: string; section?: 'monitors' | 'incidents' | 'settings'; incidents?: number; user?: string;
-  hrefs?: Partial<Record<'home' | 'monitors' | 'incidents' | 'settings', string>> }): string;
+/** Signed-in header: mark, project switcher + Monitors / Incidents / Settings, search, user. `menu`/`userMenu` are Menu() panels; `open` draws one open. */
+export declare function TopBar(props: { org?: string; project?: string; section?: 'monitors' | 'incidents' | 'settings' | 'none' | 'org'; incidents?: number; user?: string;
+  hrefs?: Partial<Record<'home' | 'monitors' | 'incidents' | 'settings', string>>; menu?: string; userMenu?: string; open?: 'switcher' | 'user' }): string;
+/** Popover panel for the switcher and user menus. `meta` is trusted HTML. */
+export declare function Menu(props: { groups: Array<{ label?: string; role?: string; items: Array<{ label: string; href?: string; current?: boolean; meta?: string; quiet?: boolean }> }> }): string;
+/** Monitors per state as glyph + number; `problems` shows only down and late, or "all up". */
+export declare function StateCounts(props: { down?: number; late?: number; up?: number; paused?: number; new?: number; problems?: boolean }): string;
+/** Initial in a 28px circle. */
+export declare function Avatar(props: { name: string }): string;
+/** Row-level select that saves on change; `label` is the accessible name. */
+export declare function InlineSelect(props: { label: string; name?: string; options: Option[]; value?: string; disabled?: boolean }): string;
+/** Quota use as <meter> + words; no `max` means no quota. */
+export declare function Usage(props: { value: number; max?: number; label: string }): string;
 /** Page sections as links (settings tabs). */
 export declare function Tabs(props: { tabs: Array<{ id: string; label: string; count?: number; href?: string }>; current?: string; label?: string }): string;
 /** One incident row: open (Ack), acked, or resolved. */
 export declare function IncidentRow(props: { state?: 'open' | 'acked' | 'resolved'; name: string; slug: string; href?: string; reason: string; opened: string; openedAbs?: string; duration: string; ackedBy?: string; resolved?: string }): string;
 /** One settings list row; `lead`, `titleHtml`, `actions`, cell `html` are trusted HTML. */
-export declare function SettingsRow(props: { title?: string; titleHtml?: string; sub?: string; lead?: string; muted?: boolean;
+export declare function SettingsRow(props: { title?: string; titleHtml?: string; sub?: string; lead?: string; muted?: boolean; href?: string; current?: boolean;
   cells?: Array<{ text?: string; html?: string; size?: 's' | 'm' | 'l'; mono?: boolean; ink?: boolean }>; actions?: string }): string;
 /** The project ping URL with the monitor slug highlighted and a Copy button (`data-copy`). */
 export declare function PingUrl(props: { base?: string; key?: string; slug?: string }): string;
@@ -64,4 +74,5 @@ export declare function Mark(props?: { size?: number }): string;
 export declare function wire(root?: ParentNode): void;
 declare global { interface Window { Vink: { StateBadge: typeof StateBadge; Button: typeof Button; Chip: typeof Chip; Tag: typeof Tag; KindIcon: typeof KindIcon; Field: typeof Field; PingUrl: typeof PingUrl; Sparkline: typeof Sparkline; MonitorRow: typeof MonitorRow; UptimeBar: typeof UptimeBar; StatusBanner: typeof StatusBanner; EmptyState: typeof EmptyState; Mark: typeof Mark;
   TopBar: typeof TopBar; Tabs: typeof Tabs; FieldRow: typeof FieldRow; Checkbox: typeof Checkbox; Switch: typeof Switch; Segmented: typeof Segmented; KindPicker: typeof KindPicker;
-  Disclosure: typeof Disclosure; Notice: typeof Notice; Code: typeof Code; Panel: typeof Panel; IncidentRow: typeof IncidentRow; SettingsRow: typeof SettingsRow; wire: typeof wire } } }
+  Disclosure: typeof Disclosure; Notice: typeof Notice; Code: typeof Code; Panel: typeof Panel; IncidentRow: typeof IncidentRow; SettingsRow: typeof SettingsRow;
+  Menu: typeof Menu; StateCounts: typeof StateCounts; Avatar: typeof Avatar; InlineSelect: typeof InlineSelect; Usage: typeof Usage; wire: typeof wire } } }

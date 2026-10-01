@@ -574,19 +574,21 @@ func Panel(title, note string, body, actions HTML, id string) HTML {
 	return HTML(b.String())
 }
 
-// TopBarProps: the signed-in header.
+// TopBarProps: the signed-in header. Menu and UserMenu are Menu()
+// panels inside the two <details> popovers; Open draws one open.
 type TopBarProps struct {
 	Org       string
 	Project   string
-	Section   string // monitors (default), incidents, settings
+	Section   string // monitors (default), incidents, settings, none, org
 	Incidents int
 	User      string
 	Hrefs     map[string]string // home, monitors, incidents, settings
-	// CrumbAttrs, SearchAttrs and UserAttrs are extra attributes for the
-	// app's forms; goldens leave them empty.
-	CrumbAttrs  string
+	Menu      HTML
+	UserMenu  HTML
+	Open      string // switcher or user
+	// SearchAttrs are extra attributes on the search input, for the app's
+	// form binding; goldens leave them empty.
 	SearchAttrs string
-	UserAttrs   string
 }
 
 // TopBar renders the header.
@@ -627,11 +629,165 @@ func TopBar(p TopBarProps) HTML {
 		n := strconv.Itoa(p.Incidents)
 		count = `<span class="vk-top__count" title="` + n + ` open">` + string(Glyph("down", "")) + n + `</span>`
 	}
+	openSwitcher, openUser := "", ""
+	if p.Open == "switcher" {
+		openSwitcher = " open"
+	}
+	if p.Open == "user" {
+		openUser = " open"
+	}
 	return HTML(`<header class="vk-top"><a class="vk-top__mark" href="` + href("home", "/") + `">` + string(Mark(22)) + `<span>vink</span></a>` +
-		`<nav class="vk-top__nav" aria-label="Project"><button type="button" class="vk-top__crumb" aria-haspopup="menu"` + p.CrumbAttrs + `>` + org + ` / <b>` + proj + `</b><i class="vk-caret" aria-hidden="true"></i></button>` +
+		`<nav class="vk-top__nav" aria-label="Project"><details class="vk-popover"` + openSwitcher + `>` +
+		`<summary class="vk-top__crumb" title="Switch project">` + org + ` / <b>` + proj + `</b><i class="vk-caret" aria-hidden="true"></i></summary>` + string(p.Menu) + `</details>` +
 		link("monitors", "Monitors", base, "") + link("incidents", "Incidents", base+"/incidents", count) + link("settings", "Settings", base+"/settings/channels", "") + `</nav>` +
 		`<input class="vk-input vk-top__search" type="search" placeholder="Search monitors  /" aria-label="Search monitors"` + p.SearchAttrs + `>` +
-		`<button type="button" class="vk-top__user" aria-haspopup="menu" title="` + esc(user) + `"` + p.UserAttrs + `>` + esc(initial) + `</button></header>`)
+		`<details class="vk-popover vk-popover--end"` + openUser + `><summary class="vk-top__user" title="` + esc(user) + `">` + esc(initial) + `</summary>` + string(p.UserMenu) + `</details></header>`)
+}
+
+// MenuItem is one entry of a Menu group; Meta is trusted HTML.
+type MenuItem struct {
+	Label   string
+	Href    string
+	Current bool
+	Meta    HTML
+	Quiet   bool
+}
+
+// MenuGroup is one hairline-separated block of a Menu.
+type MenuGroup struct {
+	Label string
+	Role  string
+	Items []MenuItem
+}
+
+// Menu renders the popover panel of the switcher and user menus.
+func Menu(groups []MenuGroup) HTML {
+	var b strings.Builder
+	b.WriteString(`<div class="vk-menu">`)
+	for i, g := range groups {
+		if i > 0 {
+			b.WriteString(`<hr class="vk-menu__sep">`)
+		}
+		b.WriteString(`<div class="vk-menu__group">`)
+		if g.Label != "" {
+			b.WriteString(`<div class="vk-menu__label"><span>` + esc(g.Label) + `</span>`)
+			if g.Role != "" {
+				b.WriteString(string(Tag(g.Role)))
+			}
+			b.WriteString("</div>")
+		}
+		for _, it := range g.Items {
+			href := it.Href
+			if href == "" {
+				href = "#"
+			}
+			b.WriteString(`<a class="vk-menu__item`)
+			if it.Quiet {
+				b.WriteString(" vk-menu__item--quiet")
+			}
+			b.WriteString(`" href="` + esc(href) + `"`)
+			if it.Current {
+				b.WriteString(` aria-current="page"`)
+			}
+			b.WriteString(`><span>` + esc(it.Label) + `</span>`)
+			if it.Meta != "" {
+				b.WriteString(`<span class="vk-menu__meta">` + string(it.Meta) + `</span>`)
+			}
+			b.WriteString("</a>")
+		}
+		b.WriteString("</div>")
+	}
+	b.WriteString("</div>")
+	return HTML(b.String())
+}
+
+// StateCountsProps are monitors per state.
+type StateCountsProps struct {
+	Down, Late, Up, Paused, New int
+	// Problems shows only down and late, or "all up".
+	Problems bool
+}
+
+// StateCounts renders counts per state with their glyphs.
+func StateCounts(p StateCountsProps) HTML {
+	type pair struct {
+		state string
+		n     int
+	}
+	all := []pair{{"down", p.Down}, {"late", p.Late}, {"up", p.Up}, {"paused", p.Paused}, {"new", p.New}}
+	order := all
+	if p.Problems {
+		order = all[:2]
+	}
+	total := 0
+	for _, x := range all {
+		total += x.n
+	}
+	var b strings.Builder
+	for _, x := range order {
+		if x.n > 0 {
+			n := strconv.Itoa(x.n)
+			b.WriteString(`<span class="vk-counts__n vk-counts__n--` + x.state + `" title="` + n + ` ` + x.state + `">` + string(Glyph(x.state, "")) + n + `</span>`)
+		}
+	}
+	if b.Len() == 0 {
+		if total > 0 {
+			b.WriteString(`<span class="vk-counts__n vk-counts__n--up">` + string(Glyph("up", "")) + `all up</span>`)
+		} else {
+			b.WriteString(`<span class="vk-counts__none">no monitors</span>`)
+		}
+	}
+	return HTML(`<span class="vk-counts">` + b.String() + `</span>`)
+}
+
+// Avatar renders the initial in a 28px circle.
+func Avatar(name string) HTML {
+	if name == "" {
+		name = "?"
+	}
+	return HTML(`<span class="vk-avatar" aria-hidden="true">` + esc(strings.ToUpper(string([]rune(name)[0]))) + `</span>`)
+}
+
+// InlineSelectProps: a select inside a list row that saves on change.
+type InlineSelectProps struct {
+	Label    string
+	Name     string
+	Options  []Option
+	Value    string
+	Disabled bool
+	// Attrs are extra select attributes, for hx-post.
+	Attrs string
+}
+
+// InlineSelect renders the row-level select.
+func InlineSelect(p InlineSelectProps) HTML {
+	name := p.Name
+	if name == "" {
+		name = "v"
+	}
+	s := `<span class="vk-select vk-select--inline"><select class="vk-input" name="` + esc(name) + `" aria-label="` + esc(p.Label) + `"`
+	if p.Disabled {
+		s += " disabled"
+	}
+	return HTML(s + p.Attrs + ">" + options(p.Options, p.Value) + "</select></span>")
+}
+
+// Usage renders quota use as a meter and words; max 0 means no quota.
+func Usage(value, max int, label string) HTML {
+	v := strconv.Itoa(value)
+	what := esc(label)
+	if max <= 0 {
+		return HTML(`<span class="vk-usage"><span class="vk-usage__text">` + v + ` ` + what + ` · no quota</span></span>`)
+	}
+	m := strconv.Itoa(max)
+	return HTML(`<span class="vk-usage"><meter class="vk-usage__meter" min="0" max="` + m + `" value="` + v + `" low="` + jsNumber(float64(max)*0.8) + `" high="` + jsNumber(float64(max)*0.95) + `" optimum="0" title="` + v + ` of ` + m + ` ` + what + `"></meter>` +
+		`<span class="vk-usage__text">` + v + ` / ` + m + ` ` + what + `</span></span>`)
+}
+
+// jsNumber formats a float the way JavaScript's string conversion does:
+// no trailing zeros, no exponent for these magnitudes.
+func jsNumber(f float64) string {
+	return strconv.FormatFloat(f, 'f', -1, 64)
 }
 
 // Tab is one settings tab.
@@ -745,8 +901,11 @@ type SettingsRowProps struct {
 	Lead      string
 	HasLead   bool
 	Muted     bool
-	Cells     []Cell
-	Actions   HTML
+	// Href makes the title a link that opens the row's drawer; Current marks the open one.
+	Href    string
+	Current bool
+	Cells   []Cell
+	Actions HTML
 }
 
 // SettingsRow renders one settings list row.
@@ -756,17 +915,22 @@ func SettingsRow(p SettingsRowProps) HTML {
 	if p.Muted {
 		b.WriteString(" vk-srow--muted")
 	}
-	b.WriteString(`">`)
+	b.WriteString(`"`)
+	if p.Current {
+		b.WriteString(` aria-current="true"`)
+	}
+	b.WriteString(">")
 	if p.HasLead || p.Lead != "" {
 		b.WriteString(`<span class="vk-srow__lead">` + p.Lead + `</span>`)
 	}
-	b.WriteString(`<div class="vk-srow__main"><span class="vk-srow__title">`)
+	title := esc(p.Title)
 	if p.TitleHTML != "" {
-		b.WriteString(string(p.TitleHTML))
-	} else {
-		b.WriteString(esc(p.Title))
+		title = string(p.TitleHTML)
 	}
-	b.WriteString("</span>")
+	if p.Href != "" {
+		title = `<a class="vk-srow__link" href="` + esc(p.Href) + `">` + title + `</a>`
+	}
+	b.WriteString(`<div class="vk-srow__main"><span class="vk-srow__title">` + title + "</span>")
 	if p.Sub != "" {
 		b.WriteString(`<span class="vk-srow__sub" title="` + esc(p.Sub) + `">` + esc(p.Sub) + `</span>`)
 	}

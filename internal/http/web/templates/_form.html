@@ -1,6 +1,6 @@
 {{define "monitor-form"}}<div id="drawer-body"><form class="vk-form" id="monitor-form" action="{{.Action}}" method="post" hx-post="{{.Action}}" hx-target="#drawer" hx-status:422="target:#drawer">
 <input type="hidden" name="_csrf" value="{{.CSRF}}">
-<div class="vk-drawer__head"><h1 class="vk-drawer__title">{{if .Edit}}Edit {{.Values.name}}{{else}}New monitor{{end}}</h1><p class="vk-drawer__sub">in {{.OrgSlug}} / {{.ProjectSlug}}</p></div>
+<div class="vk-drawer__head"><h1 class="vk-drawer__title">{{if .Edit}}{{.Values.name}}{{else}}New monitor{{end}}</h1><p class="vk-drawer__sub">{{if .Edit}}{{.Values.slug}} · {{.Created}}{{else}}in {{.OrgSlug}} / {{.ProjectSlug}}{{end}}</p></div>
 {{if .Error}}{{notice "error" "" .Error ""}}{{end}}
 {{kindpicker .Kind .Edit (attrs "hx-get" .KindPath "hx-target" "#drawer" "hx-include" "closest form" "hx-trigger" "change")}}
 {{if .Errors.kind}}<p class="vk-field__error">{{glyph "down" ""}}{{.Errors.kind}}</p>{{end}}

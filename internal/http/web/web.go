@@ -57,6 +57,9 @@ func (h *Web) Mount(mux *http.ServeMux) {
 	mux.Handle("GET /login", h.public(h.loginForm))
 	mux.Handle("POST /login", h.public(h.login))
 	mux.Handle("POST /logout", h.user(h.logout))
+	mux.Handle("GET /logout", h.user(h.logout))
+	mux.Handle("GET /o/{org}/admin", h.orgAdmin(h.orgAdminHome))
+	mux.Handle("GET /o/{org}/admin/{tab}", h.orgAdmin(h.orgAdminTab))
 
 	p := "/o/{org}/p/{project}"
 	mux.Handle("GET "+p, h.project(h.monitors))
@@ -237,6 +240,9 @@ type base struct {
 	Down          bool
 	Fill          bool
 	Version       string
+	// Menu and UserMenu are the top bar's popover panels.
+	Menu     ui.HTML
+	UserMenu ui.HTML
 }
 
 func (h *Web) baseFor(c *reqCtx, title, section string) base {
@@ -256,7 +262,79 @@ func (h *Web) baseFor(c *reqCtx, title, section string) base {
 			b.OpenIncidents = len(open)
 		}
 	}
+	if c.principal != nil && (c.project != nil || c.org != nil) {
+		h.menus(c, &b)
+	}
 	return b
+}
+
+// menus builds the switcher (every org and project the viewer can see,
+// problem counts, New project and Org settings for admins) and the user
+// menu. On an org page the switcher still shows the last project there.
+func (h *Web) menus(c *reqCtx, b *base) {
+	ctx := c.r.Context()
+	p := c.principal
+	projects, err := h.svc.ProjectsForUser(ctx, p.User.ID, p.InstanceAdmin)
+	if err != nil {
+		return
+	}
+	counts, _ := h.svc.ProjectProblems(ctx)
+	if c.project == nil && c.org != nil {
+		var pick *service.ProjectSummary
+		for i := range projects {
+			if projects[i].OrgSlug != c.org.Slug {
+				continue
+			}
+			if pick == nil || (p.Session != nil && projects[i].ID == p.Session.LastProjectID) {
+				pick = &projects[i]
+			}
+		}
+		b.OrgSlug = c.org.Slug
+		if pick != nil {
+			b.ProjectSlug, b.ProjectPath = pick.Slug, "/o/"+pick.OrgSlug+"/p/"+pick.Slug
+		} else {
+			b.ProjectSlug, b.ProjectPath = "projects", "/projects"
+		}
+	}
+	type orgGroup struct {
+		group ui.MenuGroup
+		role  domain.Role
+	}
+	var order []string
+	byOrg := map[string]*orgGroup{}
+	for _, pr := range projects {
+		g, ok := byOrg[pr.OrgSlug]
+		if !ok {
+			g = &orgGroup{group: ui.MenuGroup{Label: pr.OrgSlug, Role: string(pr.Role)}, role: pr.Role}
+			byOrg[pr.OrgSlug] = g
+			order = append(order, pr.OrgSlug)
+		}
+		cnt := counts[pr.OrgSlug+"/"+pr.Slug]
+		g.group.Items = append(g.group.Items, ui.MenuItem{
+			Label: pr.Slug, Href: "/o/" + pr.OrgSlug + "/p/" + pr.Slug, Current: pr.OrgSlug == b.OrgSlug && pr.Slug == b.ProjectSlug,
+			Meta: ui.StateCounts(ui.StateCountsProps{Down: cnt.Down, Late: cnt.Late, Up: cnt.Up, Paused: cnt.Paused, New: cnt.New, Problems: true}),
+		})
+	}
+	var groups []ui.MenuGroup
+	for _, slug := range order {
+		g := byOrg[slug]
+		groups = append(groups, g.group)
+		if p.InstanceAdmin || g.role.AtLeast(domain.RoleAdmin) {
+			groups = append(groups, ui.MenuGroup{Items: []ui.MenuItem{
+				{Label: "New project", Href: "/o/" + slug + "/admin/projects?add=1", Quiet: true},
+				{Label: "Org settings", Href: "/o/" + slug + "/admin/projects", Quiet: true},
+			}})
+		}
+	}
+	b.Menu = ui.Menu(groups)
+	role := ""
+	if p.InstanceAdmin {
+		role = "instance admin"
+	}
+	b.UserMenu = ui.Menu([]ui.MenuGroup{
+		{Label: b.UserName, Role: role, Items: []ui.MenuItem{{Label: "API reference", Href: "/api/v1/openapi.yaml", Meta: ui.HTML(`<span class="vk-counts__none">openapi.yaml</span>`)}}},
+		{Items: []ui.MenuItem{{Label: "Sign out", Href: "/logout", Quiet: true}}},
+	})
 }
 
 type kv struct{ Key, Value string }

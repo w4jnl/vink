@@ -19,6 +19,14 @@ The same screens are on the Claude Design canvas "vink screens" (dark row, light
 | [proxy-denied](proxy-denied.html) | any UI route, proxy mode, no identity | 403 page: what happened, what to do, request id. The reason goes to the log only. | auth layout, `vk-kv` |
 | [no-access](no-access.html) | any UI route, identity but no membership | Who the proxy said you are, your groups, the group pattern that grants access. | auth layout, `vk-kv` |
 | [status](status.html) | `/s/{slug}` | Public status page (unchanged). | StatusBanner, UptimeBar |
+| [switcher-menu](switcher-menu.html) | any signed-in page | The project switcher open: projects per org with their down and late counts, New project, Org settings, a second org where you are viewer. | TopBar, Menu, StateCounts |
+| [org-members](org-members.html) | `/o/{org}/admin/members` | Members with roles (editable for local accounts, locked for proxy groups), an invite just created with its one-time link. | Tabs, SettingsRow, Avatar, InlineSelect, Notice |
+| [org-projects](org-projects.html) | `/o/{org}/admin/projects` | Quota line, Add project panel, projects with their state counts. | Usage, Panel, SettingsRow, StateCounts |
+| [org-agents](org-agents.html) | `/o/{org}/admin/agents` | A new agent's token and `vink agent` command shown once; agents connected, offline, waiting. | Notice, Code, SettingsRow, StateBadge, Usage |
+| [org-agent-detail](org-agent-detail.html) | `/o/{org}/admin/agents/{name}` | The offline agent in the drawer: why its monitors are late, connection details, assigned monitors. | SettingsRow (current), drawer, Notice, MonitorRow |
+| [monitor-edit](monitor-edit.html) | `…/m/{slug}/edit` | The edit form: Kind locked, Run from an agent first in Advanced, Save changes and Delete monitor. | KindPicker (locked), Segmented, Field, Disclosure |
+| [instance-orgs](instance-orgs.html) | `/admin/orgs` | Instance admin: Add org with first owner and quotas, orgs with quota meters, delete only when empty. | Tabs, Panel, SettingsRow, Usage |
+| [invite](invite.html) | `/invite/{token}` | Accepting an invite as a new local account. | auth layout, Field |
 
 ## Behaviour the pictures can't show
 
@@ -32,3 +40,15 @@ The same screens are on the Claude Design canvas "vink screens" (dark row, light
 - **New API key**: the plaintext appears once, in the `Notice` above the create row, until the page is left.
 - **Top bar**: the Incidents count is open incidents (acked included) in the project and disappears at 0. The project switcher opens a menu of the user's projects; org admin lives there, sign-out in the user menu.
 - **No inline styles**: the CSP (`style-src 'self'`) forbids them, so every layout piece is a `vk-*` class in `bundle.css`.
+
+### Org settings, instance admin, agents
+
+- **Menus**: the switcher and the user button are `<details class="vk-popover">` in every page, so they open without JavaScript. The switcher lists every org and project the user can see, with problems only (down and late counts, or "all up"); New project and Org settings appear only for admins and owners. The user menu holds Instance admin (instance admins only), API reference and Sign out (to `auth.proxy.logout_url` in proxy mode). `wire()` closes one when the other opens, on Escape, and on a click outside.
+- **Org pages** have no current section in the top bar; the switcher keeps showing the last project, and Monitors, Incidents and Settings return to it.
+- **Roles**: a role select saves on change and swaps the row. Memberships with `source = header` (proxy groups or `default_org`) are read-only, Remove is disabled, and the row's second line names the group. An owner cannot demote or remove themselves while they are the last owner. Transfer ownership and Delete org live at the bottom of Members for owners (not drawn).
+- **Invites**: Invite opens a panel with "For" (a note) and Role; creating it shows the link once in a note under the new row. Invites are local accounts only, work once, expire after 7 days, and can be revoked. The invite page shows who invited you, the role and the expiry; an expired or used link shows the same card with "This invite has expired" and no fields.
+- **Quotas** are set by instance admins and read-only for org admins. Creating a monitor or agent past a quota fails with an inline error that names the limit ("This org can have 5 agents; ask the instance admin for more.").
+- **Agents**: Add agent asks for a name and labels, then shows the token and the full `vink agent` command once. Rows open the agent drawer; beside it the list keeps name and state only. Revoke token disconnects the agent at once; its monitors turn late with reason agent offline and stay late until they are moved or it comes back. The agent quota counts agents, not connections.
+- **Run from** (phase 2): This server, An agent (select with each agent's state) or Agents with labels (a `site=dc1` selector; the least loaded matching agent runs it). The interval hint rises to 30s when an agent runs the check.
+- **Routes that are additions to docs/design.md**: `/o/{org}/admin/{members|projects|agents}` and `…/agents/{name}` (the doc has one `/o/{org}/admin` page), `/admin/{orgs|users|server}` for instance admins, and `/invite/{token}`. Add them to the page inventory when you build these.
+- **Instance admin** (`/admin`): Orgs (shown), Users (every user, instance-admin flag, orgs, last seen) and Server (version, DB size, auth modes, last backup) are tabs in the same shape; only Orgs is drawn.

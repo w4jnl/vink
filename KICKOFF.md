@@ -33,4 +33,4 @@ Do not write code until I approve the plan. Stop at the phase 1 gate and show me
 
 ---
 
-Later phases: "Plan phase N from docs/design.md, same rules." For screens that are not designed yet (org admin, agents), design them in Claude Design with the vink design system first and save them under docs/design-system/screens/ before asking for the build.
+Later phases: "Plan phase N from docs/design.md, same rules. Build the UI to docs/design-system/screens/." Every screen in docs/design.md is designed now, including org settings, agents and instance admin (phases 2 and 3). Anything new (the TOTP step, the audit log view) gets designed in Claude Design with the vink design system first and saved under docs/design-system/screens/ before asking for the build.

@@ -106,7 +106,7 @@ func render(t *testing.T, c goldenCase) string {
 	case "Panel":
 		return string(Panel(str("title"), str("note"), HTML(str("body")), HTML(str("actions")), str("id")))
 	case "TopBar":
-		tp := TopBarProps{Org: str("org"), Project: str("project"), Section: str("section"), User: str("user")}
+		tp := TopBarProps{Org: str("org"), Project: str("project"), Section: str("section"), User: str("user"), Menu: HTML(str("menu")), UserMenu: HTML(str("userMenu")), Open: str("open")}
 		if v, ok := p["incidents"].(float64); ok {
 			tp.Incidents = int(v)
 		}
@@ -131,7 +131,7 @@ func render(t *testing.T, c goldenCase) string {
 	case "IncidentRow":
 		return string(IncidentRow(IncidentRowProps{State: str("state"), Name: str("name"), Slug: str("slug"), Href: str("href"), Reason: str("reason"), Opened: str("opened"), OpenedAbs: str("openedAbs"), Duration: str("duration"), AckedBy: str("ackedBy"), Resolved: str("resolved")}))
 	case "SettingsRow":
-		sp := SettingsRowProps{Title: str("title"), TitleHTML: HTML(str("titleHtml")), Sub: str("sub"), Muted: boolean("muted"), Actions: HTML(str("actions"))}
+		sp := SettingsRowProps{Title: str("title"), TitleHTML: HTML(str("titleHtml")), Sub: str("sub"), Muted: boolean("muted"), Href: str("href"), Current: boolean("current"), Actions: HTML(str("actions"))}
 		if lead, ok := p["lead"]; ok {
 			sp.HasLead = true
 			sp.Lead = stringOf(lead)
@@ -146,6 +146,33 @@ func render(t *testing.T, c goldenCase) string {
 			}
 		}
 		return string(SettingsRow(sp))
+	case "Menu":
+		var groups []MenuGroup
+		for _, raw := range p["groups"].([]any) {
+			gm := raw.(map[string]any)
+			g := MenuGroup{Label: stringOf(gm["label"]), Role: stringOf(gm["role"])}
+			if items, ok := gm["items"].([]any); ok {
+				for _, ir := range items {
+					im := ir.(map[string]any)
+					cur, _ := im["current"].(bool)
+					quiet, _ := im["quiet"].(bool)
+					g.Items = append(g.Items, MenuItem{Label: stringOf(im["label"]), Href: stringOf(im["href"]), Current: cur, Meta: HTML(stringOf(im["meta"])), Quiet: quiet})
+				}
+			}
+			groups = append(groups, g)
+		}
+		return string(Menu(groups))
+	case "StateCounts":
+		n := func(k string) int { v, _ := p[k].(float64); return int(v) }
+		return string(StateCounts(StateCountsProps{Down: n("down"), Late: n("late"), Up: n("up"), Paused: n("paused"), New: n("new"), Problems: boolean("problems")}))
+	case "Avatar":
+		return string(Avatar(str("name")))
+	case "InlineSelect":
+		return string(InlineSelect(InlineSelectProps{Label: str("label"), Name: str("name"), Options: optionsOf(p["options"]), Value: str("value"), Disabled: boolean("disabled")}))
+	case "Usage":
+		v, _ := p["value"].(float64)
+		m, _ := p["max"].(float64)
+		return string(Usage(int(v), int(m), str("label")))
 	case "PingUrl":
 		return string(PingURL(str("base"), str("key"), str("slug")))
 	case "Sparkline":

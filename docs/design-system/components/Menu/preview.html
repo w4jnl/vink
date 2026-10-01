@@ -1,0 +1,16 @@
+<!-- @dsCard group="Navigation" height=360 width=1120 -->
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>vink</title></head>
+<body>
+<div id="root" class=""></div>
+<script>
+  var V = window.Vink;
+  document.getElementById('root').innerHTML = V.TopBar({ org: 'w4j', project: 'homelab', section: 'monitors', incidents: 2, open: 'switcher', menu: V.Menu({ groups: [
+    { label: 'w4j', role: 'owner', items: [{ label: 'homelab', current: true, meta: V.StateCounts({ down: 2, late: 1, problems: true }) }, { label: 'office', meta: V.StateCounts({ up: 5, problems: true }) }, { label: 'staging', meta: V.StateCounts({}) }] },
+    { items: [{ label: 'New project', quiet: true }, { label: 'Org settings', quiet: true }] },
+    { label: 'acme', role: 'viewer', items: [{ label: 'shop', meta: V.StateCounts({ down: 1, problems: true }) }] }] }) });
+  V.wire(document);
+</script>
+</body>
+</html>

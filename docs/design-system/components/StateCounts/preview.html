@@ -1,0 +1,13 @@
+<!-- @dsCard group="Status" height=72 -->
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>vink</title></head>
+<body>
+<div id="root" class="vk-inline"></div>
+<script>
+  var V = window.Vink;
+  document.getElementById('root').innerHTML = V.StateCounts({ down: 2, late: 1, up: 2, paused: 1, new: 1 }) + V.StateCounts({ down: 1, problems: true }) + V.StateCounts({ up: 5, problems: true }) + V.StateCounts({});
+  V.wire(document);
+</script>
+</body>
+</html>
