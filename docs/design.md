@@ -418,7 +418,7 @@ http:
         authResponseHeaders: [Remote-User, Remote-Groups, Remote-Email, Remote-Name]
     vink-secret:
       headers:
-        customRequestHeaders: { X-Auth-Proxy-Secret: "${VINK_PROXY_SECRET}" }
+        customRequestHeaders: { X-Auth-Proxy-Secret: '{{ env "VINK_PROXY_SECRET" }}' }   # Traefik templates env, it does not expand ${VAR}
     strip-identity:
       headers:
         customRequestHeaders: { Remote-User: "", Remote-Groups: "", Remote-Email: "", Remote-Name: "" }

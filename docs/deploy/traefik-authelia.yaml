@@ -4,6 +4,9 @@
 # identity headers it returns plus a shared secret, and vink trusts them
 # only from Traefik's address ([auth.proxy] trusted_cidrs) and only with
 # the secret ([auth.proxy] secret, VINK_PROXY_SECRET on the vink side).
+# Traefik's file provider does not expand ${VAR}; it runs Go templates,
+# so the secret is written as {{ env "VINK_PROXY_SECRET" }} and Traefik
+# must have that variable in its own environment.
 # Pings, the API, status pages, metrics and health are open routes: no
 # forward auth, and any identity header a client sent is stripped.
 #
@@ -13,6 +16,9 @@
 #     subject: ["group:vink:homelab:admin", "group:vink:homelab:member"]
 # Groups named vink:<org>:<role> grant that role; vink:admin grants
 # instance admin. Set VINK_PROXY_SECRET in Traefik's environment too.
+# To see why vink ignores the headers, run vink serve -d: it logs "proxy
+# identity refused" with the reason (peer not trusted, wrong secret, no
+# user header).
 http:
   middlewares:
     authelia:
@@ -22,7 +28,7 @@ http:
         authResponseHeaders: [Remote-User, Remote-Groups, Remote-Email, Remote-Name]
     vink-secret:
       headers:
-        customRequestHeaders: { X-Auth-Proxy-Secret: "${VINK_PROXY_SECRET}" }
+        customRequestHeaders: { X-Auth-Proxy-Secret: '{{ env "VINK_PROXY_SECRET" }}' }
     strip-identity:
       headers:
         customRequestHeaders: { Remote-User: "", Remote-Groups: "", Remote-Email: "", Remote-Name: "" }

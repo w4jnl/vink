@@ -146,16 +146,27 @@ func (a *Authenticator) fromProxy(r *http.Request) (*Principal, error) {
 		host = r.RemoteAddr
 	}
 	peer := net.ParseIP(host)
-	if peer == nil || !a.trustedPeer(peer) {
+	refused := func(reason string) (*Principal, error) {
+		// Only when a proxy header is present at all: a direct request
+		// without identity is the normal case and not worth a line.
+		if r.Header.Get(a.cfg.Proxy.UserHeader) != "" || r.Header.Get(a.cfg.Proxy.SecretHeader) != "" {
+			a.log.Debug("proxy identity refused", "reason", reason, "peer", host, "path", r.URL.Path)
+		}
 		return nil, nil
 	}
+	if peer == nil || !a.trustedPeer(peer) {
+		return refused("peer not in auth.proxy.trusted_cidrs")
+	}
 	secret := r.Header.Get(a.cfg.Proxy.SecretHeader)
-	if secret == "" || subtle.ConstantTimeCompare([]byte(secret), []byte(a.cfg.Proxy.Secret)) != 1 {
-		return nil, nil
+	if secret == "" {
+		return refused("no " + a.cfg.Proxy.SecretHeader + " header")
+	}
+	if subtle.ConstantTimeCompare([]byte(secret), []byte(a.cfg.Proxy.Secret)) != 1 {
+		return refused(a.cfg.Proxy.SecretHeader + " does not match auth.proxy.secret")
 	}
 	subject := strings.TrimSpace(r.Header.Get(a.cfg.Proxy.UserHeader))
 	if subject == "" {
-		return nil, nil
+		return refused("no " + a.cfg.Proxy.UserHeader + " header")
 	}
 	subject = a.normalizeSubject(subject)
 	email := strings.TrimSpace(r.Header.Get(a.cfg.Proxy.EmailHeader))
