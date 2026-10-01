@@ -330,6 +330,7 @@ One binary, three personalities: `vink serve` runs the server, `vink agent` runs
 | `vink run <slug> -- <command…>` | wraps a command: `/start`, then `/{exit}` with captured stdout+stderr tail as body; exits with the command's code; the Cronitor-CLI/runitor pattern |
 | `vink status` | project summary: counts per state, open incidents |
 | `vink version` | build version, commit, Go version; `--check-server` compares with the server |
+| `vink completion bash` · `zsh` · `fish` · `powershell` | the shell's completion script; monitor slugs, open incidents, tags and context names complete from the current context's server or the config file, enumerated flags from their values; the release archives ship the scripts |
 
 **Global flags** (every subcommand): `-d, --debug` sets the log level to debug and switches to the colourised text handler; `--color auto|always|never` (auto = colour when the stream is a TTY and `NO_COLOR` is unset); `--config <path>` for `serve` and `agent`. In debug mode the CLI prints each HTTP request line and response status to stderr, and `serve` logs every SQL statement slower than 50 ms, every scheduler wake-up with its reason, and every notifier attempt with the response code.
 

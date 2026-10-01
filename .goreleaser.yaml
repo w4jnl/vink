@@ -7,6 +7,7 @@ project_name: vink
 before:
   hooks:
     - go mod tidy
+    - sh -c 'mkdir -p completions && for s in bash zsh fish powershell; do go run ./cmd/vink completion $s > completions/vink.$s; done'
 
 builds:
   - id: vink
@@ -43,6 +44,7 @@ archives:
       - docs/deploy/compose.yaml
       - docs/deploy/traefik-authelia.yaml
       - docs/deploy/apache-kerberos.conf
+      - completions/*
 
 checksum:
   name_template: checksums.txt

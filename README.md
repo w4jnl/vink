@@ -169,6 +169,7 @@ An agent quiet for `[agents] offline_after` (2 min) turns its monitors late with
 - Observations are pruned after `retention.observations_days` (90) and stored ping bodies after `retention.bodies_days` (14); events and incidents are kept.
 - Outbound connections (checks, notifications) honour `[outbound]`: a proxy, an extra CA bundle, and whether private addresses may be targeted (on by default, for a homelab).
 - `/api/v1/openapi.yaml` documents the API. Errors are RFC 7807 problems, listed in `docs/errors.md`.
+- Shell completion: `source <(vink completion bash)`, `vink completion zsh > "${fpath[1]}/_vink"`, or `vink completion fish > ~/.config/fish/completions/vink.fish`; the release archives carry the scripts under `completions/`. Monitor slugs, open incidents, tags and contexts complete from the current context's server, which gets two seconds to answer.
 - `-d` on any command switches to debug logging with colour.
 
 ## Developing

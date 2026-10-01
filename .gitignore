@@ -2,6 +2,7 @@
 /tmp/
 /data/
 /dist/
+/completions/
 *.db
 *.db-wal
 *.db-shm
