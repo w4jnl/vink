@@ -4,6 +4,15 @@ User-facing changes per release, newest first. `scripts/release.sh` refuses to t
 that has no section here and uses the section as the GitHub release notes, so every release
 updates this file first. Dates are the tag dates.
 
+## 0.1.1 (2026-10-02)
+
+- SQLite 3.53.4 through modernc.org/sqlite 1.60.0, which carries upstream's fix for a
+  journal-rollback corruption after a crash during a multi-database commit.
+- The release notes land on the GitHub release again; 0.1.0 came out with an empty body and
+  had them set by hand.
+- Build and release actions on their current majors; the CA certificates in the image come
+  from Alpine 3.24.
+
 ## 0.1.0 (2026-10-02)
 
 The first public release. Everything below exists and is covered by tests; `docs/design.md` is
