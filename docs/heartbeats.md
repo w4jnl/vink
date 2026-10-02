@@ -10,7 +10,7 @@ opens an incident and alerts the routes that match. This page is for the person 
 Every project has a ping key, and every monitor has a slug. Together they make the URL:
 
 ```
-https://vink.example.com/ping/<ping key>/<slug>
+https://vink.w4j.nl/ping/<ping key>/<slug>
 ```
 
 The drawer of a monitor shows it with a Copy button, `vink get <slug>` prints it, and the
@@ -20,7 +20,7 @@ can ping any monitor of the project, so rotate it there if it ends up in a publi
 A request to the plain URL means "the job finished and all is well". Nothing else is needed:
 
 ```cron
-0 3 * * * /usr/local/bin/backup.sh && curl -fsS -m 10 --retry 3 https://vink.example.com/ping/<key>/nightly-backup
+0 3 * * * /usr/local/bin/backup.sh && curl -fsS -m 10 --retry 3 https://vink.w4j.nl/ping/<key>/nightly-backup
 ```
 
 `&&` keeps the ping from being sent when the script fails; `-m 10 --retry 3` keeps a slow
@@ -38,7 +38,7 @@ Append one segment to the URL to say more than "done":
 | `…/<slug>/fail` | finished badly | a failure |
 | `…/<slug>/log` | a note from a running job | none; the note is stored |
 
-Each one with curl, with `URL=https://vink.example.com/ping/<key>/<slug>`:
+Each one with curl, with `URL=https://vink.w4j.nl/ping/<key>/<slug>`:
 
 ```sh
 # done, all well: GET is enough
@@ -81,7 +81,7 @@ finishes:
 
 ```sh
 #!/bin/sh
-URL=https://vink.example.com/ping/<key>/nightly-backup
+URL=https://vink.w4j.nl/ping/<key>/nightly-backup
 curl -fsS -m 10 --retry 3 "$URL/start" >/dev/null
 restic backup /home
 curl -fsS -m 10 --retry 3 "$URL/$?" >/dev/null
@@ -176,7 +176,7 @@ drops into any crontab or unit file in place of the command. `vink ping <slug> [
 a one-hour grace, then records the ping:
 
 ```cron
-0 3 * * * backup.sh && curl -fsS https://vink.example.com/ping/<key>/nightly-backup?create=1
+0 3 * * * backup.sh && curl -fsS https://vink.w4j.nl/ping/<key>/nightly-backup?create=1
 ```
 
 This is the quickest way to cover many jobs; edit the schedule afterwards in the drawer. A slug
@@ -218,23 +218,23 @@ job with its result available:
 ```ini
 [Service]
 Type=oneshot
-ExecStartPre=/usr/bin/curl -fsS -m 10 https://vink.example.com/ping/<key>/nightly-backup/start
+ExecStartPre=/usr/bin/curl -fsS -m 10 https://vink.w4j.nl/ping/<key>/nightly-backup/start
 ExecStart=/usr/local/bin/backup.sh
-ExecStopPost=/usr/bin/curl -fsS -m 10 "https://vink.example.com/ping/<key>/nightly-backup/$EXIT_STATUS?msg=$SERVICE_RESULT"
+ExecStopPost=/usr/bin/curl -fsS -m 10 "https://vink.w4j.nl/ping/<key>/nightly-backup/$EXIT_STATUS?msg=$SERVICE_RESULT"
 ```
 
 **GitHub Actions.** One step at the end of the workflow, which also runs when a step failed:
 
 ```yaml
       - if: always()
-        run: curl -fsS -m 10 "https://vink.example.com/ping/${{ secrets.VINK_PING_KEY }}/deploy/${{ job.status == 'success' && 0 || 1 }}"
+        run: curl -fsS -m 10 "https://vink.w4j.nl/ping/${{ secrets.VINK_PING_KEY }}/deploy/${{ job.status == 'success' && 0 || 1 }}"
 ```
 
 **Python.**
 
 ```python
 import requests, sys
-url = "https://vink.example.com/ping/<key>/report"
+url = "https://vink.w4j.nl/ping/<key>/report"
 requests.get(f"{url}/start", timeout=10)
 try:
     run_report()
@@ -247,7 +247,7 @@ except Exception as e:
 **PowerShell.**
 
 ```powershell
-Invoke-WebRequest -UseBasicParsing -TimeoutSec 10 "https://vink.example.com/ping/<key>/sync/$LASTEXITCODE" | Out-Null
+Invoke-WebRequest -UseBasicParsing -TimeoutSec 10 "https://vink.w4j.nl/ping/<key>/sync/$LASTEXITCODE" | Out-Null
 ```
 
 **Docker container that runs a job:** the ping must come from inside the job or from its
