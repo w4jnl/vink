@@ -29,7 +29,8 @@ func (s *Service) record(ctx context.Context, q *db.Queries, sc domain.Scope, e 
 	actor, kind, actorID := actorOf(sc)
 	via := req.Via
 	if kind == audit.KindKey && via == audit.ViaAPI {
-		via = "api vk_" + actor
+		// the via column keeps the key's prefix whatever the actor is named
+		via = "api vk_" + strings.TrimPrefix(sc.Actor, "key:")
 	}
 	detail := "{}"
 	if len(e.Detail) > 0 {
