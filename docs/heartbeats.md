@@ -1,0 +1,235 @@
+# Heartbeat monitors
+
+A heartbeat monitor expects a job to check in on a schedule. The job does that by requesting a
+URL when it runs; vink does the rest: it knows when the next check-in is due, turns the monitor
+`late` when the deadline passes, `down` when the grace is over or the job reports a failure, and
+opens an incident and alerts the routes that match. This page is for the person writing the job.
+
+## The ping URL
+
+Every project has a ping key, and every monitor has a slug. Together they make the URL:
+
+```
+https://vink.example.com/ping/<ping key>/<slug>
+```
+
+The drawer of a monitor shows it with a Copy button, `vink get <slug>` prints it, and the
+project's Settings › Keys tab shows the key. The key is an address, not a secret: whoever has it
+can ping any monitor of the project, so rotate it there if it ends up in a public log.
+
+A request to the plain URL means "the job finished and all is well". Nothing else is needed:
+
+```cron
+0 3 * * * /usr/local/bin/backup.sh && curl -fsS -m 10 --retry 3 https://vink.example.com/ping/<key>/nightly-backup
+```
+
+`&&` keeps the ping from being sent when the script fails; `-m 10 --retry 3` keeps a slow
+network from breaking the job. vink answers `200 OK` with the body `OK`.
+
+## Signals
+
+Append one segment to the URL to say more than "done":
+
+| URL | Meaning | Effect on the state |
+| --- | --- | --- |
+| `…/<slug>` | finished, all well | up; the next deadline moves on |
+| `…/<slug>/start` | the job started | none; opens a run (see below) |
+| `…/<slug>/<exit code>` | finished with this exit code | `/0` is up; anything else is a failure |
+| `…/<slug>/fail` | finished badly | a failure |
+| `…/<slug>/log` | a note from a running job | none; the note is stored |
+
+A failure turns the monitor `down` at once (with the default `failure_threshold` of 1; a
+threshold of 2 lets a job retry once quietly). Every ping is stored as an observation and shown
+in the drawer with its time, signal, exit code, source address and user agent, so the job's
+history reads as a log.
+
+## A run: start, progress, finish
+
+For a job that takes a while, send `/start` first and the finish ping at the end. vink then
+knows the job is running, shows its duration when it finishes, and can catch a job that never
+finishes:
+
+```sh
+#!/bin/sh
+URL=https://vink.example.com/ping/<key>/nightly-backup
+curl -fsS -m 10 --retry 3 "$URL/start" >/dev/null
+restic backup /home
+curl -fsS -m 10 --retry 3 "$URL/$?" >/dev/null
+```
+
+`$?` is the exit code of the previous command, so the last line reports success as `/0` and any
+failure with the code restic gave. With `max_runtime` set on the monitor (for example `2h`), a
+`/start` that is not followed by a finish within that time counts as a failure with the reason
+`run_timeout`, which is how a hung job is caught.
+
+**Progress** goes through `/log`. It changes nothing in the state, it just adds an observation
+with the message you send, visible in the drawer:
+
+```sh
+curl -fsS -X POST --data "snapshot 4f1c2a9b saved, 1203 new files" "$URL/log"
+```
+
+**Overlapping runs** are told apart with a run id. Pass the same `?rid=` on the start and the
+finishing ping, and vink pairs those two whatever else arrives in between:
+
+```sh
+RID=$(date +%s)-$$
+curl -fsS "$URL/start?rid=$RID"
+…
+curl -fsS "$URL/$??rid=$RID"
+```
+
+## Carrying information
+
+Two ways to attach text to a ping:
+
+- **The body.** A POST or PUT body is stored as it is, up to 64 kB (`ping.body_limit`), and the
+  drawer shows a `body` link on that observation that opens it as plain text. Larger bodies are
+  cut at the limit and marked truncated. Send the last lines of the job's output on a failure:
+
+  ```sh
+  restic backup /home > /tmp/backup.log 2>&1
+  code=$?
+  curl -fsS -X POST --data-binary @/tmp/backup.log "$URL/$code"
+  ```
+
+- **`?msg=`.** For clients that cannot send a body, a message of up to 2,000 characters in the
+  query string. The drawer shows it inline on the row (the first 80 characters), so it suits a
+  one-line reason:
+
+  ```sh
+  curl -fsS "$URL/1?msg=$(python3 -c 'import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1]))' 'repository is already locked by PID 4120')"
+  ```
+
+Both work on every signal, including `/log`.
+
+## `vink run`: one command for all of it
+
+Where the vink CLI is installed, with a context pointing at the server:
+
+```sh
+vink run nightly-backup -- /usr/local/bin/backup.sh
+```
+
+sends `/start`, runs the command, and sends `/<exit code>` with the last 16 kB of the command's
+output as the body (`--tail` changes how much). It exits with the command's own code, so it
+drops into any crontab or unit file in place of the command. `vink ping <slug> [--start]
+[--fail] [--exit N] [--msg …]` sends a single signal by hand.
+
+## Methods, answers and limits
+
+- `GET`, `POST`, `HEAD` and `PUT` are accepted. A monitor can restrict itself to `POST`
+  (Advanced › Methods) so link previewers and crawlers cannot ping it by following a URL.
+- `200 OK` on success. `404` for an unknown key or slug, with the same body for both. `405` for
+  a method the monitor refuses. `413` when the `Content-Length` is over the limit; the answer
+  header `Ping-Body-Limit` says what the limit is. `429` with `Retry-After` when a monitor gets
+  more than 10 pings a minute or an address more than 300; a rate-limited ping is dropped.
+- A ping never redirects and never answers with HTML, so `curl -f` is enough to notice a problem.
+
+## Creating a monitor from the first ping
+
+`?create=1` on the plain URL creates an unknown slug as a heartbeat with a one-day period and
+a one-hour grace, then records the ping:
+
+```cron
+0 3 * * * backup.sh && curl -fsS https://vink.example.com/ping/<key>/nightly-backup?create=1
+```
+
+This is the quickest way to cover many jobs; edit the schedule afterwards in the drawer. A slug
+is lower-case letters, digits and dashes.
+
+## Schedules, grace and the states
+
+A heartbeat is either **periodic** (`period: 1h`, 60 s or more; the clock restarts at each
+ping, so the deadline is the last ping plus the period) or **cron** (`0 3 * * *`, five fields
+with names, ranges and steps, in the monitor's timezone, which defaults to the project's; the
+deadline is the next occurrence after the last ping). The create form shows the next three runs
+as you type.
+
+| State | Glyph | When |
+| --- | --- | --- |
+| new | ◌ | created, no ping yet |
+| up | ● | pinged in time |
+| late | ◐ | the deadline passed; nothing is sent to channels unless a route asks for `late` |
+| down | ◆ | the grace after the deadline is over, or a failure arrived; an incident opens and the routes alert |
+| paused | ‖ | paused by hand; nothing is expected |
+
+The **grace** is how long after the deadline `late` becomes `down`. Size it for the job's
+normal variance, not for the schedule: a nightly backup that sometimes runs twenty minutes long
+gets `30m`; a cron job that fires every minute gets the minimum of `60s`. Daylight-saving
+changes are handled in the monitor's timezone: a 02:30 run that does not exist on the
+spring-forward night is skipped, one that exists twice in autumn fires once.
+
+The next successful ping brings a `down` monitor back to `up`, closes the incident and sends the
+recovery to the same channels. **Maintenance windows** (Settings › Maintenance) hold a monitor
+back: inside a window it records pings and events but never goes `down` and never alerts, and a
+missed deadline is looked at again when the window ends. **Pause** stops expecting anything until
+you resume.
+
+## Recipes
+
+**systemd timer.** Put the ping in the service, not the timer; `ExecStopPost=` runs after the
+job with its result available:
+
+```ini
+[Service]
+Type=oneshot
+ExecStartPre=/usr/bin/curl -fsS -m 10 https://vink.example.com/ping/<key>/nightly-backup/start
+ExecStart=/usr/local/bin/backup.sh
+ExecStopPost=/usr/bin/curl -fsS -m 10 "https://vink.example.com/ping/<key>/nightly-backup/$EXIT_STATUS?msg=$SERVICE_RESULT"
+```
+
+**GitHub Actions.** One step at the end of the workflow, which also runs when a step failed:
+
+```yaml
+      - if: always()
+        run: curl -fsS -m 10 "https://vink.example.com/ping/${{ secrets.VINK_PING_KEY }}/deploy/${{ job.status == 'success' && 0 || 1 }}"
+```
+
+**Python.**
+
+```python
+import requests, sys
+url = "https://vink.example.com/ping/<key>/report"
+requests.get(f"{url}/start", timeout=10)
+try:
+    run_report()
+    requests.get(url, timeout=10)
+except Exception as e:
+    requests.post(f"{url}/fail", data=str(e)[:4000], timeout=10)
+    sys.exit(1)
+```
+
+**PowerShell.**
+
+```powershell
+Invoke-WebRequest -UseBasicParsing -TimeoutSec 10 "https://vink.example.com/ping/<key>/sync/$LASTEXITCODE" | Out-Null
+```
+
+**Docker container that runs a job:** the ping must come from inside the job or from its
+wrapper; a container's exit code is not seen by vink. `vink run` inside the image, or the shell
+recipe above, both work.
+
+## Reading what happened
+
+The monitor's drawer lists the last observations newest first: `start`, `ok`, `exit 1 ·
+<message>`, `log · <message>`, each with where it came from and, on a finish that followed a
+start, how long the run took. The 24-hour bar above it shows the day's states. Events, the
+state flips, are below with their reason: `deadline passed`, `grace over`, `exit 1`,
+`run_timeout`, `recovered`. The same facts are in the API at
+`/api/v1/monitors/<slug>/observations` and `/events`, and `vink logs <slug>` prints them.
+
+## When something does not add up
+
+- **`404`**: the key or the slug is wrong, or the monitor belongs to another project. Both
+  cases look the same on purpose. Check the URL in the drawer.
+- **The monitor is `late` right after a ping**: a periodic monitor's deadline is the ping plus
+  the period; a cron monitor's is the next occurrence. If the job runs more often than the
+  schedule says, it is still fine; if it runs less often, shorten the schedule or lengthen the
+  grace.
+- **A `/start` without a finish** stays open until the next ping; with `max_runtime` it turns
+  into a failure at the limit.
+- **`429`**: the job pings faster than ten times a minute; batch the progress into fewer `/log`
+  calls.
+- **The body is cut**: it was over 64 kB; the observation is marked truncated. Send the tail,
+  not the whole log.

@@ -199,6 +199,9 @@ event; a monitor inside an active maintenance window records observations but ne
 `?msg=` stores a short message for clients that cannot send a body. Unknown keys and slugs get
 the same 404. Pings are limited to 10 a minute per monitor and 300 a minute per address, and the
 ping key is an address, not a secret: rotate it from the project's keys tab when it leaks.
+[`docs/heartbeats.md`](docs/heartbeats.md) is the guide for the person writing the job: runs
+with start and finish, progress notes, bodies and messages, `vink run`, and recipes for cron,
+systemd, CI, Python and PowerShell.
 
 ### Check kinds
 
