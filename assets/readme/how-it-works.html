@@ -1,0 +1,143 @@
+<!doctype html>
+<!-- assets/readme/render.py renders this page to how-it-works-dark.png and how-it-works-light.png
+     (1200 css px wide, 2x). It uses the design system's tokens, glyphs and embedded fonts, so it
+     needs no network. ?theme=light or ?theme=dark picks the palette. Every label must stay true of
+     the code: remove a line before you ship a README that would show something vink does not do. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>vink: how it works</title>
+<link rel="stylesheet" href="../../docs/design-system/tokens.css">
+<link rel="stylesheet" href="../../docs/design-system/components/bundle.css">
+<script>document.documentElement.dataset.theme = new URLSearchParams(location.search).get('theme') || 'dark';</script>
+<style>
+  html, body { font-variant-ligatures: none; margin: 0; background: var(--ground); color: var(--ink); font-family: var(--font-sans); -webkit-font-smoothing: antialiased; }
+  .dg { width: 1200px; min-height: 660px; box-sizing: border-box; padding: 36px 40px 32px; display: grid;
+       grid-template-columns: 320px 64px 372px 64px 300px; grid-template-rows: 20px auto auto auto 44px; row-gap: 14px; }
+  .cap { font: 700 11px/20px var(--font-mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-faint); }
+  .cap--core { grid-column: 3; } .cap--out { grid-column: 5; }
+
+  .card { box-sizing: border-box; padding: 14px 16px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-md); align-self: stretch; display: flex; flex-direction: column; gap: 7px; }
+  .card h3 { margin: 0; font-size: 15px; line-height: 20px; font-weight: 600; }
+  .head { display: flex; align-items: center; gap: 8px; }
+  .kind { font: 700 10px/18px var(--font-mono); letter-spacing: 0.06em; text-transform: uppercase; padding: 0 6px; border-radius: var(--radius-xs); background: var(--accent-soft); color: var(--accent); }
+  .card p { margin: 0; font-size: 13px; line-height: 18px; color: var(--ink-muted); }
+  .cmd { display: block; padding: 5px 8px; border-radius: var(--radius-sm); background: var(--surface-sunk); font: 400 12px/18px var(--font-mono); color: var(--ink); white-space: nowrap; }
+  .cmd i { font-style: normal; color: var(--ink-muted); }
+  .tags { display: flex; flex-wrap: wrap; gap: 4px; }
+
+  .core { grid-column: 3; grid-row: 2 / 5; box-sizing: border-box; padding: 18px 20px; background: var(--surface); border: 1.5px solid var(--accent); border-radius: var(--radius-md); display: flex; flex-direction: column; gap: 14px; }
+  .lock { display: flex; align-items: center; gap: 12px; }
+  .lock svg { width: 34px; height: 34px; color: var(--mark); flex: none; }
+  .lock b { display: block; font: 700 24px/26px var(--font-mono); letter-spacing: -0.5px; }
+  .lock span { display: block; font: 400 12px/16px var(--font-mono); color: var(--ink-muted); }
+  .sec { border-top: 1px solid var(--line); padding-top: 12px; display: flex; flex-direction: column; gap: 6px; }
+  .sec h4 { margin: 0; font: 700 11px/16px var(--font-mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-faint); }
+  .sec p { margin: 0; font-size: 13px; line-height: 18px; color: var(--ink); }
+  .states { display: grid; grid-template-columns: 76px 1fr; row-gap: 5px; align-items: center; }
+  .states .vk-state { font-size: 13px; }
+  .states .vk-state--late { color: var(--late); } .states .vk-state--down { color: var(--down); } .states .vk-state--new { color: var(--new); }
+  .states span.m { font-size: 13px; line-height: 18px; color: var(--ink-muted); }
+  .two { display: flex; gap: 10px; color: var(--ink-muted); }
+
+  .arr { position: relative; align-self: center; height: 34px; }
+  .arr span { position: absolute; left: 0; right: 0; top: 0; text-align: center; font: 400 11px/14px var(--font-mono); color: var(--ink-muted); }
+  .arr svg { position: absolute; left: 6px; right: 6px; bottom: 2px; width: calc(100% - 12px); height: 12px; overflow: visible; color: var(--line-strong); }
+  .arr--accent svg { color: var(--accent); }
+
+  .ubar { display: flex; gap: 2px; height: 16px; }
+  .ubar i { flex: 1 1 0; border-radius: 1.5px; background: var(--up); }
+  .ubar i.l { background: var(--late); } .ubar i.x { background: var(--down); }
+
+  .at-1-2 { grid-column: 1; grid-row: 2; }
+  .at-1-3 { grid-column: 1; grid-row: 3; }
+  .at-1-4 { grid-column: 1; grid-row: 4; }
+  .at-2-2 { grid-column: 2; grid-row: 2; }
+  .at-2-3 { grid-column: 2; grid-row: 3; }
+  .at-2-4 { grid-column: 2; grid-row: 4; }
+  .at-4-2 { grid-column: 4; grid-row: 2; }
+  .at-4-3 { grid-column: 4; grid-row: 3; }
+  .at-4-4 { grid-column: 4; grid-row: 4; }
+  .at-5-2 { grid-column: 5; grid-row: 2; }
+  .at-5-3 { grid-column: 5; grid-row: 3; }
+  .at-5-4 { grid-column: 5; grid-row: 4; }
+  .foot { grid-column: 1 / 6; align-self: end; border-top: 1px solid var(--line); padding-top: 12px; display: flex; justify-content: space-between; font-size: 13px; line-height: 18px; color: var(--ink-muted); }
+  .foot b { color: var(--ink); font-weight: 600; }
+</style>
+</head>
+<body>
+<div class="dg">
+  <div class="cap">your jobs and services</div>
+  <div class="cap cap--core">vink</div>
+  <div class="cap cap--out">you and your users</div>
+
+  <!-- row 1: push in, alerts out -->
+  <section class="card at-1-2">
+    <div class="head"><span class="kind">push</span><h3>Jobs check in</h3></div>
+    <p>cron, systemd timers, CI, backup scripts</p>
+    <code class="cmd">GET /ping/<i>&lt;key&gt;</i>/nightly-backup</code>
+    <p class="mono">…/start · …/fail · …/<i>&lt;exit code&gt;</i>, with an optional body</p>
+    <code class="cmd">vink run nightly-backup -- ./backup.sh</code>
+  </section>
+  <div class="arr arr--accent at-2-2"><span>ping</span><svg viewBox="0 0 52 12" preserveAspectRatio="none"><path d="M0 6H50M44 1l6 5-6 5" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+
+  <section class="core">
+    <div class="lock">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><g stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" fill="none"><path d="M8 3.2 H6 a2.2 2.2 0 0 0 -2.2 2.2 V18.6 a2.2 2.2 0 0 0 2.2 2.2 H8"/><path d="M16 3.2 H18 a2.2 2.2 0 0 1 2.2 2.2 V18.6 a2.2 2.2 0 0 1 -2.2 2.2 H16"/></g><path d="M7.5 10.1 L10.5 12.9 L16.5 7.1" stroke="currentColor" stroke-width="2.9" stroke-linecap="round" stroke-linejoin="round" fill="none"/><rect x="9.6" y="16.2" width="4.8" height="2.2" rx="1.1" fill="currentColor"/></svg>
+      <div><b>vink</b><span>one Go binary · embedded SQLite</span></div>
+    </div>
+    <div class="sec"><h4>Deadlines</h4><p>A period or a cron schedule, in the monitor's timezone, plus grace. Checks run on an interval and retry before they flip.</p></div>
+    <div class="sec"><h4>One state machine for both</h4>
+      <div class="states">
+        <span class="vk-state vk-state--up"><i class="vk-glyph vk-glyph--up" aria-hidden="true"></i>up</span><span class="m">pinged on time, or the check passed</span>
+        <span class="vk-state vk-state--late"><i class="vk-glyph vk-glyph--late" aria-hidden="true"></i>late</span><span class="m">past the deadline, or a first failure</span>
+        <span class="vk-state vk-state--down"><i class="vk-glyph vk-glyph--down" aria-hidden="true"></i>down</span><span class="m">grace over, a fail ping, or N failures</span>
+        <span class="vk-state vk-state--paused"><i class="vk-glyph vk-glyph--paused" aria-hidden="true"></i>paused</span><span class="m">no alerts; <b class="vk-state vk-state--new"><i class="vk-glyph vk-glyph--new" aria-hidden="true"></i>new</b> until the first ping</span>
+      </div>
+    </div>
+    <div class="sec"><h4>Incidents</h4><p>Opened on down, closed on up, acked by a person. Maintenance windows hold alerts back.</p></div>
+    <div class="sec"><h4>Run it from</h4><div class="tags"><span class="vk-tag">web UI</span><span class="vk-tag">REST API</span><span class="vk-tag">CLI</span><span class="vk-tag">vink apply -f vink.yaml</span></div></div>
+  </section>
+
+  <div class="arr arr--accent at-4-2"><span>alert</span><svg viewBox="0 0 52 12" preserveAspectRatio="none"><path d="M0 6H50M44 1l6 5-6 5" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+  <section class="card at-5-2">
+    <div class="head"><span class="kind">notify</span><h3>Alerts</h3></div>
+    <p>Routes match tags and send to channels:</p>
+    <div class="tags"><span class="vk-tag">SMTP</span><span class="vk-tag">webhook</span><span class="vk-tag">ntfy</span><span class="vk-tag">Gotify</span><span class="vk-tag">Matrix</span><span class="vk-tag">Slack-compatible</span><span class="vk-tag">Alertmanager</span></div>
+    <code class="cmd">[vink] DOWN nightly-backup (homelab)</code>
+  </section>
+
+  <!-- row 2: pull out, status pages out -->
+  <section class="card at-1-3">
+    <div class="head"><span class="kind">pull</span><h3>Services get checked</h3></div>
+    <div class="tags"><span class="vk-tag">HTTP(S)</span><span class="vk-tag">TCP</span><span class="vk-tag">DNS</span><span class="vk-tag">TLS expiry</span><span class="vk-tag">ICMP</span></div>
+    <p>Status codes, a keyword or a JSON path in the body, certificate days left, latency.</p>
+  </section>
+  <div class="arr at-2-3"><span>check</span><svg viewBox="0 0 52 12" preserveAspectRatio="none"><path d="M52 6H2M8 1L2 6l6 5" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+
+  <div class="arr at-4-3"><span>serve</span><svg viewBox="0 0 52 12" preserveAspectRatio="none"><path d="M0 6H50M44 1l6 5-6 5" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+  <section class="card at-5-3">
+    <div class="head"><span class="kind">share</span><h3>Status pages</h3></div>
+    <code class="cmd">/s/homelab</code>
+    <div class="ubar" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i class="l"></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i class="x"></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+    <p>Per project, 90-day bars, SVG badges.</p>
+  </section>
+
+  <!-- row 3: agents in, metrics out -->
+  <section class="card at-1-4">
+    <div class="head"><span class="kind">agent</span><h3>Closed networks</h3></div>
+    <p><code class="vk-tag">vink agent</code> runs the same checks inside another network and dials out to the server. No inbound port.</p>
+  </section>
+  <div class="arr at-2-4"><span>results</span><svg viewBox="0 0 52 12" preserveAspectRatio="none"><path d="M0 6H50M44 1l6 5-6 5" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+
+  <div class="arr at-4-4"><span>scrape</span><svg viewBox="0 0 52 12" preserveAspectRatio="none"><path d="M52 6H2M8 1L2 6l6 5" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+  <section class="card at-5-4">
+    <div class="head"><span class="kind">observe</span><h3>Prometheus</h3></div>
+    <code class="cmd">/metrics</code>
+    <p>Monitors by state, pings, checks, deliveries, scheduler lag.</p>
+  </section>
+
+  <div class="foot"><span><b>Orgs → projects → roles</b>, with an audit log. Sign in with OIDC, your reverse proxy, or a local account with two-factor.</span><span><b>No calls out</b> unless you configure them.</span></div>
+</div>
+</body>
+</html>

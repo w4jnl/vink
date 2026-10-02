@@ -4,6 +4,7 @@
 /dist/
 /completions/
 *.db
+secret.key
 *.db-wal
 *.db-shm
 build-errors.log

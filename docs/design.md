@@ -1,10 +1,10 @@
 # vink — design document
 
-As of 2026-09-27 · J. This file is the source of truth for implementation. Brand and UI rules: `docs/design-system/`; logos and icons: `assets/brand/`.
+As of 2026-09-27 · J. This is the design vink is built from; the README describes what is implemented. This file is the source of truth for implementation. Brand and UI rules: `docs/design-system/`; logos and icons: `assets/brand/`.
 
 ## Purpose, scope and principles
 
-This document specifies a self-hosted status monitor — heartbeat receivers plus active pull checks, multi-tenant from the first migration, one Go binary with embedded SQLite — in enough detail for an implementing agent to build phases 0 and 1 without further design decisions. Background and competitor analysis are in [Monitoring Landscape & Build Assessment](https://claude.ai/code/artifact/d325cfae-5dc8-4dd2-a109-07abad5791ea). Name: `vink` (binary and CLI), github.com/w4jnl/vink.
+This document specifies a self-hosted status monitor — heartbeat receivers plus active pull checks, multi-tenant from the first migration, one Go binary with embedded SQLite — in enough detail for an implementing agent to build phases 0 and 1 without further design decisions. Background: a survey of Healthchecks, Uptime Kuma, Gatus and the hosted monitors found heartbeat and uptime monitoring kept in separate products, the self-hosted ones single-user, and none built to run inside a closed network, which is the gap this design fills. Name: `vink` (binary and CLI), github.com/w4jnl/vink.
 
 **Goals (v1)**
 
@@ -643,18 +643,18 @@ key_file = "/var/lib/vink/secret.key"     # 32 bytes, created on first run; encr
 
 Phase 0 — foundation (gate: replaces Healthchecks for own cron jobs)
 
-- [ ] Repo skeleton, `Makefile`, `air`, `sqlc`, `golangci-lint`, dbmate, CI workflow
-- [ ] Migrations for all v1 tables; `internal/db` open/pragmas; sqlc queries for orgs, projects, users, memberships, api\_keys, monitors, observations, bodies, events, incidents, channels, routes, deliveries
-- [ ] `domain` types and validation for heartbeat specs (period, cron, grace, thresholds, timezone)
-- [ ] `internal/schedule` with the DST test table
-- [ ] State machine + events + incidents; scheduler with `next_due_at` wake-up; in-process bus
-- [ ] Ping ingress with all URL forms, body capture, rate limits, 404 parity
-- [ ] Auth: local accounts, sessions, CSRF; proxy header mode with secret and CIDR checks; roles; `Scope` middleware; `vink admin init`
-- [ ] API v1: me, monitors CRUD + pause/resume, observations, events, incidents + ack, channels, routes, keys, ping-key rotate, status; RFC 7807; pagination; OpenAPI file
-- [ ] Notifiers: smtp, webhook, ntfy; dispatcher with outbox and backoff; channel test
-- [ ] UI: layout, monitors list with filters and polling, drawer, create/edit form, incidents, settings tabs (channels, routes, keys), login, empty states, CSS tokens, dark mode
-- [ ] CLI: ctx, ls, get, logs, pause/resume, ack, ping, run, status, version
-- [ ] Cross-tenant test suite; e2e smoke; goreleaser; systemd unit; README quick start
+- [x] Repo skeleton, `Makefile`, `air`, `sqlc`, `golangci-lint`, dbmate, CI workflow
+- [x] Migrations for all v1 tables; `internal/db` open/pragmas; sqlc queries for orgs, projects, users, memberships, api\_keys, monitors, observations, bodies, events, incidents, channels, routes, deliveries
+- [x] `domain` types and validation for heartbeat specs (period, cron, grace, thresholds, timezone)
+- [x] `internal/schedule` with the DST test table
+- [x] State machine + events + incidents; scheduler with `next_due_at` wake-up; in-process bus
+- [x] Ping ingress with all URL forms, body capture, rate limits, 404 parity
+- [x] Auth: local accounts, sessions, CSRF; proxy header mode with secret and CIDR checks; roles; `Scope` middleware; `vink admin init`
+- [x] API v1: me, monitors CRUD + pause/resume, observations, events, incidents + ack, channels, routes, keys, ping-key rotate, status; RFC 7807; pagination; OpenAPI file
+- [x] Notifiers: smtp, webhook, ntfy; dispatcher with outbox and backoff; channel test
+- [x] UI: layout, monitors list with filters and polling, drawer, create/edit form, incidents, settings tabs (channels, routes, keys), login, empty states, CSS tokens, dark mode
+- [x] CLI: ctx, ls, get, logs, pause/resume, ack, ping, run, status, version
+- [x] Cross-tenant test suite; e2e smoke; goreleaser; systemd unit; README quick start
 
 Phase 1 — pull checks (gate: replaces Uptime Kuma in the homelab)
 
@@ -695,4 +695,4 @@ Phase 3 — multi-tenant polish (gate: second org onboarded without hand-holding
 | HTML templating | `html/template` | `templ` (generated Go, faster, adds a build step) |
 | Per-project roles | not in v1 | nullable `memberships.project_id` |
 | Email ping ingress | not in v1 | LMTP listener in phase 3 |
-| Licence | private repo for now | MIT if opened later |
+| Licence | MIT (decided) | — |

@@ -11,7 +11,7 @@
 # forward auth, and any identity header a client sent is stripped.
 #
 # Authelia access_control for the UI:
-#   - domain: vink.w4j.nl
+#   - domain: vink.example.com
 #     policy: two_factor
 #     subject: ["group:vink:homelab:admin", "group:vink:homelab:member"]
 # Groups named vink:<org>:<role> grant that role; vink:admin grants
@@ -35,7 +35,7 @@ http:
 
   routers:
     vink-open:   # pings, API, status pages, metrics, health: no forwardAuth, identity headers stripped
-      rule: Host(`vink.w4j.nl`) && (PathPrefix(`/ping/`) || PathPrefix(`/api/`) || PathPrefix(`/s/`) || PathPrefix(`/agent/`) || Path(`/metrics`) || Path(`/healthz`) || Path(`/readyz`))
+      rule: Host(`vink.example.com`) && (PathPrefix(`/ping/`) || PathPrefix(`/api/`) || PathPrefix(`/s/`) || PathPrefix(`/agent/`) || Path(`/metrics`) || Path(`/healthz`) || Path(`/readyz`))
       priority: 100
       entryPoints: [websecure]
       middlewares: [strip-identity, vink-secret]
@@ -43,7 +43,7 @@ http:
       tls:
         certResolver: letsencrypt
     vink-ui:
-      rule: Host(`vink.w4j.nl`)
+      rule: Host(`vink.example.com`)
       entryPoints: [websecure]
       middlewares: [authelia, vink-secret]
       service: vink
@@ -59,10 +59,10 @@ http:
 
 # vink.toml for this setup:
 #   [server]
-#   base_url = "https://vink.w4j.nl"
+#   base_url = "https://vink.example.com"
 #   trusted_proxies = ["172.16.0.0/12"]     # the docker network Traefik is on
 #   [auth.proxy]
 #   enabled = true
 #   trusted_cidrs = ["172.16.0.0/12"]
 #   secret = "env:VINK_PROXY_SECRET"
-#   logout_url = "https://auth.w4j.nl/logout?rd=https://vink.w4j.nl"   # rd: where Authelia sends the person afterwards; without it they stay on its page
+#   logout_url = "https://auth.example.com/logout?rd=https://vink.example.com"   # rd: where Authelia sends the person afterwards; without it they stay on its page

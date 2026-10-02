@@ -1,188 +1,376 @@
-# vink
+<p align="center"><img src="assets/brand/vink-hero.png" alt="vink: heartbeat and uptime monitor" width="800"></p>
 
-Self-hosted heartbeat and uptime monitor. Jobs ping it, and it probes services. One Go binary with an embedded SQLite database, multi-tenant (orgs, projects, roles), deployable air-gapped. The name is Dutch: *vink* is a finch, and *vinkje* is the checkmark you tick off a list.
+[![ci](https://github.com/w4jnl/vink/actions/workflows/ci.yml/badge.svg)](https://github.com/w4jnl/vink/actions/workflows/ci.yml)
 
-Phase 1 is done: heartbeat monitors (period or cron, grace, start/fail/exit signals, run ids) and pull checks (HTTP with status, body and JSON path matching, TCP with banners, DNS, TLS expiry, ICMP); one state machine with incidents, confirm retries and maintenance windows; notifications by mail, webhook, ntfy, Gotify, Matrix, Slack-compatible hooks and Alertmanager with retries and repeats; public status pages with badges; a declarative `apply` file with `export`; Prometheus metrics; a server-rendered web UI; a REST API; a CLI. Probe agents for closed networks come in phase 2. `docs/design.md` is the specification.
+vink tells you when a cron job does not check in or a service stops answering. One Go binary
+with SQLite, and nothing leaves your network unless you configure it.
 
-## Quick start
+Jobs ping a URL when they run, as with Healthchecks; vink checks HTTP, TCP, DNS, TLS and ICMP
+targets on an interval, as Uptime Kuma does. Both feed one state machine, one incident list, one
+set of alert routes and public status pages, behind a web UI, a REST API and a CLI.
 
-Build once (Go 1.27 or newer; the binary needs no cgo):
+<p align="center"><img src="assets/readme/monitors-dark.png" alt="The monitor list in the dark theme: nine monitors with state and tag chips above them, one up, late, down, paused and new each, and the drawer of nightly-backup open on the right showing it down for a minute, its ping URL, a 24-hour bar and the failed run with exit 1 and the restic lock message" width="900"></p>
 
-```sh
-make build            # ./bin/vink
-```
+<p align="center">
+<img src="assets/readme/status-light.png" alt="A public status page in the light theme: a red banner saying one service is down, two groups of monitors with 90-day uptime bars, and the open incident" width="440">
+<img src="assets/readme/new-monitor-dark.png" alt="The create form in the dark theme: the kind picker on Heartbeat, a cron schedule of 0 3 * * * with the next three runs spelled out, timezone Europe/Amsterdam and a 30-minute grace" width="440">
+</p>
 
-Bootstrap an empty database. This creates the instance admin, the first org, the first project, and prints the project's ping key and a one-time read-write API key:
+<p align="center"><img src="assets/readme/run.gif" alt="A 21-second terminal recording: vink ls shows nightly-backup down, vink run wraps a backup script that succeeds, vink ls shows it up again, and vink logs lists the last three observations" width="880"></p>
 
-```sh
-printf 'a-long-password\n' | ./bin/vink admin init --org homelab --user j --password-stdin --timezone Europe/Amsterdam --db data/vink.db
-```
+## Setup
 
-Start the server (defaults: `:8080`, database `vink.db`, local sign-in on):
+Current version: not released yet · [release notes](CHANGELOG.md). Linux and macOS on amd64 and
+arm64 run the server, the agent and the CLI; the Windows build is for the CLI and the agent.
 
-```sh
-VINK_DB_PATH=data/vink.db ./bin/vink serve -d
-```
+1. Run it. With Docker, on a named volume for `/data`:
+   ```sh
+   docker run -d --name vink -p 8080:8080 -v vink-data:/data ghcr.io/w4jnl/vink
+   ```
+   Or with a release binary from the [releases page](https://github.com/w4jnl/vink/releases):
+   ```sh
+   ver=0.1.0; os=$(uname -s | tr '[:upper:]' '[:lower:]'); arch=$(uname -m | sed 's/x86_64/amd64/; s/aarch64/arm64/')
+   curl -fsSLO "https://github.com/w4jnl/vink/releases/download/v$ver/vink_${ver}_${os}_${arch}.tar.gz"
+   curl -fsSLO "https://github.com/w4jnl/vink/releases/download/v$ver/sha256sums.txt"
+   sha256sum -c --ignore-missing sha256sums.txt
+   tar -xzf "vink_${ver}_${os}_${arch}.tar.gz" vink && sudo install vink /usr/local/bin/
+   vink serve        # listens on :8080, writes vink.db and secret.key in the working directory
+   ```
+2. Bootstrap. This creates the instance admin, the first org and its first project, and prints
+   the project's ping key and a read-write API key, once:
+   ```sh
+   printf 'a-long-password\n' | docker exec -i vink /vink admin init --org homelab --user admin --password-stdin
+   # binary: printf 'a-long-password\n' | vink admin init --org homelab --user admin --password-stdin
+   ```
+   It runs against the database file, beside the running server or before it.
+3. Open http://localhost:8080 and sign in. Point the CLI at the server with the API key:
+   ```sh
+   vink ctx add homelab --server http://localhost:8080 --key vk_…
+   ```
+4. Create a heartbeat in the UI (Create monitor, kind Heartbeat, schedule `0 3 * * *`, grace
+   `30m`), then ping it from the job's crontab line:
+   ```cron
+   0 3 * * * /usr/local/bin/backup.sh && curl -fsS -m 10 --retry 3 http://localhost:8080/ping/<ping key>/nightly-backup
+   ```
+   Where the CLI is installed, `vink run nightly-backup -- /usr/local/bin/backup.sh` does the
+   same and also reports a failure with its exit code and the output.
+5. Add a channel so the first `down` reaches you. The first channel of a project gets a route
+   that sends every down and up; an ntfy topic needs three lines in `vink.yaml`:
+   ```yaml
+   version: 1
+   channels:
+     - {name: phone, kind: ntfy, url: https://ntfy.example.com, topic: vink}
+   ```
+   ```sh
+   vink apply -f vink.yaml
+   ```
 
-Sign in at http://localhost:8080 with the user and password from `admin init`. Point the CLI at the server with the API key it printed:
+`vink status` prints the counts per state and exits 3 while anything is down, so it doubles as
+a check of the install.
 
-```sh
-./bin/vink ctx add local --server http://localhost:8080 --key vk_…
-```
+### More install options
 
-Create a heartbeat that expects a ping every minute and goes down one minute after a missed deadline. The web form does the same at Create monitor.
+- Homebrew, on macOS or Linux: `brew install w4jnl/tap/vink`.
+- Release binaries for Linux and macOS on amd64 and arm64, Windows on amd64 for the CLI and
+  the agent, each with `sha256sums.txt` and an SBOM; the image `ghcr.io/w4jnl/vink` for amd64
+  and arm64, built `FROM scratch` with the binary and CA certificates.
+- `docs/deploy/vink.service` is a hardened systemd unit (`DynamicUser`, `StateDirectory=vink`),
+  `vink-agent.service` the agent's, `compose.yaml` a one-container compose file.
+- Behind Traefik with Authelia or Apache with Kerberos: `docs/deploy/traefik-authelia.yaml` and
+  `docs/deploy/apache-kerberos.conf` show the headers, the shared secret and the paths that stay
+  open.
+- From source, with Go 1.27 or newer and no cgo: `make build` writes `./bin/vink`.
 
-```sh
-curl -sS -H "Authorization: Bearer vk_…" -H 'Content-Type: application/json' \
-  -d '{"slug":"backup","name":"Nightly backup","schedule":{"period":"60s"},"grace":"60s","tags":["backup"]}' \
-  http://localhost:8080/api/v1/monitors
-```
+## Why vink
 
-Ping it the way a cron job would, with the ping key from `admin init`:
+The problem:
 
-```sh
-curl -fsS http://localhost:8080/ping/<ping key>/backup
-```
+- A job that does not run makes no noise. A backup that stopped in March is found in July.
+- Heartbeat tools and uptime tools are separate products, with separate users, alerts and
+  status pages.
+- Self-hosted monitors are mostly single-user, and hosted ones cannot see inside a closed
+  network.
 
-The monitor is `up`. Wait: after 60 seconds without a ping it turns `late`, and 60 seconds later `down`, which opens an incident. Watch it in the UI, or from the shell:
+What vink does about it:
 
-```sh
-./bin/vink ls
-./bin/vink status          # exits 3 while anything is down
-./bin/vink logs backup
-```
+- One state machine for push and pull: cron-aware deadlines with a timezone and a grace, retries
+  before a check flips, and the same incidents, routes and status pages for both.
+- Orgs, projects and roles from the first migration. Sign-in is through OpenID Connect, the
+  reverse proxy you already run, or local accounts with two-factor, and every change lands in an
+  audit log.
+- One binary with SQLite, agents that dial out from networks the server cannot reach, and no
+  outbound connection unless configured.
+- `vink.yaml` with `apply` and `export`, so monitors, channels and routes live in git.
 
-To receive the alert, add a channel and let the default route send every down and up to it. A webhook to any URL:
+Compared with:
 
-```sh
-curl -sS -H "Authorization: Bearer vk_…" -H 'Content-Type: application/json' \
-  -d '{"name":"hook","kind":"webhook","config":{"url":"https://hooks.example.com/vink"}}' \
-  http://localhost:8080/api/v1/channels
-```
+- [Healthchecks](https://healthchecks.io) is the reference for heartbeats; vink borrows its URL
+  forms and signals. It has no pull checks, by design.
+- [Uptime Kuma](https://github.com/louislam/uptime-kuma) has many check types, push monitors on a
+  fixed interval, and a single user.
+- [Gatus](https://github.com/TwiN/gatus) is configured from a file and has no user model.
 
-Or mail, after setting `[smtp] host` in `vink.toml`:
+When not to use vink: on-call paging with schedules and escalation (route vink to an incident
+manager instead), browser checks that drive a page, or probes from many internet regions (a
+hosted synthetic monitor).
 
-```sh
-curl -sS -H "Authorization: Bearer vk_…" -H 'Content-Type: application/json' \
-  -d '{"name":"mail","kind":"smtp","config":{"to":["ops@example.com"]}}' \
-  http://localhost:8080/api/v1/channels
-```
+## Features
 
-Settings › Channels has a Test button that sends a synthetic notification and shows the error verbatim. Ping again to bring the monitor `up`; the recovery is sent too.
+- **Heartbeats**: a period or a 5-field cron schedule in the monitor's timezone, a grace, a
+  maximum runtime, `start`, `fail`, `log` and exit-code signals, run ids that pair a start with
+  its finish, the body of a ping stored up to 64 kB, `?create=1` to make a monitor from its first
+  ping, `vink run` to wrap a command.
+- **Checks**: HTTP with status, keyword and JSON path assertions, redirects and a private CA; TCP
+  with a banner; DNS; TLS expiry; ICMP. Each on an interval from 10 s with a timeout, confirm
+  retries, failure and recovery thresholds, latency sparklines, `check now`.
+- **Alerts**: routes match tags and send `down`, `up` and `late` to SMTP, webhooks with Go
+  templates, ntfy, Gotify, Matrix, Slack-compatible hooks and Alertmanager; repeats while an
+  incident stays unacknowledged; six delivery attempts with backoff; one-click acknowledgement
+  links; a Test button per channel; maintenance windows, one-off and weekly.
+- **Status pages**: one per project at `/s/<slug>`, grouped by tag, 90-day bars, open incidents,
+  an optional password, a custom domain, SVG and JSON badges, cacheable for 30 s and free of
+  scripts.
+- **Teams and sign-in**: orgs, projects and the roles viewer, member, admin and owner; invites
+  by one-time link; monitor and agent quotas per org; an instance admin page; local accounts with
+  TOTP and recovery codes; trusted proxy headers; OpenID Connect with PKCE; groups mapped to
+  roles; an audit log per org and for the instance with the before and after of every change.
+- **Config as code**: `vink apply` and `vink export` for a project or a whole org, a JSON Schema
+  for the file, a diff, a dry run and a prune; importers for Healthchecks and Uptime Kuma.
+- **Operations**: one binary and one SQLite file, `vink admin backup` while running, 90 days of
+  observations and 14 days of bodies kept, Prometheus `/metrics`, `/healthz` and `/readyz`, an
+  outbound proxy and CA bundle, an egress log, agents over an outbound WebSocket, shell
+  completion.
 
-In a crontab, the whole thing is one line:
+## Scope and status
 
-```cron
-0 3 * * * restic backup && curl -fsS http://localhost:8080/ping/<ping key>/backup?create=1
-```
+vink is a personal tool, published because the approach may be useful to others. It runs my
+homelab and is built to install in closed corporate networks, which sets its priorities:
+features are the ones those two places need, and support is best effort.
 
-`?create=1` creates an unknown monitor with a one-day period and one-hour grace. For jobs on hosts with the CLI, `vink run backup -- restic backup` sends a start ping, runs the command, and sends its exit code and the output tail as the finish ping.
+Not yet:
 
-## Pull checks
+- A Postgres backend behind the store interface.
+- A Terraform provider generated from the API.
+- OTLP traces.
 
-A pull monitor is created like a heartbeat, with its kind's block instead of a schedule. The server runs it every `interval` with `timeout` per attempt, retries a failed attempt `confirm.retries` times before it counts, turns the monitor `late` on the first counted failure and `down` after `failure_threshold`.
+Not planned:
 
-```sh
-curl -sS -H "Authorization: Bearer vk_…" -H 'Content-Type: application/json' \
-  -d '{"slug":"api","kind":"http","interval":"30s","tags":["prod"],"http":{"url":"https://api.example.com/healthz","expect_body":{"jsonpath":{"path":"$.status","equals":"ok"}}}}' \
-  http://localhost:8080/api/v1/monitors
-```
+- On-call schedules, escalation or paging people directly.
+- Log, metric or trace storage, or dashboards beyond the monitor list and detail.
+- Browser checks, SMS or voice delivery, billing.
+- A JavaScript single-page app; the UI is server-rendered with htmx partials.
 
-| kind | block | what counts as up |
-| --- | --- | --- |
-| `http` | `url`, `method`, `headers`, `body`, `expect_status` (`[200-299]`), `expect_body` (`contains`, `not_contains` or `jsonpath: {path, equals}`), `follow_redirects`, `verify_tls`, `ca_pem` | the status is expected and the body matches |
-| `tcp` | `host`, `port`, `send`, `expect` | the port accepts and the banner contains `expect` |
-| `dns` | `name`, `type`, `resolver`, `expect` | the name resolves and every expected answer is present |
-| `tls` | `host`, `port`, `servername`, `warn_days`, `crit_days` | the handshake verifies; `late` inside `warn_days`, `down` inside `crit_days` |
-| `icmp` | `host`, `count`, `loss_threshold` | fewer packets are lost than the threshold (needs `CAP_NET_RAW` or `net.ipv4.ping_group_range` on Linux) |
+vink is not released yet. [`CHANGELOG.md`](CHANGELOG.md) will list what changed in every
+release, newest first; the same text goes on each GitHub release.
 
-`vink check <slug>` runs a check now; the drawer has the same button and shows every attempt with its latency and reason. List rows carry a 24-hour latency sparkline.
+## How it works
 
-## Maintenance windows
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/readme/how-it-works-dark.png">
+  <img src="assets/readme/how-it-works-light.png" alt="Three columns: jobs ping and services get checked on the left, vink's state machine with deadlines, incidents and maintenance windows in the middle, and alerts, status pages and metrics for you and your users on the right" width="900">
+</picture>
 
-Settings › Maintenance takes one-off windows (from, to) and weekly ones (days, from, to) in a timezone, each with tags. While a window is active, the monitors carrying its tags keep recording but never go `down` and never alert; a heartbeat held back is looked at again when the window ends. End now cuts the running occurrence short.
+### States
 
-## Status pages
+| State | Glyph | Enters when | Leaves when |
+| --- | --- | --- | --- |
+| new | ◌ | the monitor is created | the first ping or check |
+| up | ● | a ping arrives on time, or a check passes | the deadline passes, or a check fails |
+| late | ◐ | a heartbeat misses its deadline, or a check fails but is not yet confirmed | a ping arrives, the grace runs out, or the failures reach the threshold |
+| down | ◆ | the grace is over, a fail ping or exit code arrives, or the failures reach the threshold | an ok ping or passing check; an incident opens on entry and closes on exit |
+| paused | ‖ | pause, by hand or from the API | resume |
 
-Settings › Status pages publishes the monitors with any of a page's tags at `/s/<slug>`: a banner, one group per tag with a state and a 90-day uptime bar, open incidents. The page ships no script, is cacheable for 30 seconds, can ask for a password, and can be served on a custom domain routed to vink. Badges live at `/s/<slug>/badge/<monitor>.svg` and `.json` (Shields schema).
+Every state has a word and a glyph, so colour is never the only signal. Every flip writes an
+event; a monitor inside an active maintenance window records observations but never enters
+`down` and never alerts.
 
-## Declarative configuration
+### Ping URLs and signals
 
-`vink apply -f vink.yaml` brings a project to a file: channels, routes, maintenance windows, monitors and status pages, applied in one transaction, with the diff printed. `--dry-run` shows the diff without applying, `--prune` deletes what the file does not name. `${VAR}` is expanded from the environment before sending, so tokens stay out of the file; a secret written as `***` keeps the stored value. `vink export -o vink.yaml` writes the project back in the same form, secrets redacted (`--secrets` includes them). `docs/apply-schema.json` is the JSON Schema the CLI validates against; the same file goes to `PUT /api/v1/apply`.
-
-A whole org fits in one file too. `vink admin org key create --org homelab --access rw` (on the server host) issues an org key; with it in a context, `vink export --org homelab -o homelab.yaml` writes every project under `org:` and `projects:`, and `vink apply -f homelab.yaml` brings them all back in one transaction, creating a project the file names and the org lacks, never deleting one. An org key does only that: it cannot touch a project's monitors or agents, and a project key cannot act for the org.
-
-```yaml
-version: 1
-channels:
-  - {name: ntfy, kind: ntfy, url: https://ntfy.example.com, topic: vink, token: ${NTFY_TOKEN}}
-routes:
-  - {match_tags: [prod], channels: [ntfy], on: [down, up], repeat_every: 4h}
-maintenance:
-  - {name: weekly patching, match_tags: [prod], rrule: "FREQ=WEEKLY;BYDAY=SU", from: "02:00", to: "04:00"}
-monitors:
-  - {slug: nightly-backup, kind: heartbeat, schedule: {cron: "0 3 * * *"}, grace: 30m, tags: [backup, prod]}
-  - {slug: api, kind: http, interval: 30s, tags: [prod], http: {url: https://api.example.com/healthz}}
-status_pages:
-  - {slug: homelab, title: Homelab status, match_tags: [prod], public: true}
-```
-
-## Notifications
-
-Channels: `smtp`, `webhook`, `ntfy`, `gotify`, `matrix`, `slackhook` (Slack, Mattermost, Rocket.Chat) and `alertmanager` (fires `MonitorDown`, resolves on up). Routes send the events of the monitors that carry all of a route's tags to its channels, with an optional repeat while an incident stays unacknowledged. A webhook with a body template covers PagerDuty, Opsgenie, Discord, Telegram and ilert; the templates are in `docs/webhook-templates/`.
-
-## Signals
-
-| URL | meaning |
+| URL | Meaning |
 | --- | --- |
-| `/ping/<key>/<slug>` | ok (GET, POST, HEAD or PUT; the body up to 64 kB is stored) |
-| `/ping/<key>/<slug>/start` | the job started; pairs with the next ok or fail through `?rid=` |
+| `/ping/<key>/<slug>` | ok; GET, POST, HEAD or PUT; a body up to 64 kB is stored |
+| `/ping/<key>/<slug>/start` | the job started; `?rid=` pairs it with the finishing ping |
 | `/ping/<key>/<slug>/fail` | the job failed |
 | `/ping/<key>/<slug>/<exit code>` | 0 is ok, anything else is a fail with the code stored |
 | `/ping/<key>/<slug>/log` | store a message without touching the state |
-| `/ping/id/<monitor id>` | the same by id |
+| `/ping/id/<monitor id>` | the same forms by id |
 
-## Agents
+`?create=1` creates an unknown slug as a heartbeat with a one-day period and a one-hour grace.
+`?msg=` stores a short message for clients that cannot send a body. Unknown keys and slugs get
+the same 404. Pings are limited to 10 a minute per monitor and 300 a minute per address, and the
+ping key is an address, not a secret: rotate it from the project's keys tab when it leaks.
 
-A probe agent runs pull checks from a network vink cannot reach: a DMZ, a site behind NAT, a lab. It is the same binary, dials out to `wss://vink.example.com/agent/v1` with its token, runs the checks it is given with the same checkers the server uses, and keeps nothing on disk.
+### Check kinds
 
-1. Org settings → Agents → Add agent. The token and the full command show once.
-2. On the host: `vink agent --server wss://vink.example.com --token vat_… --labels site=dc2,zone=dmz` (or `VINK_AGENT_TOKEN`, `--token-file`; `docs/deploy/vink-agent.service` is a hardened unit). `--ca` trusts a private CA, `--pin` a certificate by its SHA-256, `--proxy` an http proxy.
-3. On a monitor, Advanced → Run from: an agent by name, or agents with labels (`site=dc2`; the least loaded one runs it). In `vink.yaml`: `location: agent:dc2-probe` or `location: site=dc2`.
+| Kind | Main fields | Up when |
+| --- | --- | --- |
+| `http` | `url`, `method`, `headers`, `body`, `expect_status`, `expect_body` (`contains`, `not_contains` or `jsonpath`), `follow_redirects`, `verify_tls`, `ca_pem` | the status is expected and the body matches |
+| `tcp` | `host`, `port`, `send`, `expect` | the port accepts and the banner contains `expect` |
+| `dns` | `name`, `type`, `resolver`, `expect` | the name resolves and every expected answer is present |
+| `tls` | `host`, `port`, `servername`, `warn_days`, `crit_days` | the handshake verifies; `late` inside `warn_days`, `down` inside `crit_days` |
+| `icmp` | `host`, `count`, `loss_threshold` | fewer packets are lost than the threshold; needs `CAP_NET_RAW` or `net.ipv4.ping_group_range` on Linux |
 
-An agent quiet for `[agents] offline_after` (2 min) turns its monitors late with reason agent offline; they never go down for lack of an agent. Revoking the agent disconnects it at once.
+Every kind takes `interval` (10 s or more; 30 s through an agent), `timeout`, `confirm`
+(`retries` and `delay` before a failure counts), `failure_threshold` and `recovery_threshold`.
 
-## Operating
+### Alerts
 
-- People and orgs: `vink admin org create acme --name Acme`, `vink admin user create bob --org acme --role member --password-stdin`, and for someone who already has an account `vink admin user grant bob --org acme --role admin` or `vink admin user revoke bob --org acme`. The last owner of an org stays. In proxy mode a group named `vink:<org>:<role>` does the same on its own.
-- The same from the browser: an instance admin opens Instance admin from the user menu, adds an org with its quotas and, if they exist already, its first owner; the org's Members tab invites the rest with a one-time link that creates a local account (owners invite owners; invites expire after a week), changes roles inline, transfers ownership and deletes an empty org. The Users tab makes instance admins, resets two-factor, hands out a one-time password reset link (vink sends no mail) and disables accounts; the Server tab shows the running config and warns when `vink admin backup` has not run for a day.
-- Every account has `/account`: name and email, sessions to sign out, and for local accounts the password and two-factor sign-in (an authenticator app, set up from a QR code the server draws; ten recovery codes shown once). `[auth.local] totp = "required"` makes every local account set it up first. Lost the phone or the password: `vink admin user totp-reset <user>` and `vink admin user reset-link <user>` on the server host.
-- Every org has an audit log (Org settings › Audit log): who changed what, with the before and after of a changed monitor, channel or route, sign-ins and role changes, and every state flip, filtered by kind, project, person and period; a filtered view is a link. Members see their projects' rows. Instance admins have the whole instance at `/admin/audit`.
-- With an OpenID Connect provider (Keycloak, Authentik, Entra, ...), turn on `[auth.oidc]` with the issuer and client; the sign-in page leads with "Continue with <display_name>", accounts arrive on first sign-in, and groups named `vink:<org>:<role>` and `vink:admin` give roles the same way proxy mode does. Local accounts can stay on as the break-glass path.
-- `vink serve --config vink.toml`, or `VINK_CONFIG_FILE=/etc/vink/vink.toml` for every command; `--print-config` shows the effective configuration. `docs/deploy/vink.toml.example` lists every key; each is also an environment variable, `VINK_SERVER_LISTEN` for `[server] listen`, and the environment wins over the file.
-- `docs/deploy/` holds a hardened systemd unit (`vink.service`, `DynamicUser` and `StateDirectory=vink`), the agent's unit (`vink-agent.service`), `compose.yaml`, and the reverse-proxy snippets `traefik-authelia.yaml` and `apache-kerberos.conf`. The container image is `ghcr.io/w4jnl/vink`, built `FROM scratch` with the binary and CA certificates; it serves, runs an agent or acts as the CLI by its arguments.
-- Behind a reverse proxy that authenticates people, turn on `[auth.proxy]` and map groups named `vink:<org>:<role>` to roles; the deploy snippets show the headers, the shared secret and which paths stay open. Give `logout_url` the provider's return parameter, `https://auth.example.com/logout?rd=https://vink.example.com` for Authelia, or people stay on the provider's page after signing in again.
-- Air-gapped: vink makes no connection you did not configure (no telemetry, update checks or CDN assets). Set `[outbound] egress_log` to a file and it records every connection the server opens; an idle install leaves it empty. `make lint` runs the same gate over the source.
-- Moving in: `vink import healthchecks -f checks.json` (the API listing) or `vink import kuma -f backup.json` writes an apply file and lists what could not carry over; `--apply` sends it to the current context.
-- The database file and the secret key file are the state. `vink admin backup --out vink-backup.db` writes a consistent snapshot while the server runs; copy the key file (`secret_key_file` in the config) alongside.
-- `GET /metrics` serves Prometheus metrics: monitors by state, pings, checks with latency, deliveries, open incidents, scheduler lag. Set `[metrics] token` to require a bearer token.
-- Observations are pruned after `retention.observations_days` (90) and stored ping bodies after `retention.bodies_days` (14); events and incidents are kept.
-- Outbound connections (checks, notifications) honour `[outbound]`: a proxy, an extra CA bundle, and whether private addresses may be targeted (on by default, for a homelab).
-- `/api/v1/openapi.yaml` documents the API. Errors are RFC 7807 problems, listed in `docs/errors.md`.
-- Shell completion: `source <(vink completion bash)`, `vink completion zsh > "${fpath[1]}/_vink"`, or `vink completion fish > ~/.config/fish/completions/vink.fish`; the release archives carry the scripts under `completions/`. Monitor slugs, open incidents, tags and contexts complete from the current context's server, which gets two seconds to answer.
-- `-d` on any command switches to debug logging with colour.
+A route matches monitors by tags (all of the route's tags; none matches every monitor) and sends
+the events in its `on` list to its channels, with an optional `repeat_every` while the incident
+stays unacknowledged. Channels are `smtp`, `webhook` (a Go template over the notification;
+`docs/webhook-templates/` has PagerDuty, Opsgenie, Discord and Telegram), `ntfy`, `gotify`,
+`matrix`, `slackhook` and `alertmanager`. Deliveries go through an outbox: six attempts at 30 s,
+2 min, 10 min, 30 min and 2 h, in order per monitor. Every notification carries a signed
+acknowledgement link that works for seven days without a sign-in. Maintenance windows, one-off
+or weekly with a timezone, hold alerts back for the monitors that carry their tags.
 
-## Developing
+### Status pages and badges
+
+A status page shows the monitors that carry any of its tags, grouped by tag, each with a state
+and a 90-day bar built from its events, plus open incidents. It ships no script, is cacheable
+for 30 s, can ask for a password, and can be served on its own domain routed to vink. Badges live
+at `/s/<slug>/badge/<monitor>.svg` and `.json` (Shields schema).
+
+### Agents
+
+A probe agent runs pull checks from a network the server cannot reach. It is the same binary:
+`vink agent --server wss://vink.example.com --token vat_…` dials out over WebSocket, announces its
+labels, runs the checks it is given with the server's own checkers, and keeps nothing on disk. A
+monitor names its agent or a label set; the least loaded agent with those labels runs it. An
+agent quiet for two minutes turns its monitors late with the reason "agent offline"; they never
+go down for lack of an agent.
+
+### Tenancy and sign-in
+
+<p align="center"><img src="assets/readme/audit-light.png" alt="The org audit log in the light theme: chips for changes, access and state with counts, project, person and period filters, today's rows newest first, and one row opened to show the YAML diff of a monitor's interval changing from 30s to 45s with the request id and address below it" width="900"></p>
+
+- Orgs hold projects; a membership gives one of four roles in every project of the org: viewer
+  (read), member (edit monitors, channels, routes, maintenance and pages, acknowledge, see the
+  ping key, make read-only API keys), admin (rotate the ping key, read-write keys, projects,
+  members, agents) and owner (transfer or delete the org). Instance admins see every org and set
+  quotas. A request for another tenant's resource is a 404.
+- Invites are one-time links that expire after seven days and create a local account with its
+  membership; owners invite owners.
+- Local accounts: argon2id passwords, sessions you can list and sign out, TOTP from an
+  authenticator app set up from a QR code the server draws, ten recovery codes shown once.
+  `auth.local.totp = "required"` makes everyone set it up first. Instance admins hand out
+  one-time password reset links; vink sends no mail.
+- Proxy mode trusts identity headers only from `trusted_cidrs` with the shared secret header;
+  `docs/deploy/traefik-authelia.yaml` shows the Authelia side.
+- OpenID Connect uses the authorization-code flow with PKCE, checks the state and the nonce, and
+  maps the groups claim to roles the same way proxy mode maps a header: a group `vink:<org>:<role>`
+  grants that role, `vink:admin` makes an instance admin.
+- The audit log per org lists changes with the YAML before and after, access events and every
+  state flip, filtered by kind, project, person and period; members see their projects' rows.
+  Instance admins have the whole instance at `/admin/audit`. Rows are never edited or pruned.
+
+### Data and backups
+
+Everything is in one SQLite file (`db.path`, `/data/vink.db` in the image, `/var/lib/vink/vink.db`
+with the systemd unit) plus `secret.key` next to it, which encrypts channel and two-factor
+secrets and signs links. `vink admin backup --out vink-backup.db` writes a consistent copy while
+the server runs; copy the key file with it. Observations are pruned after 90 days and stored
+bodies after 14; events, incidents and the audit log are kept.
+
+## CLI
+
+`vink` is one binary: `serve` runs the server, `agent` runs a probe, `admin` works on the
+database file on the server host, and the rest talk to a server through a context, like kubectl.
+
+| Command | What it does |
+| --- | --- |
+| `vink serve` | runs the server: migrations, scheduler, dispatcher and HTTP; `--print-config` shows the effective config |
+| `vink agent --server … --token …` | runs a probe agent that connects out to the server |
+| `vink admin init --org <slug> --user <name> --password-stdin` | bootstraps an empty database: instance admin, first org, first project, rw API key |
+| `vink admin org create\|ls` · `org key create\|ls\|revoke` | orgs and org keys (export and apply for a whole org) |
+| `vink admin user ls\|create\|promote\|grant\|revoke\|totp-reset\|reset-link` | users, roles in an org, and the break-glass for a lost phone or password |
+| `vink admin agent add\|ls\|revoke` | an org's probe agents |
+| `vink admin backup --out <file>` | a consistent copy of the database with VACUUM INTO |
+| `vink migrate up\|down\|status\|new\|dump` | migrations; `dump` writes `db/schema.sql` |
+| `vink ctx add\|use\|rm\|ls` | contexts: a server URL plus an API key |
+| `vink ls [--tag] [--state]` · `get <slug>` · `logs <slug> [-n] [--follow]` | monitors, one monitor with its last ten events, observations |
+| `vink pause\|resume\|check <slug>` · `ack <incident id>` | actions |
+| `vink ping <slug> [--start] [--fail] [--exit N] [--msg …]` | a ping with the context's project ping key |
+| `vink run <slug> -- <command…>` | a start ping, the command, a finish ping with its exit code and output tail |
+| `vink status` | counts per state and open incidents; exits 3 while anything is down |
+| `vink apply -f <file> [--dry-run] [--prune]` · `export [-o] [--org]` | declarative configuration, with the diff |
+| `vink import healthchecks\|kuma -f <file> [--apply]` | converts another monitor's export into an apply file |
+| `vink completion bash\|zsh\|fish\|powershell` | shell completion; monitor slugs, incidents, tags and contexts complete from the server |
+| `vink version` | build version, commit and Go version |
+
+`--json` is on every read command; `-d` turns on debug logging with colour.
+
+## API
+
+`/api/v1/`, documented by `/api/v1/openapi.yaml`. `Authorization: Bearer <api key>` scopes a
+request to the key's project; `ro` keys get 403 on anything but GET. A browser session may call
+the API too, scoped by its org and project and the person's role. Errors are RFC 7807 problem
+documents whose `type` links to [`docs/errors.md`](docs/errors.md). `PUT /api/v1/apply` takes the
+same file as `vink apply`; [`docs/apply-schema.json`](docs/apply-schema.json) is its schema.
+
+## Configuration
+
+[`docs/vink.example.toml`](docs/vink.example.toml) lists every key with its default and a line on
+what it does. Each key is also an environment variable, `VINK_<SECTION>_<KEY>`, and the
+environment wins over the file. `vink serve --config vink.toml`, or `VINK_CONFIG_FILE` for every
+command; `vink serve --print-config` shows the effective configuration with secrets redacted.
+
+## Deployment
+
+`docs/deploy/` holds the systemd units for the server and the agent, the compose file, the
+Traefik with Authelia and Apache with Kerberos snippets, and `vink.toml.example`. The image has no
+shell: `docker exec -i vink /vink admin …` runs admin commands, and health is checked from
+outside at `/readyz`. ICMP monitors need `CAP_NET_RAW` in the container or
+`net.ipv4.ping_group_range` on the host. For an air-gapped install, set `[outbound] egress_log`
+to a file: it records every connection the server opens, and an idle install leaves it empty.
+
+## Security
+
+Ping keys are addresses, not secrets, and the ingress is rate-limited. Proxy headers are trusted
+only from `trusted_cidrs` with the shared secret. Outbound checks and webhooks can be kept off
+private addresses with `allow_private_targets = false`. Channel and two-factor secrets are
+encrypted under `secret.key`; passwords, API keys, agent tokens and recovery codes are stored
+hashed. Every UI response carries a Content Security Policy without inline scripts. Report a
+vulnerability privately; [`SECURITY.md`](SECURITY.md) has the surface, the policy and three lines
+of deployment advice.
+
+## Troubleshooting
+
+`vink serve -d` logs every request with its id, org, project and user, every state flip with its
+reason, every delivery attempt with the response, scheduler ticks that fell behind, and why a
+proxy identity or an OIDC callback was refused. `/readyz` fails when the database cannot be
+written within 2 s or the scheduler has not ticked for 30 s. The Server tab of the instance
+admin page shows the running configuration and warns when `vink admin backup` has not run for a
+day.
+
+## Development
 
 ```sh
 make tools       # pinned sqlc, golangci-lint, air, goreleaser and govulncheck into ./bin
-make dev         # live reload of vink serve -d on data/vink.db; uses data/vink.toml when that file exists
+make dev         # live reload of vink serve -d on data/vink.db
 make generate    # sqlc
 make migrate     # apply migrations and dump db/schema.sql
-make lint        # gofmt, vet, golangci-lint and the tenancy gate
+make lint        # gofmt, vet, golangci-lint, the tenancy gate and the egress gate
 make test        # go test -race ./...
-make e2e         # builds the binary and runs the heartbeat and homelab smoke tests (about four minutes)
+make e2e         # four smoke tests against the built binary, about six minutes
 make golden      # regenerate the UI golden files from the design system with node
 ```
 
-Every project-scoped query filters by `project_id`; a request for another tenant's resource is a 404, and `internal/http/crosstenant_test.go` checks every route.
+`cmd/vink` is the cobra root; `internal/` holds the service layer, the engine, the checkers, the
+notifiers, the HTTP transports and the sqlc store; `e2e/` the smoke tests. `docs/design.md` is
+the design vink is built from, `docs/design-system/` the brand and UI rules the templates follow
+(the markup is what `components/bundle.js` returns), and `CLAUDE.md` the conventions. Every
+project-scoped query filters by `project_id`; `internal/http/crosstenant_test.go` checks every
+route across the boundary.
+
+## Credits and licence
+
+vink is MIT licensed (see `LICENSE`).
+
+The UI vendors [htmx](https://htmx.org) 4.0.0 (Zero-Clause BSD, `internal/http/web/static/htmx-LICENSE.txt`)
+and embeds [JetBrains Mono](https://github.com/JetBrains/JetBrainsMono) (SIL Open Font License
+1.1, `OFL.txt` next to the font files). The server uses [modernc.org/sqlite](https://gitlab.com/cznic/sqlite)
+(BSD-3-Clause), [cobra](https://github.com/spf13/cobra) (Apache-2.0),
+[go-oidc](https://github.com/coreos/go-oidc) (Apache-2.0), [gronx](https://github.com/adhocore/gronx)
+(MIT) and [go-qrcode](https://github.com/skip2/go-qrcode) (MIT); `go-licenses report ./...` lists
+the rest. The name is Dutch: a *vink* is a finch, and a *vinkje* is the tick on a list.

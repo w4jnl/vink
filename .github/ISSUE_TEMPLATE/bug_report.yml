@@ -1,0 +1,59 @@
+name: Bug report
+description: Something vink does wrong, with enough to reproduce it.
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what did you expect?
+      description: One paragraph each. Say which monitor, page or command it concerns.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. vink admin init …
+        2. create a heartbeat with …
+        3. ping it with …
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Output of `vink version`
+      placeholder: vink 0.1.0 (abc1234, 2026-10-02, go1.27.1)
+    validations:
+      required: true
+  - type: dropdown
+    id: deploy
+    attributes:
+      label: How is it deployed?
+      options:
+        - release binary
+        - Docker
+        - docker compose
+        - systemd unit
+        - from source
+    validations:
+      required: true
+  - type: input
+    id: auth
+    attributes:
+      label: Sign-in mode and database
+      description: local, proxy headers or OIDC; SQLite is the only database today.
+      placeholder: proxy headers behind Traefik and Authelia, SQLite
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant lines from `vink serve -d`
+      description: Debug logging, with keys, tokens and addresses you do not want public removed.
+      render: text
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else
+      description: Your `vink.toml` with secrets removed, a screenshot, the apply file.

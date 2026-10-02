@@ -1,0 +1,5 @@
+# gitleaks: the design kit's sample ping key lives in the UI golden fixtures and
+# trips the generic key rule; nothing else is allowed through.
+[allowlist]
+description = "design-kit sample values in the UI golden fixtures"
+paths = ['''internal/http/web/testdata/golden/.*''']
