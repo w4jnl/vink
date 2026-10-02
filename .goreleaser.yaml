@@ -74,6 +74,11 @@ dockers_v2:
 snapshot:
   version_template: "{{ incpatch .Version }}-next"
 
-# release notes come from CHANGELOG.md through the release workflow's --release-notes
+# release notes come from CHANGELOG.md: the release workflow passes them with
+# --release-notes and sets them again after the upload, so this changelog is never used
 changelog:
-  disable: true
+  use: git
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
