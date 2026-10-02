@@ -142,7 +142,7 @@ WHERE (?1 = '' OR a.org_id = ?1 OR (a.org_id IS NULL AND (a.act LIKE 'user.sign%
     OR (?10 = 1 AND (a.act LIKE 'user.%' OR a.act LIKE 'member.%' OR a.act LIKE 'invite.%' OR a.act LIKE '%key.%')))
 UNION ALL
 SELECT e.id, e.at, 'event' AS source, 'vink' AS actor, 'system' AS actor_kind, NULL AS actor_id, p.org_id, e.project_id, 'state.' || e.to_state AS act, m.slug AS target, m.id AS target_id,
-  NULL AS spec_before, NULL AS spec_after, json_object('from', e.from_state, 'reason', e.reason) AS detail,
+  NULL AS spec_before, NULL AS spec_after, json_object('from', e.from_state, 'reason', e.reason, 'after_ms', (SELECT e.at - i.opened_at FROM incidents i WHERE i.close_event_id = e.id)) AS detail,
   CASE WHEN o.source IS NULL THEN 'vink' WHEN o.source = 'local' THEN 'checker' WHEN o.source LIKE 'agent:%' THEN o.source ELSE 'ping' END AS via,
   NULL AS request_id, NULL AS remote_addr
 FROM events e JOIN monitors m ON m.id = e.monitor_id JOIN projects p ON p.id = e.project_id LEFT JOIN observations o ON o.id = e.observation_id

@@ -540,9 +540,12 @@ func auditText(e service.AuditEntry, now time.Time) ui.HTML {
 		case "down":
 			s = target + " went down"
 		case "up":
-			if from == "new" {
+			switch {
+			case from == "new":
 				s = target + " is up"
-			} else {
+			case detailInt(e.Detail, "after_ms") > 0:
+				s = target + " is up again after " + esc(timefmt.Span(time.Duration(detailInt(e.Detail, "after_ms"))*time.Millisecond))
+			default:
 				s = target + " is up again"
 			}
 			reason = ""

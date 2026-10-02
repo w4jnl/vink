@@ -63,8 +63,9 @@ type Scope struct {
 	InstanceAdmin bool
 	// Actor names the caller for logs and audit: user:<subject> or key:<prefix>.
 	Actor string
-	// KeyID and KeyAccess are set for API-key callers.
+	// KeyID, KeyName and KeyAccess are set for API-key callers.
 	KeyID     string
+	KeyName   string
 	KeyAccess Access
 }
 

@@ -51,6 +51,10 @@ func (s *Service) record(ctx context.Context, q *db.Queries, sc domain.Scope, e 
 func actorOf(sc domain.Scope) (actor, kind, id string) {
 	switch {
 	case sc.IsKey():
+		// the key's name reads better than its prefix; via keeps the prefix
+		if sc.KeyName != "" {
+			return sc.KeyName, audit.KindKey, sc.KeyID
+		}
 		return strings.TrimPrefix(sc.Actor, "key:"), audit.KindKey, sc.KeyID
 	case sc.UserID != "":
 		return strings.TrimPrefix(sc.Actor, "user:"), audit.KindUser, sc.UserID
