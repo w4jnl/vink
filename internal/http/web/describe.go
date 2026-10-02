@@ -72,7 +72,7 @@ func dayWord(t, now time.Time, loc *time.Location) string {
 	switch {
 	case sameDay:
 		return "today " + clock
-	case tomorrow && lt.Hour() < 6:
+	case tomorrow && lt.Hour() < 6 && ln.Hour() >= 12:
 		return "tonight " + clock
 	case tomorrow:
 		return "tomorrow " + clock

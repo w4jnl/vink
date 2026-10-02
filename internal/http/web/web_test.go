@@ -390,7 +390,18 @@ func TestDrawerAndActions(t *testing.T) {
 	}
 	full.has(t, `<title>Nightly · vink</title>`, `class="vk-page" id="page"`, `<aside class="vk-drawer" id="drawer">`, `aria-current="true"`, `vk-drawer__title">Nightly`, e.project.PingKey+"/<b>nightly</b>", "every 1h · grace 5m · due in", "Last 24 hours", `vk-obs`, "4m0s", "new → up · first ok",
 		`data-drawer-close`, `>Edit<`, `>Pause<`, "As YAML", "slug", `vk-codebox`,
-		`<span title="curl/8.4.0">ok · from 192.168.30.5</span><span>4m0s</span>`, `<span>start</span><span></span>`)
+		`<span title="curl/8.4.0">ok · from 192.168.30.5</span><span>4m0s · <a class="vk-link" href="/o/homelab/p/prod/m/nightly/obs/`, `<span>start</span><span></span>`)
+	// the stored body is a link to plain text, never rendered, and scoped to the project
+	bodyPath := regexp.MustCompile(`href="(/o/homelab/p/prod/m/nightly/obs/[A-Z0-9]+/body)"`).FindStringSubmatch(full.body)
+	if bodyPath == nil {
+		t.Fatal("no body link in the drawer")
+	}
+	if r := e.get(bodyPath[1], false); r.code != 200 || r.body != "x" || r.hdr.Get("Content-Type") != "text/plain; charset=utf-8" || r.hdr.Get("X-Content-Type-Options") != "nosniff" {
+		t.Fatalf("body: %d %q %v", r.code, r.body, r.hdr)
+	}
+	if r := e.get(strings.Replace(bodyPath[1], "/o/homelab/p/prod/", "/o/acme/p/prod/", 1), false); r.code != 404 {
+		t.Fatalf("body across tenants: %d", r.code)
+	}
 	partial := e.get(projPath+"/m/nightly", true)
 	if !strings.HasPrefix(partial.body, `<div id="drawer-body"`) || strings.Contains(partial.body, "<html") {
 		t.Errorf("htmx drawer must be the partial only")
@@ -847,7 +858,10 @@ func TestPublicStatusPage(t *testing.T) {
 	if p.code != 200 {
 		t.Fatalf("status page: %d %s", p.code, p.body)
 	}
-	p.has(t, "<h1>Homelab status</h1>", "vk-banner--down", "1 service down", "since 14:00", "<h2>prod</h2>", "<h2>backup</h2>", "Api", "Nightly", "vk-uptime", "up over 90 days", "Open incidents", "powered by", `http-equiv="refresh"`, "updated 14:00:00 CEST")
+	p.has(t, "<h1>Homelab status</h1>", "vk-banner--down", "1 service down", "since 14:00", "<h2>prod</h2>", "<h2>backup</h2>", "Api", "Nightly", "vk-uptime", `aria-label="no data"`, "Open incidents", "powered by", `http-equiv="refresh"`, "updated 14:00:00 CEST")
+	if strings.Contains(p.body, "no data up") {
+		t.Error("a monitor without data is labelled 'no data', not 'no data up'")
+	}
 	if strings.Contains(p.body, "<script") || strings.Contains(p.body, "Lab-thing") || strings.Contains(p.body, "vk-top") {
 		t.Error("a status page carries no script, no top bar and no monitors outside its tags")
 	}

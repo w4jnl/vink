@@ -131,6 +131,14 @@ func (h *Web) statusUnlock(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
+// upLabel reads "99.9% up …", or "no data" alone.
+func upLabel(pct, tail string) string {
+	if pct == "no data" {
+		return pct
+	}
+	return pct + " up" + tail
+}
+
 func (h *Web) renderLocked(w http.ResponseWriter, page *domain.StatusPage, msg string, status int) error {
 	out, err := h.tmpl.Render("status", "status-locked", statusData{Title: page.Title, Slug: page.Slug, Error: msg})
 	if err != nil {
@@ -162,7 +170,7 @@ func (h *Web) renderStatus(w http.ResponseWriter, r *http.Request, page *domain.
 			pct := view.UpPercent(now, m.CreatedAt, m.State, st.Events[m.ID], 90*24*time.Hour)
 			group.Items = append(group.Items, statusItem{
 				Name: m.Name, Badge: ui.StateBadge(ui.StateBadgeProps{State: string(m.State)}),
-				Bar: ui.UptimeBar(cells, false, pct+" up over 90 days", []string{"90 days ago", pct + " up", "today"}),
+				Bar: ui.UptimeBar(cells, false, upLabel(pct, " over 90 days"), []string{"90 days ago", upLabel(pct, ""), "today"}),
 			})
 		}
 		d.Groups = append(d.Groups, group)

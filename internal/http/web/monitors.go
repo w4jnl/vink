@@ -297,7 +297,7 @@ type drawerData struct {
 
 // obsRow is one line of the drawer's observation list; Title is the
 // hover text on the middle column, the user agent of a ping.
-type obsRow struct{ State, Clock, Abs, Text, Title, Right string }
+type obsRow struct{ State, Clock, Abs, Text, Title, Right, BodyPath string }
 
 type eventRow struct{ State, Ago, Abs, Text string }
 
@@ -359,7 +359,11 @@ func (h *Web) drawerData(c *reqCtx, m *domain.Monitor) (*drawerData, error) {
 		match = bodyMatch(m.Pull.HTTP)
 	}
 	for _, o := range obs {
-		d.Observations = append(d.Observations, obsRowFor(o, loc, match))
+		row := obsRowFor(o, loc, match)
+		if o.HasBody {
+			row.BodyPath = d.Path + "/obs/" + o.ID + "/body"
+		}
+		d.Observations = append(d.Observations, row)
 	}
 	recent, err := h.svc.ListEvents(ctx, c.scope, m.Slug, 20)
 	if err != nil {
@@ -403,8 +407,6 @@ func obsRowFor(o *domain.Observation, loc *time.Location, match string) obsRow {
 	}
 	if o.DurationMs != nil {
 		row.Right = view.RunDuration(*o.DurationMs)
-	} else if o.HasBody {
-		row.Right = "body"
 	}
 	// where the ping came from: the job's host once the proxy is trusted
 	if o.RemoteAddr != "" {
@@ -450,6 +452,33 @@ func (h *Web) checkMonitor(c *reqCtx) error {
 		return err
 	}
 	return h.afterAction(c)
+}
+
+// observationBody serves a stored ping body as plain text, never sniffed
+// and never rendered, whatever content type the job declared.
+func (h *Web) observationBody(c *reqCtx) error {
+	ctx := c.r.Context()
+	m, err := h.svc.MonitorBySlug(ctx, c.scope, c.r.PathValue("slug"))
+	if err != nil {
+		return err
+	}
+	o, err := h.svc.Observation(ctx, c.scope, c.r.PathValue("id"))
+	if err != nil || o.MonitorID != m.ID {
+		return domain.NotFound("observation")
+	}
+	body, ct, err := h.svc.ObservationBody(ctx, c.scope, o.ID)
+	if err != nil {
+		return err
+	}
+	hd := c.w.Header()
+	hd.Set("Content-Type", "text/plain; charset=utf-8")
+	hd.Set("X-Content-Type-Options", "nosniff")
+	hd.Set("Content-Disposition", "inline")
+	hd.Set("X-Original-Content-Type", ct)
+	hd.Set("Cache-Control", "no-store")
+	c.w.WriteHeader(http.StatusOK)
+	_, _ = c.w.Write(body)
+	return nil
 }
 
 func (h *Web) monitor(c *reqCtx) error {
