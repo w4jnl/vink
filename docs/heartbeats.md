@@ -38,6 +38,36 @@ Append one segment to the URL to say more than "done":
 | `…/<slug>/fail` | finished badly | a failure |
 | `…/<slug>/log` | a note from a running job | none; the note is stored |
 
+Each one with curl, with `URL=https://vink.example.com/ping/<key>/<slug>`:
+
+```sh
+# done, all well: GET is enough
+curl -fsS -m 10 --retry 3 "$URL"
+
+# the job started
+curl -fsS -m 10 --retry 3 "$URL/start"
+
+# finished with the exit code of the command that just ran ($? in a shell)
+curl -fsS -m 10 --retry 3 "$URL/$?"
+
+# finished badly, with a one-line reason on the row
+curl -fsS -m 10 "$URL/fail?msg=disk%20full%20on%20%2Fmnt%2Fbackup"
+
+# finished badly, with the last lines of the log as the stored body
+tail -c 16000 /tmp/backup.log | curl -fsS -m 10 -X POST --data-binary @- "$URL/1"
+
+# a progress note while running: GET with ?msg= for a line, POST with a body for more
+curl -fsS -m 10 "$URL/log?msg=step%202%20of%205%20done"
+curl -fsS -m 10 -X POST --data-binary "step 2 of 5 done, 1203 files so far" "$URL/log"
+
+# the same signals by HEAD (no body stored) or PUT (for clients that cannot POST a body)
+curl -fsS -m 10 -I "$URL"
+curl -fsS -m 10 -X PUT --data-binary "ok" "$URL/0"
+```
+
+`-f` makes curl exit non-zero on a 4xx or 5xx answer, `-s -S` keeps it quiet except for errors,
+`-m 10` caps the request at ten seconds, `--retry 3` rides out a short network blip.
+
 A failure turns the monitor `down` at once (with the default `failure_threshold` of 1; a
 threshold of 2 lets a job retry once quietly). Every ping is stored as an observation and shown
 in the drawer with its time, signal, exit code, source address and user agent, so the job's
