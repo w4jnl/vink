@@ -54,35 +54,22 @@ checksum:
 sboms:
   - artifacts: archive
 
-dockers:
-  - id: linux-amd64
-    goos: linux
-    goarch: amd64
+dockers_v2:
+  - id: vink
     dockerfile: Dockerfile
-    image_templates:
-      - "ghcr.io/w4jnl/vink:{{ .Version }}-amd64"
-    use: buildx
-    build_flag_templates:
-      - --platform=linux/amd64
-  - id: linux-arm64
-    goos: linux
-    goarch: arm64
-    dockerfile: Dockerfile
-    image_templates:
-      - "ghcr.io/w4jnl/vink:{{ .Version }}-arm64"
-    use: buildx
-    build_flag_templates:
-      - --platform=linux/arm64
-
-docker_manifests:
-  - name_template: "ghcr.io/w4jnl/vink:{{ .Version }}"
-    image_templates:
-      - "ghcr.io/w4jnl/vink:{{ .Version }}-amd64"
-      - "ghcr.io/w4jnl/vink:{{ .Version }}-arm64"
-  - name_template: "ghcr.io/w4jnl/vink:latest"
-    image_templates:
-      - "ghcr.io/w4jnl/vink:{{ .Version }}-amd64"
-      - "ghcr.io/w4jnl/vink:{{ .Version }}-arm64"
+    images:
+      - ghcr.io/w4jnl/vink
+    tags:
+      - "{{ .Version }}"
+      - latest
+    platforms:
+      - linux/amd64
+      - linux/arm64
+    labels:
+      org.opencontainers.image.title: vink
+      org.opencontainers.image.description: "Self-hosted heartbeat and uptime monitor; the same image runs the server, the probe agent and the CLI"
+      org.opencontainers.image.source: https://github.com/w4jnl/vink
+      org.opencontainers.image.version: "{{ .Version }}"
 
 snapshot:
   version_template: "{{ incpatch .Version }}-next"
