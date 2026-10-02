@@ -1,7 +1,7 @@
 # Built by goreleaser (dockers_v2): the context holds one prebuilt binary per
 # platform under linux/<arch>/, nothing is compiled here. FROM scratch, so the
 # image holds the static binary and CA certificates.
-FROM alpine:3.20 AS certs
+FROM alpine:3.24 AS certs
 RUN apk add --no-cache ca-certificates
 
 FROM scratch
