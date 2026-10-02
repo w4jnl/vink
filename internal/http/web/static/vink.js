@@ -90,6 +90,14 @@
     page.classList.toggle('vk-page--full', empty);
   }
 
+  // The monitor form's live preview: htmx 4 listens on an element for its
+  // own events only, so a change anywhere in the form becomes a "preview"
+  // event on the form's sentinel, which posts the form (debounced there).
+  document.addEventListener('change', function (e) {
+    var f = e.target && e.target.closest ? e.target.closest('form') : null;
+    var s = f && f.querySelector('[data-preview]');
+    if (s) s.dispatchEvent(new CustomEvent('preview'));
+  });
   document.addEventListener('DOMContentLoaded', function () { wire(document); popovers(document); favicon(); syncDrawer(); });
   document.addEventListener('htmx:after:settle', function () { wire(document); popovers(document); favicon(); syncDrawer(); });
   // htmx 4 hands the request context as e.detail.ctx (htmx 2 put headers

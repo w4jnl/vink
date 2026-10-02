@@ -9,7 +9,7 @@
 {{if .Edit}}<input type="hidden" name="slug" value="{{.Values.slug}}">{{end}}
 {{if eq .Kind "heartbeat"}}{{template "form-heartbeat" .}}{{else}}{{template "form-pull" .}}{{end}}
 {{disclosure "As YAML" "for vink.yaml and vink apply" (code .YAML true "Copy YAML" true) .YAMLOpen}}
-<span class="vk-sr" hx-post="{{.PreviewPath}}" hx-trigger="change delay:300ms from:closest form" hx-include="closest form" hx-swap="none"></span>
+<span class="vk-sr" data-preview hx-post="{{.PreviewPath}}" hx-trigger="preview delay:300ms" hx-include="closest form" hx-swap="none"></span>
 <div class="vk-drawer__foot">{{button (dict "Label" .SubmitLabel "Variant" "primary" "Type" "submit")}}{{button (dict "Label" "Cancel" "Href" .CancelPath "Attrs" (attrs "hx-get" .CancelHX "hx-target" "#drawer" "hx-push-url" .CancelPath))}}{{if .Edit}}{{button (dict "Label" "Delete monitor" "Variant" "danger" "Confirm" "Really delete?" "Type" "submit" "Attrs" (attrs "form" "delete-form"))}}{{end}}</div>
 </form>{{if .Edit}}<form id="delete-form" class="vk-sr" method="post" action="{{.DeletePath}}" hx-post="{{.DeletePath}}"><input type="hidden" name="_csrf" value="{{.CSRF}}"></form>{{end}}</div>{{end}}
 
