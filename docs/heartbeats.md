@@ -62,12 +62,26 @@ failure with the code restic gave. With `max_runtime` set on the monitor (for ex
 `/start` that is not followed by a finish within that time counts as a failure with the reason
 `run_timeout`, which is how a hung job is caught.
 
-**Progress** goes through `/log`. It changes nothing in the state, it just adds an observation
-with the message you send, visible in the drawer:
+**Progress** goes through `/log`. It changes nothing in the state and leaves the deadline and
+the open run as they are; it adds an observation with the message you send, visible in the
+drawer. Like every ping URL it accepts GET, POST, HEAD and PUT; what differs is where the text
+travels:
 
-```sh
-curl -fsS -X POST --data "snapshot 4f1c2a9b saved, 1203 new files" "$URL/log"
-```
+- GET with `?msg=`, URL-encoded, up to 2,000 characters. The drawer shows it inline on the row,
+  which suits a one-liner such as a progress count:
+
+  ```sh
+  curl -fsS "$URL/log?msg=step%202%20of%205%20done"
+  ```
+
+- POST (or PUT) with the message as the body, up to 64 kB, stored as it is and opened from the
+  row's `body` link. This is the one for anything longer than a line, such as a chunk of output:
+
+  ```sh
+  curl -fsS -X POST --data-binary "step 2 of 5 done, 1203 files so far" "$URL/log"
+  ```
+
+The two can go together on one request, the msg for the row and the body for the detail.
 
 **Overlapping runs** are told apart with a run id. Pass the same `?rid=` on the start and the
 finishing ping, and vink pairs those two whatever else arrives in between:
