@@ -20,7 +20,7 @@ set of alert routes and public status pages, behind a web UI, a REST API and a C
 
 ## Setup
 
-Current version: not released yet · [release notes](CHANGELOG.md). Linux and macOS on amd64 and
+Current version: 0.1.0 · [release notes](CHANGELOG.md). Linux and macOS on amd64 and
 arm64 run the server, the agent and the CLI; the Windows build is for the CLI and the agent.
 
 1. Run it. With Docker, on a named volume for `/data`:
@@ -160,8 +160,8 @@ Not planned:
 - Browser checks, SMS or voice delivery, billing.
 - A JavaScript single-page app; the UI is server-rendered with htmx partials.
 
-vink is not released yet. [`CHANGELOG.md`](CHANGELOG.md) will list what changed in every
-release, newest first; the same text goes on each GitHub release.
+vink is at 0.1.0 (2026-10-02). [`CHANGELOG.md`](CHANGELOG.md) lists what changed in every
+release, newest first; the same text is on each GitHub release.
 
 ## How it works
 
