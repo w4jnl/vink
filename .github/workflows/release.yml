@@ -35,7 +35,7 @@ jobs:
           ver=${GITHUB_REF_NAME#v}
           awk -v v="$ver" '/^## /{p = ($2 == v)} p && !/^## /' CHANGELOG.md | sed '/./,$!d' > /tmp/notes.md
           test -s /tmp/notes.md || { echo "CHANGELOG.md has no section for $ver"; exit 1; }
-      - uses: goreleaser/goreleaser-action@v6
+      - uses: goreleaser/goreleaser-action@v7
         with:
           version: "~> v2"
           args: release --clean --release-notes /tmp/notes.md
