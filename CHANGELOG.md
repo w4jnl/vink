@@ -4,7 +4,7 @@ User-facing changes per release, newest first. `scripts/release.sh` refuses to t
 that has no section here and uses the section as the GitHub release notes, so every release
 updates this file first. Dates are the tag dates.
 
-## Unreleased
+## 0.1.0 (2026-10-02)
 
 The first public release. Everything below exists and is covered by tests; `docs/design.md` is
 the design it was built from.
