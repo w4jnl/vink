@@ -157,6 +157,63 @@ func Chip(p ChipProps) HTML {
 	return HTML(b.String())
 }
 
+// ObsRowProps is one observation or state change in a monitor's list.
+// A row with facts, a cut message or a body opens in place like AuditRow.
+type ObsRowProps struct {
+	State, Clock, Abs, Text, Title, Right string
+	// BodyHref is the body as text; BodyLoad the partial that replaces the
+	// placeholder with the body once the panel scrolls into view.
+	BodyHref, BodyLoad string
+	Message            string
+	Facts              [][2]string
+	Open               bool
+}
+
+// ObsRow renders the row grid: glyph, clock, text, right cell. With
+// something more to show it is a details element whose summary is the row.
+func ObsRow(p ObsRowProps) HTML {
+	right := esc(p.Right)
+	if p.BodyHref != "" {
+		if right != "" {
+			right += " · "
+		}
+		right += "body"
+	}
+	var sum strings.Builder
+	sum.WriteString(string(Glyph(p.State, "")))
+	sum.WriteString(`<span title="` + esc(p.Abs) + `">` + esc(p.Clock) + `</span><span`)
+	if p.Title != "" {
+		sum.WriteString(` title="` + esc(p.Title) + `"`)
+	}
+	sum.WriteString(`>` + esc(p.Text) + `</span><span>` + right + `</span>`)
+	var body strings.Builder
+	if p.Message != "" {
+		body.WriteString(`<p class="vk-obsrow__msg">` + esc(p.Message) + `</p>`)
+	}
+	if len(p.Facts) > 0 {
+		body.WriteString(`<dl class="vk-kv">`)
+		for _, f := range p.Facts {
+			body.WriteString(`<dt>` + esc(f[0]) + `</dt><dd>` + esc(f[1]) + `</dd>`)
+		}
+		body.WriteString(`</dl>`)
+	}
+	if p.BodyHref != "" {
+		body.WriteString(`<div class="vk-codebox"`)
+		if p.BodyLoad != "" {
+			body.WriteString(` hx-get="` + esc(p.BodyLoad) + `" hx-trigger="revealed" hx-swap="outerHTML"`)
+		}
+		body.WriteString(`><pre class="vk-code"><a class="vk-link" href="` + esc(p.BodyHref) + `">Open the body as text</a></pre></div>`)
+	}
+	if body.Len() == 0 {
+		return HTML(`<div class="vk-obs">` + sum.String() + `</div>`)
+	}
+	open := ""
+	if p.Open {
+		open = " open"
+	}
+	return HTML(`<details class="vk-obsrow"` + open + `><summary class="vk-obs">` + sum.String() + `</summary><div class="vk-obsrow__body">` + body.String() + `</div></details>`)
+}
+
 // Tag renders a monitor tag.
 func Tag(label string) HTML {
 	return HTML(`<span class="vk-tag">` + esc(label) + `</span>`)

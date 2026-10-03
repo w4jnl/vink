@@ -150,8 +150,18 @@ a.vk-btn { text-decoration: none; box-sizing: border-box; }
 .vk-drawer__title { display: flex; align-items: baseline; gap: var(--space-2); margin: 0; font-size: 20px; line-height: 28px; font-weight: 600; }
 .vk-drawer__actions { display: flex; gap: var(--space-2); }
 .vk-drawer h2 { margin: 0 0 var(--space-2); font-size: 15px; line-height: 22px; font-weight: 600; }
-.vk-obs { display: grid; grid-template-columns: 16px 88px 1fr auto; column-gap: var(--space-3); align-items: center; padding: 6px 0; border-bottom: 1px solid var(--line); font: 400 13px/20px var(--font-mono); color: var(--ink-muted); }
+.vk-obs { display: grid; grid-template-columns: 12px 16px 88px 1fr auto; column-gap: var(--space-3); align-items: center; padding: 6px 0; border-bottom: 1px solid var(--line); font: 400 13px/20px var(--font-mono); color: var(--ink-muted); }
+.vk-obs::before { content: ""; width: 5px; height: 5px; margin-left: 3px; }
 .vk-obs .vk-glyph--up { color: var(--up); } .vk-obs .vk-glyph--down { color: var(--down); } .vk-obs .vk-glyph--late { color: var(--late); }
+.vk-obsrow { border-bottom: 1px solid var(--line); }
+.vk-obsrow > .vk-obs { border-bottom: 0; cursor: pointer; list-style: none; }
+.vk-obsrow > .vk-obs::-webkit-details-marker { display: none; }
+.vk-obsrow > .vk-obs::before { border-right: 1.5px solid var(--ink-muted); border-bottom: 1.5px solid var(--ink-muted); transform: rotate(-45deg); }
+.vk-obsrow[open] > .vk-obs::before { transform: rotate(45deg); }
+.vk-obsrow > .vk-obs:hover, .vk-obsrow[open] > .vk-obs { background: var(--surface); }
+.vk-obsrow__body { display: flex; flex-direction: column; gap: var(--space-3); padding: var(--space-3) 0 var(--space-4) calc(28px + 2 * var(--space-3)); }
+.vk-obsrow__msg { margin: 0; color: var(--ink); font: 400 13px/20px var(--font-mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+.vk-obsrow__body .vk-code { max-height: 480px; overflow: auto; padding-right: calc(var(--space-4) + 80px); white-space: pre-wrap; overflow-wrap: anywhere; }
 .vk-status { max-width: 720px; margin: 0 auto; padding: var(--space-7) var(--space-5); display: flex; flex-direction: column; gap: var(--space-5); }
 .vk-status__head { display: flex; align-items: center; gap: var(--space-3); }
 .vk-status__head h1 { margin: 0; font: 700 28px/36px var(--font-mono); letter-spacing: -0.5px; }

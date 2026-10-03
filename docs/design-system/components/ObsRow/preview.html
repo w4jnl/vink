@@ -1,0 +1,18 @@
+<!-- @dsCard group="Monitors" height=360 width=1120 -->
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>vink</title></head>
+<body>
+<div id="root" class=""></div>
+<script>
+  var V = window.Vink;
+  document.getElementById('root').innerHTML = '<div class="vk-irows">' +
+    V.ObsRow({ state: 'down', clock: '06:10:05', abs: '2026-10-03 06:10 CEST', text: 'fail · sotersat-traefik-1 restarted (0 -> 1) · from 192.168.117.1', title: 'curl/8.5.0', bodyHref: '#', open: true,
+      facts: [['from', '192.168.117.1'], ['agent', 'curl/8.5.0'], ['method', 'POST']] }) +
+    V.ObsRow({ state: 'up', clock: '06:05:08', abs: '2026-10-03 06:05 CEST', text: 'ok · 31 devices, api 4.96% · from 192.168.117.1', title: 'curl/8.5.0', facts: [['from', '192.168.117.1'], ['agent', 'curl/8.5.0'], ['method', 'POST']] }) +
+    V.ObsRow({ state: 'down', clock: '06:10:05', abs: '2026-10-03 06:10 CEST', text: 'up → down · fail signal' }) +
+    V.ObsRow({ state: 'up', clock: '03:04:12', abs: '2026-10-03 03:04 CEST', text: '200 OK · $.status = ok', right: '212 ms', facts: [['from', 'this server'], ['latency', '212 ms'], ['final url', 'https://api.example.com/healthz']] }) + '</div>';
+  V.wire(document);
+</script>
+</body>
+</html>

@@ -18,4 +18,6 @@
 <section>{{disclosure "As YAML" "for vink.yaml and vink apply" (code .YAML true "Copy YAML" true) false}}</section>
 </div>{{else}}<div id="drawer-body" data-empty="1"></div>{{end}}{{end}}
 
-{{define "obs-row"}}<div class="vk-obs">{{glyph .State ""}}<span title="{{.Abs}}">{{.Clock}}</span><span{{if .Title}} title="{{.Title}}"{{end}}>{{.Text}}</span><span>{{.Right}}{{if .BodyPath}}{{if .Right}} · {{end}}<a class="vk-link" href="{{.BodyPath}}" target="_blank" rel="noopener">body</a>{{end}}</span></div>{{end}}
+{{define "obs-row"}}{{obsrow .}}{{end}}
+
+{{define "obs-body"}}{{if .Binary}}<div class="vk-codebox"><pre class="vk-code">{{.Bytes}} bytes of {{.ContentType}}, not text · <a class="vk-link" href="{{.Href}}">open as a file</a></pre></div>{{else}}{{code .Text true "Copy" false}}{{end}}{{end}}

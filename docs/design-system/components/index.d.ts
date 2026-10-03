@@ -54,6 +54,8 @@ export declare function Diff(props: { lines: Array<[' ' | '-' | '+', string]> })
 /** One audit log entry; rows with diff or meta are <details>. `text` is trusted HTML. */
 export declare function AuditRow(props: { time: string; timeAbs?: string; actor?: string; actorKind?: 'user' | 'key' | 'system'; state?: State; text: string; scope?: string; via?: string;
   diff?: Array<[' ' | '-' | '+', string]>; meta?: Array<[string, string]>; open?: boolean }): string;
+/** One observation or state change row; with `facts`, a cut `message` or a body it opens in place like AuditRow. `bodyLoad` is the partial that loads the body when the panel is revealed, `bodyHref` the body as text. */
+export declare function ObsRow(props: { state: State; clock: string; abs?: string; text: string; title?: string; right?: string; bodyHref?: string; bodyLoad?: string; message?: string; facts?: Array<[string, string]>; open?: boolean }): string;
 /** Server-rendered QR SVG framed black on white. */
 export declare function Qr(props: { svg: string; label?: string; caption?: string }): string;
 /** One-time recovery codes with Copy. */
@@ -87,4 +89,4 @@ declare global { interface Window { Vink: { StateBadge: typeof StateBadge; Butto
   TopBar: typeof TopBar; Tabs: typeof Tabs; FieldRow: typeof FieldRow; Checkbox: typeof Checkbox; Switch: typeof Switch; Segmented: typeof Segmented; KindPicker: typeof KindPicker;
   Disclosure: typeof Disclosure; Notice: typeof Notice; Code: typeof Code; Panel: typeof Panel; IncidentRow: typeof IncidentRow; SettingsRow: typeof SettingsRow;
   Menu: typeof Menu; StateCounts: typeof StateCounts; Avatar: typeof Avatar; InlineSelect: typeof InlineSelect; Usage: typeof Usage;
-  AuditRow: typeof AuditRow; Diff: typeof Diff; Qr: typeof Qr; RecoveryCodes: typeof RecoveryCodes; Divider: typeof Divider; wire: typeof wire } } }
+  AuditRow: typeof AuditRow; ObsRow: typeof ObsRow; Diff: typeof Diff; Qr: typeof Qr; RecoveryCodes: typeof RecoveryCodes; Divider: typeof Divider; wire: typeof wire } } }

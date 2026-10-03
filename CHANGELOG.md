@@ -12,6 +12,11 @@ updates this file first. Dates are the tag dates.
   a period of 24 h to 90 d or an exact window, day headings that link to their day, and an
   Older link that loads the next 50 rows as it scrolls into view. The head polls and offers a
   reload when newer rows exist. Pause, Resume and Check now work from the page.
+- Observation rows open in place, in the drawer and on the history page, like the audit log's:
+  a chevron at the left, and the panel shows where the ping came from (address, agent, method),
+  the run, its duration and exit code, a check's detail, the whole message when the row cut it,
+  and the stored body in a code box with Copy, loaded when the panel opens. The body link no
+  longer leaves the page; the bare body URL still serves it as text.
 - The API takes `kind=ok|fail|run` on a monitor's observations, and its events page with
   `since`, `until` and `cursor` like observations do, answering with `next_cursor`.
 - The Traefik and Apache deploy examples open `/static/` and `/a/` next to the status pages:

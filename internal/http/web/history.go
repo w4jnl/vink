@@ -317,7 +317,8 @@ func (h *Web) historyStream(c *reqCtx, m *domain.Monitor, q historyQuery) (histo
 		if it.Obs != nil {
 			row := obsRowFor(it.Obs, loc, match)
 			if it.Obs.HasBody {
-				row.BodyPath = c.projectPath() + "/m/" + m.Slug + "/obs/" + it.Obs.ID + "/body"
+				row.BodyHref = c.projectPath() + "/m/" + m.Slug + "/obs/" + it.Obs.ID + "/body"
+				row.BodyLoad = row.BodyHref + "?partial=1"
 			}
 			g.Rows = append(g.Rows, row)
 		} else {

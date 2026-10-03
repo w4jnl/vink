@@ -1,6 +1,7 @@
 package web
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"net/http"
@@ -8,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/w4jnl/vink/internal/domain"
 	"github.com/w4jnl/vink/internal/http/web/ui"
@@ -297,7 +299,8 @@ type drawerData struct {
 
 // obsRow is one line of the drawer's observation list; Title is the
 // hover text on the middle column, the user agent of a ping.
-type obsRow struct{ State, Clock, Abs, Text, Title, Right, BodyPath string }
+// obsRow is the props of the ObsRow component.
+type obsRow = ui.ObsRowProps
 
 type eventRow struct{ State, Ago, Abs, Text string }
 
@@ -337,7 +340,8 @@ func (h *Web) drawerData(c *reqCtx, m *domain.Monitor) (*drawerData, error) {
 	for _, o := range obs {
 		row := obsRowFor(o, loc, match)
 		if o.HasBody {
-			row.BodyPath = d.Path + "/obs/" + o.ID + "/body"
+			row.BodyHref = d.Path + "/obs/" + o.ID + "/body"
+			row.BodyLoad = row.BodyHref + "?partial=1"
 		}
 		d.Observations = append(d.Observations, row)
 	}
@@ -393,7 +397,10 @@ func (h *Web) summaryLine(c *reqCtx, m *domain.Monitor, loc *time.Location) stri
 }
 
 func obsRowFor(o *domain.Observation, loc *time.Location, match string) obsRow {
-	row := obsRow{Clock: view.Clock(o.At, loc), Abs: view.Abs(o.At, loc)}
+	row := obsRow{Clock: view.Clock(o.At, loc), Abs: view.Abs(o.At, loc), Facts: obsFacts(o)}
+	if msg, ok := o.Detail["msg"].(string); ok && len(msg) > 80 {
+		row.Message = msg // the row shows the first 80 characters; the panel the whole
+	}
 	if o.LatencyMs != nil {
 		return checkRow(o, row, match)
 	}
@@ -431,6 +438,85 @@ func obsRowFor(o *domain.Observation, loc *time.Location, match string) obsRow {
 
 // checkRow renders one pull attempt: the reason or the status, and the
 // latency; an attempt inside a confirm sequence shows as confirming.
+// obsFacts is the panel's key-value block: where the observation came
+// from and what it carried beyond the row's words. Detail keys the row
+// already says are left out; the rest follow, sorted.
+func obsFacts(o *domain.Observation) [][2]string {
+	var f [][2]string
+	add := func(k, v string) {
+		if v != "" {
+			f = append(f, [2]string{k, v})
+		}
+	}
+	if o.LatencyMs == nil {
+		add("from", o.RemoteAddr)
+		add("agent", o.UserAgent)
+		if m, ok := o.Detail["method"].(string); ok {
+			add("method", m)
+		}
+		if o.Source != "" && o.Source != "ping" {
+			add("source", o.Source)
+		}
+	} else {
+		src := o.Source
+		if src == "" || src == "local" {
+			src = "this server"
+		}
+		add("from", src)
+		add("latency", view.RunDuration(*o.LatencyMs))
+	}
+	add("run", o.RunID)
+	if o.DurationMs != nil {
+		add("took", view.RunDuration(*o.DurationMs))
+	}
+	if o.ExitCode != nil {
+		add("exit", strconv.FormatInt(*o.ExitCode, 10))
+	}
+	said := map[string]bool{"method": true, "msg": true, "truncated": true, "reason": true, "status": true, "warn": true, "matched": true, "attempt": true, "attempts": true}
+	keys := make([]string, 0, len(o.Detail))
+	for k := range o.Detail {
+		if !said[k] {
+			keys = append(keys, k)
+		}
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		add(strings.ReplaceAll(k, "_", " "), factWord(o.Detail[k]))
+	}
+	if o.Detail["truncated"] == true {
+		add("body", "cut at the limit")
+	}
+	return f
+}
+
+// factWord renders a detail value: whole floats as integers, lists joined.
+func factWord(v any) string {
+	switch x := v.(type) {
+	case nil:
+		return ""
+	case string:
+		return x
+	case bool:
+		if x {
+			return "yes"
+		}
+		return "no"
+	case float64:
+		if x == float64(int64(x)) {
+			return strconv.FormatInt(int64(x), 10)
+		}
+		return strconv.FormatFloat(x, 'f', -1, 64)
+	case []any:
+		parts := make([]string, 0, len(x))
+		for _, e := range x {
+			parts = append(parts, factWord(e))
+		}
+		return strings.Join(parts, ", ")
+	default:
+		return fmt.Sprint(x)
+	}
+}
+
 func checkRow(o *domain.Observation, row obsRow, match string) obsRow {
 	row.Right = view.RunDuration(*o.LatencyMs)
 	reason, _ := o.Detail["reason"].(string)
@@ -469,6 +555,16 @@ func (h *Web) checkMonitor(c *reqCtx) error {
 
 // observationBody serves a stored ping body as plain text, never sniffed
 // and never rendered, whatever content type the job declared.
+// obsBodyData is the panel's body: the text in a code box, or a note for
+// a body that is not text.
+type obsBodyData struct {
+	Text        string
+	Binary      bool
+	Bytes       int
+	ContentType string
+	Href        string
+}
+
 func (h *Web) observationBody(c *reqCtx) error {
 	ctx := c.r.Context()
 	m, err := h.svc.MonitorBySlug(ctx, c.scope, c.r.PathValue("slug"))
@@ -482,6 +578,16 @@ func (h *Web) observationBody(c *reqCtx) error {
 	body, ct, err := h.svc.ObservationBody(ctx, c.scope, o.ID)
 	if err != nil {
 		return err
+	}
+	if c.r.URL.Query().Get("partial") == "1" {
+		href := c.projectPath() + "/m/" + m.Slug + "/obs/" + o.ID + "/body"
+		d := obsBodyData{Href: href, ContentType: ct, Bytes: len(body)}
+		if utf8.Valid(body) && !bytes.Contains(body, []byte{0}) {
+			d.Text = string(body)
+		} else {
+			d.Binary = true
+		}
+		return h.render(c, http.StatusOK, "monitors", "obs-body", d)
 	}
 	hd := c.w.Header()
 	hd.Set("Content-Type", "text/plain; charset=utf-8")

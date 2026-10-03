@@ -1,4 +1,4 @@
-/* @ds-bundle: {"format":4,"namespace":"Vink","components":[{"name":"StateBadge"},{"name":"Button"},{"name":"Chip"},{"name":"Tag"},{"name":"KindIcon"},{"name":"Field"},{"name":"PingUrl"},{"name":"Sparkline"},{"name":"MonitorRow"},{"name":"UptimeBar"},{"name":"StatusBanner"},{"name":"EmptyState"},{"name":"TopBar"},{"name":"Tabs"},{"name":"FieldRow"},{"name":"Checkbox"},{"name":"Switch"},{"name":"Segmented"},{"name":"KindPicker"},{"name":"Disclosure"},{"name":"Notice"},{"name":"Code"},{"name":"Panel"},{"name":"IncidentRow"},{"name":"SettingsRow"},{"name":"Menu"},{"name":"StateCounts"},{"name":"Avatar"},{"name":"InlineSelect"},{"name":"Usage"},{"name":"AuditRow"},{"name":"Diff"},{"name":"Qr"},{"name":"RecoveryCodes"},{"name":"Divider"}]} */
+/* @ds-bundle: {"format":4,"namespace":"Vink","components":[{"name":"StateBadge"},{"name":"Button"},{"name":"Chip"},{"name":"Tag"},{"name":"KindIcon"},{"name":"Field"},{"name":"PingUrl"},{"name":"Sparkline"},{"name":"MonitorRow"},{"name":"UptimeBar"},{"name":"StatusBanner"},{"name":"EmptyState"},{"name":"TopBar"},{"name":"Tabs"},{"name":"FieldRow"},{"name":"Checkbox"},{"name":"Switch"},{"name":"Segmented"},{"name":"KindPicker"},{"name":"Disclosure"},{"name":"Notice"},{"name":"Code"},{"name":"Panel"},{"name":"IncidentRow"},{"name":"SettingsRow"},{"name":"Menu"},{"name":"StateCounts"},{"name":"Avatar"},{"name":"InlineSelect"},{"name":"Usage"},{"name":"AuditRow"},{"name":"ObsRow"},{"name":"Diff"},{"name":"Qr"},{"name":"RecoveryCodes"},{"name":"Divider"}]} */
 /* vink components as canonical HTML. Each function returns the markup a Go html/template
    partial must produce; no framework. Helpers wire the two behaviours the UI has beyond htmx:
    copy-to-clipboard and the two-step destructive confirm. */
@@ -307,6 +307,20 @@
     return '<details class="vk-audit' + (sys ? ' vk-audit--system' : '') + '"' + (p.open ? ' open' : '') + '><summary class="vk-audit__sum">' + sum + '</summary><div class="vk-audit__body">' + body + '</div></details>';
   }
 
+  /* one observation or state change in a monitor's list: glyph, clock, what it said, and a right cell (a run's duration, a check's latency).
+     A row with more to show (facts, a cut message, a stored body) is a <details> that opens in place like AuditRow; `bodyLoad` is the
+     partial that replaces the placeholder with the body when the panel scrolls into view (hx-trigger="revealed"), `bodyHref` the body as text */
+  function ObsRow(p) {
+    p = p || {}; var right = esc(p.right || '');
+    if (p.bodyHref) right += (right ? ' · ' : '') + 'body';
+    var sum = glyph(p.state || 'new') + '<span title="' + esc(p.abs || '') + '">' + esc(p.clock || '') + '</span><span' + (p.title ? ' title="' + esc(p.title) + '"' : '') + '>' + esc(p.text || '') + '</span><span>' + right + '</span>';
+    var body = (p.message ? '<p class="vk-obsrow__msg">' + esc(p.message) + '</p>' : '') +
+      (p.facts && p.facts.length ? '<dl class="vk-kv">' + p.facts.map(function (f) { return '<dt>' + esc(f[0]) + '</dt><dd>' + esc(f[1]) + '</dd>'; }).join('') + '</dl>' : '') +
+      (p.bodyHref ? '<div class="vk-codebox"' + (p.bodyLoad ? ' hx-get="' + esc(p.bodyLoad) + '" hx-trigger="revealed" hx-swap="outerHTML"' : '') + '><pre class="vk-code"><a class="vk-link" href="' + esc(p.bodyHref) + '">Open the body as text</a></pre></div>' : '');
+    if (!body) return '<div class="vk-obs">' + sum + '</div>';
+    return '<details class="vk-obsrow"' + (p.open ? ' open' : '') + '><summary class="vk-obs">' + sum + '</summary><div class="vk-obsrow__body">' + body + '</div></details>';
+  }
+
   /* a QR code the server renders as SVG (black on white whatever the theme, so phones can read it); `svg` is trusted */
   function Qr(p) {
     p = p || {};
@@ -361,6 +375,6 @@
     TopBar: TopBar, Tabs: Tabs, FieldRow: FieldRow, Checkbox: Checkbox, Switch: Switch, Segmented: Segmented, KindPicker: KindPicker,
     Disclosure: Disclosure, Notice: Notice, Code: Code, Panel: Panel, IncidentRow: IncidentRow, SettingsRow: SettingsRow,
     Menu: Menu, StateCounts: StateCounts, Avatar: Avatar, InlineSelect: InlineSelect, Usage: Usage,
-    AuditRow: AuditRow, Diff: Diff, Qr: Qr, RecoveryCodes: RecoveryCodes, Divider: Divider, wire: wire, esc: esc };
+    AuditRow: AuditRow, ObsRow: ObsRow, Diff: Diff, Qr: Qr, RecoveryCodes: RecoveryCodes, Divider: Divider, wire: wire, esc: esc };
   for (var k in api) w.Vink[k] = api[k];
 })();

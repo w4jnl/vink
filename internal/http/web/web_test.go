@@ -391,7 +391,8 @@ func TestDrawerAndActions(t *testing.T) {
 	}
 	full.has(t, `<title>Nightly · vink</title>`, `class="vk-page" id="page"`, `<aside class="vk-drawer" id="drawer">`, `aria-current="true"`, `vk-drawer__title">Nightly`, e.project.PingKey+"/<b>nightly</b>", "every 1h · grace 5m · due in", "Last 24 hours", `vk-obs`, "4m0s", "new → up · first ok",
 		`data-drawer-close`, `>Edit<`, `>Pause<`, "As YAML", "slug", `vk-codebox`,
-		`<span title="curl/8.4.0">ok · from 192.168.30.5</span><span>4m0s · <a class="vk-link" href="/o/homelab/p/prod/m/nightly/obs/`, `<span>start</span><span></span>`)
+		`<details class="vk-obsrow"><summary class="vk-obs">`, `<span title="curl/8.4.0">ok · from 192.168.30.5</span><span>4m0s · body</span></summary><div class="vk-obsrow__body"><dl class="vk-kv"><dt>from</dt><dd>192.168.30.5</dd><dt>agent</dt><dd>curl/8.4.0</dd><dt>run</dt><dd>r1</dd><dt>took</dt><dd>4m0s</dd></dl>`,
+		`?partial=1" hx-trigger="revealed" hx-swap="outerHTML"><pre class="vk-code"><a class="vk-link" href="/o/homelab/p/prod/m/nightly/obs/`, `<span>start</span><span></span>`)
 	// the stored body is a link to plain text, never rendered, and scoped to the project
 	bodyPath := regexp.MustCompile(`href="(/o/homelab/p/prod/m/nightly/obs/[A-Z0-9]+/body)"`).FindStringSubmatch(full.body)
 	if bodyPath == nil {
@@ -399,6 +400,10 @@ func TestDrawerAndActions(t *testing.T) {
 	}
 	if r := e.get(bodyPath[1], false); r.code != 200 || r.body != "x" || r.hdr.Get("Content-Type") != "text/plain; charset=utf-8" || r.hdr.Get("X-Content-Type-Options") != "nosniff" {
 		t.Fatalf("body: %d %q %v", r.code, r.body, r.hdr)
+	}
+	// the panel loads the same body as a code box with Copy
+	if r := e.get(bodyPath[1]+"?partial=1", true); r.code != 200 || !strings.Contains(r.body, `<pre class="vk-code">x</pre>`) || !strings.Contains(r.body, `data-copy="x"`) || strings.Contains(r.body, "<html") {
+		t.Fatalf("body panel: %d %q", r.code, r.body)
 	}
 	if r := e.get(strings.Replace(bodyPath[1], "/o/homelab/p/prod/", "/o/acme/p/prod/", 1), false); r.code != 404 {
 		t.Fatalf("body across tenants: %d", r.code)

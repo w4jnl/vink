@@ -46,6 +46,7 @@ func NewTemplates(static *Static) (*Templates, error) {
 			return ui.MonitorRow(p), err
 		},
 		"uptimebar":    ui.UptimeBar,
+		"obsrow":       ui.ObsRow,
 		"statusbanner": ui.StatusBanner,
 		"emptystate":   ui.EmptyState,
 		"mark":         ui.Mark,
