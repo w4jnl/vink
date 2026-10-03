@@ -700,9 +700,9 @@ func TopBar(p TopBarProps) HTML {
 		openUser = " open"
 	}
 	return HTML(`<header class="vk-top"><a class="vk-top__mark" href="` + href("home", "/") + `">` + string(Mark(22)) + `<span>vink</span></a>` +
-		`<nav class="vk-top__nav" aria-label="Project"><details class="vk-popover"` + openSwitcher + `>` +
+		`<details class="vk-popover vk-top__switch"` + openSwitcher + `>` +
 		`<summary class="vk-top__crumb" title="Switch project">` + org + ` / <b>` + proj + `</b><i class="vk-caret" aria-hidden="true"></i></summary>` + string(p.Menu) + `</details>` +
-		link("monitors", "Monitors", base, "") + link("incidents", "Incidents", base+"/incidents", count) + link("settings", "Settings", base+"/settings/channels", "") + `</nav>` +
+		`<nav class="vk-top__nav" aria-label="Project">` + link("monitors", "Monitors", base, "") + link("incidents", "Incidents", base+"/incidents", count) + link("settings", "Settings", base+"/settings/channels", "") + `</nav>` +
 		`<input class="vk-input vk-top__search" type="search" placeholder="Search monitors  /" aria-label="Search monitors"` + p.SearchAttrs + `>` +
 		`<details class="vk-popover vk-popover--end"` + openUser + `><summary class="vk-top__user" title="` + esc(user) + `">` + esc(initial) + `</summary>` + string(p.UserMenu) + `</details></header>`)
 }

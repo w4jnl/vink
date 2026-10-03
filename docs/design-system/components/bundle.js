@@ -198,7 +198,8 @@
       '<p>Or run <span class="vk-mono">vink apply -f vink.yaml</span> to declare them all at once.</p></div>';
   }
 
-  /* project header: mark, the project switcher with its three sections, search, user. `hrefs` overrides the section links.
+  /* project header: mark, the project switcher, then the three sections in a nav, search, user. `hrefs` overrides the section links.
+     Under 640px the bar wraps: mark, switcher and user on the first row, the sections on a second.
      The switcher and the user button are <details> popovers: `menu` / `userMenu` are their panels (Menu()), `open`: 'switcher' | 'user'. */
   function TopBar(p) {
     p = p || {}; var org = esc(p.org || 'w4j'), proj = esc(p.project || 'homelab'), cur = p.section || 'monitors', base = '/o/' + org + '/p/' + proj, h = p.hrefs || {};
@@ -207,9 +208,9 @@
       return '<a class="vk-top__link" href="' + esc(h[id] || href) + '"' + (cur === id ? ' aria-current="page"' : '') + '>' + label + (extra || '') + '</a>';
     };
     return '<header class="vk-top"><a class="vk-top__mark" href="' + esc(h.home || '/') + '">' + Mark({ size: 22 }) + '<span>vink</span></a>' +
-      '<nav class="vk-top__nav" aria-label="Project"><details class="vk-popover"' + (p.open === 'switcher' ? ' open' : '') + '>' +
+      '<details class="vk-popover vk-top__switch"' + (p.open === 'switcher' ? ' open' : '') + '>' +
       '<summary class="vk-top__crumb" title="Switch project">' + org + ' / <b>' + proj + '</b><i class="vk-caret" aria-hidden="true"></i></summary>' + (p.menu || '') + '</details>' +
-      link('monitors', 'Monitors', base) +
+      '<nav class="vk-top__nav" aria-label="Project">' + link('monitors', 'Monitors', base) +
       link('incidents', 'Incidents', base + '/incidents', n ? '<span class="vk-top__count" title="' + n + ' open">' + glyph('down') + n + '</span>' : '') +
       link('settings', 'Settings', base + '/settings/channels') + '</nav>' +
       '<input class="vk-input vk-top__search" type="search" placeholder="Search monitors  /" aria-label="Search monitors">' +

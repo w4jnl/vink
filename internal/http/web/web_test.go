@@ -205,7 +205,7 @@ func TestTopBarMenusAndOrgShell(t *testing.T) {
 	e := newEnv(t)
 	e.monitor("job", "prod")
 	p := e.get(projPath, false)
-	p.has(t, `<details class="vk-popover"><summary class="vk-top__crumb" title="Switch project">homelab / <b>prod</b>`, `class="vk-menu"`, `<div class="vk-menu__label"><span>homelab</span><span class="vk-tag">admin</span></div>`,
+	p.has(t, `<details class="vk-popover vk-top__switch"><summary class="vk-top__crumb" title="Switch project">homelab / <b>prod</b>`, `class="vk-menu"`, `<div class="vk-menu__label"><span>homelab</span><span class="vk-tag">admin</span></div>`,
 		`<a class="vk-menu__item" href="/o/homelab/p/prod" aria-current="page"><span>prod</span><span class="vk-menu__meta"><span class="vk-counts"><span class="vk-counts__n vk-counts__n--up">`, "all up",
 		`<a class="vk-menu__item vk-menu__item--quiet" href="/o/homelab/admin/projects?add=1"><span>New project</span></a>`, `href="/o/homelab/admin/projects"><span>Org settings</span>`,
 		`<details class="vk-popover vk-popover--end"><summary class="vk-top__user" title="Jaro">J</summary>`, `<span>Jaro</span>`, `href="/api/v1/openapi.yaml"><span>API reference</span>`, `href="/logout"><span>Sign out</span>`)

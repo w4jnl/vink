@@ -36,7 +36,7 @@ export declare function Notice(props: { tone?: 'ok' | 'error' | 'warn' | 'info';
 export declare function Code(props: { text: string; copy?: boolean; copyLabel?: string; yaml?: boolean }): string;
 /** Inline add/edit form on surface. `body`/`actions` are trusted HTML. */
 export declare function Panel(props: { title?: string; note?: string; body?: string; actions?: string; id?: string }): string;
-/** Signed-in header: mark, project switcher + Monitors / Incidents / Settings, search, user. `menu`/`userMenu` are Menu() panels; `open` draws one open. */
+/** Signed-in header: mark, the project switcher, then Monitors / Incidents / Settings in a nav, search, user. Wraps into two rows under 640px. */
 export declare function TopBar(props: { org?: string; project?: string; section?: 'monitors' | 'incidents' | 'settings' | 'none' | 'org'; incidents?: number; user?: string;
   hrefs?: Partial<Record<'home' | 'monitors' | 'incidents' | 'settings', string>>; menu?: string; userMenu?: string; open?: 'switcher' | 'user' }): string;
 /** Popover panel for the switcher and user menus. `meta` is trusted HTML. */
