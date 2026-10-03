@@ -7,8 +7,12 @@
 # Traefik's file provider does not expand ${VAR}; it runs Go templates,
 # so the secret is written as {{ env "VINK_PROXY_SECRET" }} and Traefik
 # must have that variable in its own environment.
-# Pings, the API, status pages, metrics and health are open routes: no
-# forward auth, and any identity header a client sent is stripped.
+# Pings, the API, status pages and their stylesheet under /static/, the
+# one-click acknowledgement links under /a/, agents, metrics and health
+# are open routes: no forward auth, and any identity header a client
+# sent is stripped. Without /static/ a status page renders unstyled for
+# anyone without an Authelia session; without /a/ the ack link in an
+# alert bounces through the sign-in.
 #
 # Authelia access_control for the UI:
 #   - domain: vink.example.com
@@ -34,8 +38,8 @@ http:
         customRequestHeaders: { Remote-User: "", Remote-Groups: "", Remote-Email: "", Remote-Name: "" }
 
   routers:
-    vink-open:   # pings, API, status pages, metrics, health: no forwardAuth, identity headers stripped
-      rule: Host(`vink.example.com`) && (PathPrefix(`/ping/`) || PathPrefix(`/api/`) || PathPrefix(`/s/`) || PathPrefix(`/agent/`) || Path(`/metrics`) || Path(`/healthz`) || Path(`/readyz`))
+    vink-open:   # pings, API, status pages, static assets, ack links, agents, metrics, health: no forwardAuth, identity headers stripped
+      rule: Host(`vink.example.com`) && (PathPrefix(`/ping/`) || PathPrefix(`/api/`) || PathPrefix(`/s/`) || PathPrefix(`/static/`) || PathPrefix(`/a/`) || PathPrefix(`/agent/`) || Path(`/metrics`) || Path(`/healthz`) || Path(`/readyz`))
       priority: 100
       entryPoints: [websecure]
       middlewares: [strip-identity, vink-secret]

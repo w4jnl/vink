@@ -4,6 +4,13 @@ User-facing changes per release, newest first. `scripts/release.sh` refuses to t
 that has no section here and uses the section as the GitHub release notes, so every release
 updates this file first. Dates are the tag dates.
 
+## Unreleased
+
+- The Traefik and Apache deploy examples open `/static/` and `/a/` next to the status pages:
+  a status page's stylesheet and the one-click acknowledgement links in alerts are anonymous
+  routes too. Without them a status page renders unstyled for anyone without a session and
+  the ack link bounces through the sign-in.
+
 ## 0.1.2 (2026-10-03)
 
 - Alerts say why. A `down` caused by a ping carries the ping's `?msg=` (or, without one, the

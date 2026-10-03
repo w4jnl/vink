@@ -439,8 +439,8 @@ http:
       headers:
         customRequestHeaders: { Remote-User: "", Remote-Groups: "", Remote-Email: "", Remote-Name: "" }
   routers:
-    vink-open:   # pings, API, status pages, metrics: no forwardAuth, identity headers stripped
-      rule: Host(`vink.w4j.nl`) && (PathPrefix(`/ping/`) || PathPrefix(`/api/`) || PathPrefix(`/s/`) || Path(`/metrics`) || Path(`/healthz`))
+    vink-open:   # pings, API, status pages and their assets, ack links, agents, metrics, health: no forwardAuth, identity headers stripped
+      rule: Host(`vink.w4j.nl`) && (PathPrefix(`/ping/`) || PathPrefix(`/api/`) || PathPrefix(`/s/`) || PathPrefix(`/static/`) || PathPrefix(`/a/`) || PathPrefix(`/agent/`) || Path(`/metrics`) || Path(`/healthz`) || Path(`/readyz`))
       priority: 100
       middlewares: [strip-identity, vink-secret]
       service: vink
