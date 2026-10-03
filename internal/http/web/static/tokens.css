@@ -108,3 +108,7 @@
   --new: var(--ink-muted);
   --shadow-drawer: 0 16px 40px rgba(0, 0, 0, 0.5);
 }
+/* touch: controls and chips grow to tap size; bundle.css derives the rest from these */
+@media (pointer: coarse) {
+  :root { --control-h: 40px; --chip-h: 32px; }
+}
