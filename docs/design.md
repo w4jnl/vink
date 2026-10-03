@@ -524,7 +524,7 @@ type Notification struct {
     Project    domain.Project    // slug, name, timezone
     Incident   *domain.Incident  // nil for late/up-without-incident
     Repeat     bool              // true for repeat_every re-sends
-    Links      Links             // monitor URL, incident URL, ack URL (signed, one-click)
+    Links      Links             // the monitor's history page, incident URL, ack URL (signed, one-click)
     Message    string            // what the ping behind the event said: its ?msg=, else the tail of a text body (20 lines, 2,000 bytes)
     ExitCode   *int64            // the exit code that ping carried, if any
 }

@@ -169,7 +169,8 @@ func (s *Service) links(p *domain.Project, m *domain.Monitor, inc *domain.Incide
 	if base == "" {
 		base = s.cfg.PingBaseURL
 	}
-	l := notify.Links{Monitor: fmt.Sprintf("%s/o/%s/p/%s/m/%s", base, p.OrgSlug, p.Slug, m.Slug)}
+	// the monitor link is the history page: the failing ping, its body and the flips in one view
+	l := notify.Links{Monitor: fmt.Sprintf("%s/o/%s/p/%s/m/%s/history", base, p.OrgSlug, p.Slug, m.Slug)}
 	if inc != nil && inc.Open() {
 		l.Incident = fmt.Sprintf("%s/o/%s/p/%s/incidents", base, p.OrgSlug, p.Slug)
 		if inc.AckedAt == nil {

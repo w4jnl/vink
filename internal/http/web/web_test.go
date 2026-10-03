@@ -472,6 +472,11 @@ func TestCreateAndEditForm(t *testing.T) {
 		t.Fatalf("preview: %d %s", pv.code, pv.body)
 	}
 	pv.has(t, `<hx-partial hx-target="#schedule-msg"`, "Next runs:", `hx-target="#grace-msg"`, "Late at 03:00:30, down at 03:05.", `hx-target="#monitor-form .vk-codebox"`, "nightly-backup", `cron: &quot;0 3 * * *&quot;`)
+	// the ping URL follows the slug, derived from the name when none is typed
+	named := e.post(projPath+"/m/preview", url.Values{"name": {"Photo sync"}, "schedule_type": {"period"}, "schedule": {"1h"}}, true)
+	named.has(t, `<hx-partial hx-target="#monitor-form .vk-ping" hx-swap="outerHTML"><div class="vk-ping"><code class="vk-ping__url">`, "/<b>photo-sync</b></code>")
+	typed := e.post(projPath+"/m/preview", url.Values{"name": {"Photo sync"}, "slug": {"photos-nas"}, "schedule_type": {"period"}, "schedule": {"1h"}}, true)
+	typed.has(t, "/<b>photos-nas</b></code>")
 	// a tolerance over the grace is refused with the field under Advanced open
 	tooTolerant := e.post(projPath+"/m/new", url.Values{"name": {"Nightly backup"}, "schedule_type": {"cron"}, "schedule": {"0 3 * * *"}, "grace": {"30m"}, "tolerance": {"1h"}}, true)
 	if tooTolerant.code != 422 || !strings.Contains(tooTolerant.body, "Must be at most the grace (30m).") || !strings.Contains(tooTolerant.body, `<details class="vk-details" open>`) {
@@ -2049,7 +2054,7 @@ func TestHistoryPage(t *testing.T) {
 	if full.code != 200 {
 		t.Fatalf("history page: %d", full.code)
 	}
-	full.has(t, `<title>Nightly · history · vink</title>`, `class="vk-page vk-page--full"`, `<div id="history-head" hx-get="/o/homelab/p/prod/m/nightly/history?newest=`, `hx-trigger="every 10s`,
+	full.has(t, `<title>Nightly · history · vink</title>`, `class="vk-page vk-page--full"`, `<div id="history-head" class="vk-section" hx-get="/o/homelab/p/prod/m/nightly/history?newest=`, `hx-trigger="every 10s`,
 		`<h1>Nightly <span class="vk-row__slug">nightly</span></h1>`, `>Back<`, `>Edit<`, `>Pause<`, "every 1h · grace 5m · due in", `aria-label="last 24 hours"`, `aria-label="last 90 days"`,
 		`<h2 class="vk-listhead">Today <span><a class="vk-link" href="/o/homelab/p/prod/m/nightly/history?since=`, `name="kind" value="fail"`, `name="kind" value="change"`, `name="period" value="7d" checked`,
 		`class="vk-irows"`, `ok · from 192.168.30.5`, `hx-trigger="revealed"`, `>Older<`)

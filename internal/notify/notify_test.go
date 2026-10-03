@@ -28,7 +28,7 @@ func sample() Notification {
 		Monitor:  domain.Monitor{ID: "m1", Slug: "nightly-backup", Name: "Nightly backup", Kind: domain.KindHeartbeat, Tags: []string{"backup", "prod"}, State: domain.StateDown, StateSince: at},
 		Project:  domain.Project{Slug: "homelab", Name: "Homelab", Timezone: "Europe/Amsterdam"},
 		Incident: &domain.Incident{ID: "i1", OpenedAt: at},
-		Links:    Links{Monitor: "https://vink.example.com/o/w4j/p/homelab/m/nightly-backup", Incident: "https://vink.example.com/o/w4j/p/homelab/incidents", Ack: "https://vink.example.com/a/tok"},
+		Links:    Links{Monitor: "https://vink.example.com/o/w4j/p/homelab/m/nightly-backup/history", Incident: "https://vink.example.com/o/w4j/p/homelab/incidents", Ack: "https://vink.example.com/a/tok"},
 	}
 }
 
@@ -441,7 +441,7 @@ func TestGotifyMatrixSlackAlertmanager(t *testing.T) {
 	if err := r.Send(ctx, domain.ChannelSlackhook, cfg, sample()); err != nil {
 		t.Fatal(err)
 	}
-	if c.path != "/services/T/B/secret" || !strings.Contains(c.body, `"color":"#e05d44"`) || !strings.Contains(c.body, `"title_link":"https://vink.example.com/o/w4j/p/homelab/m/nightly-backup"`) || !strings.Contains(c.body, `"text":"[vink] DOWN nightly-backup (homelab)"`) {
+	if c.path != "/services/T/B/secret" || !strings.Contains(c.body, `"color":"#e05d44"`) || !strings.Contains(c.body, `"title_link":"https://vink.example.com/o/w4j/p/homelab/m/nightly-backup/history"`) || !strings.Contains(c.body, `"text":"[vink] DOWN nightly-backup (homelab)"`) {
 		t.Errorf("slackhook: %s %s", c.path, c.body)
 	}
 

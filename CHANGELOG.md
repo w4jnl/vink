@@ -17,6 +17,11 @@ updates this file first. Dates are the tag dates.
   the run, its duration and exit code, a check's detail, the whole message when the row cut it,
   and the stored body in a code box with Copy, loaded when the panel opens. The body link no
   longer leaves the page; the bare body URL still serves it as text.
+- Alerts link to the monitor's history page instead of the drawer, so the failing ping, its
+  body and the flips are one click from the email or message.
+- The create form's ping URL follows the slug as you type (derived from the name when the slug
+  is empty) instead of showing the example until the monitor exists.
+- The history page's head shares the timeline's width, so a wide screen shows one column.
 - The API takes `kind=ok|fail|run` on a monitor's observations, and its events page with
   `since`, `until` and `cursor` like observations do, answering with `next_cursor`.
 - The Traefik and Apache deploy examples open `/static/` and `/a/` next to the status pages:

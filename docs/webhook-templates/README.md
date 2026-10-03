@@ -2,7 +2,7 @@
 
 A `webhook` channel sends the JSON payload by default. With a `body_template` it sends whatever the Go template renders over that payload, so one channel kind covers the services below. Each file here is a template; paste it into the channel's Body template field (or the `body_template` key of the apply file) and set the URL and headers the service wants.
 
-The payload has `event` (`down`, `up`, `late`, `test`), `title`, `text`, `at`, `repeat`, `reason`, `message` and `exit_code` (what the failing ping said: its `?msg=` or the tail of its body, and its exit code; absent when there was none), `monitor` (`slug`, `name`, `kind`, `tags`, `state`, `state_since`), `project` (`slug`, `name`, `timezone`), `incident` (`id`, `opened_at`, `acked_at`), `from_state`, `to_state` and `links` (`monitor`, `incident`, `ack`). The template functions `json`, `upper` and `lower` are available; `json` quotes and escapes a value, so use it for every string you put into JSON.
+The payload has `event` (`down`, `up`, `late`, `test`), `title`, `text`, `at`, `repeat`, `reason`, `message` and `exit_code` (what the failing ping said: its `?msg=` or the tail of its body, and its exit code; absent when there was none), `monitor` (`slug`, `name`, `kind`, `tags`, `state`, `state_since`), `project` (`slug`, `name`, `timezone`), `incident` (`id`, `opened_at`, `acked_at`), `from_state`, `to_state` and `links` (`monitor`, the monitor's history page with the failing ping and its body; `incident`; `ack`). The template functions `json`, `upper` and `lower` are available; `json` quotes and escapes a value, so use it for every string you put into JSON.
 
 | Service | URL | Headers | Template | Route |
 | --- | --- | --- | --- | --- |

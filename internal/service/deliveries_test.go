@@ -105,7 +105,7 @@ func TestDownToWebhookThroughDispatcher(t *testing.T) {
 		t.Fatalf("payload: %v", body)
 	}
 	links := body["links"].(map[string]any)
-	if !strings.Contains(links["monitor"].(string), "/o/homelab/p/prod/m/job") || !strings.Contains(links["ack"].(string), "/a/") {
+	if !strings.HasSuffix(links["monitor"].(string), "/o/homelab/p/prod/m/job/history") || !strings.Contains(links["ack"].(string), "/a/") {
 		t.Fatalf("links: %v", links)
 	}
 	// nothing more to do right away
