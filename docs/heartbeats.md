@@ -258,7 +258,8 @@ recipe above, both work.
 
 The monitor's drawer lists the last observations newest first: `start`, `ok`, `exit 1 ·
 <message>`, `log · <message>`, each with where it came from and, on a finish that followed a
-start, how long the run took. The 24-hour bar above it shows the day's states. Events, the
+start, how long the run took. The 24-hour bar above it shows the worst state of each hour, and
+the figure under it the share of the day the monitor was up, weighted by time. Events, the
 state flips, are below with their reason: `deadline passed`, `grace over`, `exit 1`,
 `run_timeout`, `recovered`. The same facts are in the API at
 `/api/v1/monitors/<slug>/observations` and `/events`, and `vink logs <slug>` prints them.

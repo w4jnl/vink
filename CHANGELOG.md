@@ -4,6 +4,12 @@ User-facing changes per release, newest first. `scripts/release.sh` refuses to t
 that has no section here and uses the section as the GitHub release notes, so every release
 updates this file first. Dates are the tag dates.
 
+## Unreleased
+
+- The drawer's 24-hour legend shows the share of the day the monitor was up, weighted by time
+  like the status page. It counted cells before, so one late minute in an hour cost the whole
+  hour and a monitor that was late once an hour read 0.0% up under a bar that was mostly fine.
+
 ## 0.1.1 (2026-10-02)
 
 - SQLite 3.53.4 through modernc.org/sqlite 1.60.0, which carries upstream's fix for a

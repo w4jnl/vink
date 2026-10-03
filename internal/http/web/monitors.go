@@ -349,7 +349,7 @@ func (h *Web) drawerData(c *reqCtx, m *domain.Monitor) (*drawerData, error) {
 		return nil, err
 	}
 	d.Cells = view.HourCells(c.now, m.CreatedAt, m.State, events)
-	d.Legend = []string{"24 h ago", view.UpShare(d.Cells), "now"}
+	d.Legend = []string{"24 h ago", upLabel(view.UpPercent(c.now, m.CreatedAt, m.State, events, 24*time.Hour), ""), "now"}
 	obs, err := h.svc.ListObservations(ctx, c.scope, m.Slug, service.ObservationPage{Limit: 20})
 	if err != nil {
 		return nil, err
