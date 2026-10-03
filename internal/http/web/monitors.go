@@ -397,7 +397,9 @@ func (h *Web) summaryLine(c *reqCtx, m *domain.Monitor, loc *time.Location) stri
 }
 
 func obsRowFor(o *domain.Observation, loc *time.Location, match string) obsRow {
-	row := obsRow{Clock: view.Clock(o.At, loc), Abs: view.Abs(o.At, loc), Facts: obsFacts(o)}
+	row := obsRow{Clock: view.Clock(o.At, loc), Abs: view.Abs(o.At, loc)}
+	// the absolute time leads the facts: a touch screen cannot hover the clock
+	row.Facts = append([][2]string{{"at", row.Abs}}, obsFacts(o)...)
 	if msg, ok := o.Detail["msg"].(string); ok && len(msg) > 80 {
 		row.Message = msg // the row shows the first 80 characters; the panel the whole
 	}

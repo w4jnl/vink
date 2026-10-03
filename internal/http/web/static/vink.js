@@ -86,8 +86,11 @@
       page.appendChild(drawer);
     }
     var empty = !drawer.firstElementChild || !!drawer.querySelector('[data-empty]');
+    var wasFull = page.classList.contains('vk-page--full');
     drawer.style.display = empty ? 'none' : '';
     page.classList.toggle('vk-page--full', empty);
+    // under 960px the drawer is the page: start it at the top, not where the list was scrolled to
+    if (wasFull && !empty && window.matchMedia('(max-width: 960px)').matches) window.scrollTo(0, 0);
   }
 
   // The monitor form's live preview: htmx 4 listens on an element for its
@@ -98,7 +101,12 @@
     var s = f && f.querySelector('[data-preview]');
     if (s) s.dispatchEvent(new CustomEvent('preview'));
   });
-  document.addEventListener('DOMContentLoaded', function () { wire(document); popovers(document); favicon(); syncDrawer(); });
+  document.addEventListener('DOMContentLoaded', function () {
+    wire(document); popovers(document); favicon(); syncDrawer();
+    // the tab strip scrolls sideways on phones: keep the current tab in view
+    var tab = document.querySelector('.vk-tab[aria-current]');
+    if (tab && tab.scrollIntoView) tab.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  });
   document.addEventListener('htmx:after:settle', function () { wire(document); popovers(document); favicon(); syncDrawer(); });
   // htmx 4 hands the request context as e.detail.ctx (htmx 2 put headers
   // on e.detail). Set the header where it exists, and for a state-changing
@@ -125,7 +133,7 @@
       return;
     }
     if (typing || e.metaKey || e.ctrlKey || e.altKey) return;
-    if (e.key === '/') { var s = document.querySelector('.vk-top__search'); if (s) { e.preventDefault(); s.focus(); } }
+    if (e.key === '/') { var s = document.querySelector('.vk-top__search'); if (s && s.getClientRects().length) { e.preventDefault(); s.focus(); } }
     if (e.key === 'n') { var c = document.querySelector('[data-create]'); if (c) { e.preventDefault(); c.click(); } }
   });
 

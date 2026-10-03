@@ -25,7 +25,7 @@
 
 {{define "agent-drawer"}}<div class="vk-drawer__head"><h1 class="vk-drawer__title">{{.Name}}</h1>
 <div class="vk-inline vk-inline--flush">{{.State}}{{range .Tags}}{{tag .}}{{end}}</div>
-<div class="vk-drawer__actions">{{if not .Labels}}{{button (dict "Label" "Edit labels" "Href" .LabelsPath)}}{{end}}<form method="post" action="{{.RevokePath}}"><input type="hidden" name="_csrf" value="{{.CSRF}}">{{button (dict "Label" "Revoke token" "Variant" "danger" "Confirm" "Really revoke?" "Type" "submit")}}</form></div></div>
+<div class="vk-drawer__actions">{{if not .Labels}}{{button (dict "Label" "Edit labels" "Href" .LabelsPath)}}{{end}}<form method="post" action="{{.RevokePath}}"><input type="hidden" name="_csrf" value="{{.CSRF}}">{{button (dict "Label" "Revoke token" "Variant" "danger" "Confirm" "Really revoke?" "Type" "submit")}}</form>{{button (dict "Label" "Close" "Href" .ClosePath "Attrs" (attrs "data-drawer-close" "1"))}}</div></div>
 {{if .Labels}}{{template "agent-labels-panel" .Labels}}{{end}}
 {{if .Notice}}{{notice .Notice.Tone .Notice.Title .Notice.Text ""}}{{end}}
 <section><h2>Connection</h2><dl class="vk-kv">{{range .KV}}<dt>{{index . 0}}</dt><dd>{{index . 1}}</dd>{{end}}</dl></section>

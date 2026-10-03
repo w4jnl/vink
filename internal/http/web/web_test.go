@@ -391,7 +391,7 @@ func TestDrawerAndActions(t *testing.T) {
 	}
 	full.has(t, `<title>Nightly · vink</title>`, `class="vk-page" id="page"`, `<aside class="vk-drawer" id="drawer">`, `aria-current="true"`, `vk-drawer__title">Nightly`, e.project.PingKey+"/<b>nightly</b>", "every 1h · grace 5m · due in", "Last 24 hours", `vk-obs`, "4m0s", "new → up · first ok",
 		`data-drawer-close`, `>Edit<`, `>Pause<`, "As YAML", "slug", `vk-codebox`,
-		`<details class="vk-obsrow"><summary class="vk-obs">`, `<span title="curl/8.4.0">ok · from 192.168.30.5</span><span>4m0s · body</span></summary><div class="vk-obsrow__body"><dl class="vk-kv"><dt>from</dt><dd>192.168.30.5</dd><dt>agent</dt><dd>curl/8.4.0</dd><dt>run</dt><dd>r1</dd><dt>took</dt><dd>4m0s</dd></dl>`,
+		`<details class="vk-obsrow"><summary class="vk-obs">`, `<span title="curl/8.4.0">ok · from 192.168.30.5</span><span>4m0s · body</span></summary><div class="vk-obsrow__body"><dl class="vk-kv"><dt>at</dt><dd>2026-09-27 14:04 CEST</dd><dt>from</dt><dd>192.168.30.5</dd><dt>agent</dt><dd>curl/8.4.0</dd><dt>run</dt><dd>r1</dd><dt>took</dt><dd>4m0s</dd></dl>`,
 		`?partial=1" hx-trigger="revealed" hx-swap="outerHTML"><pre class="vk-code"><a class="vk-link" href="/o/homelab/p/prod/m/nightly/obs/`, `<span>start</span><span></span>`)
 	// the stored body is a link to plain text, never rendered, and scoped to the project
 	bodyPath := regexp.MustCompile(`href="(/o/homelab/p/prod/m/nightly/obs/[A-Z0-9]+/body)"`).FindStringSubmatch(full.body)
@@ -1055,7 +1055,7 @@ func TestAgentsTabDrawerAndRunFrom(t *testing.T) {
 		t.Fatalf("drawer: %d", drawer.code)
 	}
 	drawer.has(t, `<div class="vk-page" id="page">`, `<aside class="vk-drawer" id="drawer">`, `<h1 class="vk-drawer__title">dc2-probe</h1>`, `vk-state--pill"><i class="vk-glyph vk-glyph--new" aria-hidden="true"></i>waiting</span><span class="vk-tag">site=dc2</span><span class="vk-tag">zone=dmz</span>`,
-		`href="/o/homelab/admin/agents/dc2-probe?labels=1">Edit labels</a>`, `data-confirm="Really revoke?">Revoke token</button>`, `<dl class="vk-kv"><dt>last seen</dt><dd>never</dd><dt>token</dt><dd>vat_`, `Assigned monitors <span class="vk-muted vk-mono">0</span>`, `No monitor runs from this agent yet.`,
+		`href="/o/homelab/admin/agents/dc2-probe?labels=1">Edit labels</a>`, `data-confirm="Really revoke?">Revoke token</button></form><a class="vk-btn" href="/o/homelab/admin/agents" data-drawer-close="1">Close</a>`, `<dl class="vk-kv"><dt>last seen</dt><dd>never</dd><dt>token</dt><dd>vat_`, `Assigned monitors <span class="vk-muted vk-mono">0</span>`, `No monitor runs from this agent yet.`,
 		`<div class="vk-srow vk-srow--muted" aria-current="true">`, `names dc2-probe, or labels only this agent has.`)
 	if r := e.get(root+"/nope", false); r.code != 404 {
 		t.Fatalf("unknown agent: %d", r.code)
