@@ -116,8 +116,8 @@ hosted synthetic monitor).
 
 ## Features
 
-- **Heartbeats**: a period or a 5-field cron schedule in the monitor's timezone, a grace, a
-  maximum runtime, `start`, `fail`, `log` and exit-code signals, run ids that pair a start with
+- **Heartbeats**: a period or a 5-field cron schedule in the monitor's timezone, a tolerance
+  and a grace, a maximum runtime, `start`, `fail`, `log` and exit-code signals, run ids that pair a start with
   its finish, the body of a ping stored up to 64 kB, `?create=1` to make a monitor from its first
   ping, `vink run` to wrap a command.
 - **Checks**: HTTP with status, keyword and JSON path assertions, redirects and a private CA; TCP
@@ -175,8 +175,8 @@ release, newest first; the same text is on each GitHub release.
 | State | Glyph | Enters when | Leaves when |
 | --- | --- | --- | --- |
 | new | ◌ | the monitor is created | the first ping or check |
-| up | ● | a ping arrives on time, or a check passes | the deadline passes, or a check fails |
-| late | ◐ | a heartbeat misses its deadline, or a check fails but is not yet confirmed | a ping arrives, the grace runs out, or the failures reach the threshold |
+| up | ● | a ping arrives on time, or a check passes | the deadline plus the tolerance passes, or a check fails |
+| late | ◐ | a heartbeat misses its deadline by more than the tolerance (30 s by default), or a check fails but is not yet confirmed | a ping arrives, the grace runs out, or the failures reach the threshold |
 | down | ◆ | the grace is over, a fail ping or exit code arrives, or the failures reach the threshold | an ok ping or passing check; an incident opens on entry and closes on exit |
 | paused | ‖ | pause, by hand or from the API | resume |
 

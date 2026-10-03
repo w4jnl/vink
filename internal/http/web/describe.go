@@ -20,7 +20,7 @@ type hints struct {
 
 // describe explains a heartbeat spec in the project's timezone.
 func describe(spec *domain.HeartbeatSpec, projectTZ string, now time.Time, bodyDefault int64) hints {
-	h := hints{Schedule: "How often a ping is expected.", Grace: "How long after the expected time late becomes down.", Advanced: advancedSummary(spec, bodyDefault)}
+	h := hints{Schedule: "How often a ping is expected.", Grace: "How long after the deadline late becomes down.", Advanced: advancedSummary(spec, bodyDefault)}
 	if spec == nil {
 		return h
 	}
@@ -53,14 +53,27 @@ func describe(spec *domain.HeartbeatSpec, projectTZ string, now time.Time, bodyD
 	}
 	first, err := spec.ExpectedAfter(now, loc)
 	if err == nil {
-		grace := spec.Grace
+		grace, tolerance := spec.Grace, spec.Tolerance
 		if grace == 0 {
 			grace = domain.DefaultGrace
 		}
+		if tolerance == 0 {
+			tolerance = domain.DefaultTolerance
+		}
+		late := first.Add(tolerance.Std())
 		down := first.Add(grace.Std())
-		h.Grace = fmt.Sprintf("Late at %s, down at %s.", timefmt.Clock(first, loc)[:5], timefmt.Clock(down, loc)[:5])
+		h.Grace = fmt.Sprintf("Late at %s, down at %s.", clockWord(late, loc), clockWord(down, loc))
 	}
 	return h
+}
+
+// clockWord is "03:00" on the minute and "03:00:30" otherwise.
+func clockWord(t time.Time, loc *time.Location) string {
+	c := timefmt.Clock(t, loc)
+	if strings.HasSuffix(c, ":00") {
+		return c[:5]
+	}
+	return c
 }
 
 // dayWord renders "tonight 03:00", "Wed 03:00" or "Wed 7 Oct 03:00".
@@ -84,10 +97,13 @@ func dayWord(t, now time.Time, loc *time.Location) string {
 }
 
 // advancedSummary is the disclosure's one-line state:
-// "max runtime none · down after 1 · methods any · body 64 KB".
+// "tolerance 30s · max runtime none · down after 1 · methods any · body 64 KB".
 func advancedSummary(spec *domain.HeartbeatSpec, bodyDefault int64) string {
-	runtime, down, methods, body := "none", "1", "any", bytesWord(bodyDefault)
+	tolerance, runtime, down, methods, body := domain.DefaultTolerance.String(), "none", "1", "any", bytesWord(bodyDefault)
 	if spec != nil {
+		if spec.Tolerance > 0 {
+			tolerance = spec.Tolerance.String()
+		}
 		if spec.MaxRuntime > 0 {
 			runtime = spec.MaxRuntime.String()
 		}
@@ -104,7 +120,7 @@ func advancedSummary(spec *domain.HeartbeatSpec, bodyDefault int64) string {
 			body = bytesWord(spec.BodyLimit)
 		}
 	}
-	return "max runtime " + runtime + " · down after " + down + " · methods " + methods + " · body " + body
+	return "tolerance " + tolerance + " · max runtime " + runtime + " · down after " + down + " · methods " + methods + " · body " + body
 }
 
 // bytesWord renders 65536 as "64 KB".

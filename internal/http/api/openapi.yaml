@@ -201,6 +201,7 @@ components:
         tags: {type: array, items: {type: string}}
         schedule: {$ref: "#/components/schemas/Schedule"}
         timezone: {type: string}
+        tolerance: {type: string, default: 30s, description: a ping this long after the deadline is still on time; at most the grace}
         grace: {type: string, default: 5m}
         max_runtime: {type: string}
         failure_threshold: {type: integer, description: 1 for heartbeats, 3 for pull kinds}

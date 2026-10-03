@@ -103,11 +103,12 @@ type monitor struct {
 		Period string `json:"period"`
 		Cron   string `json:"cron"`
 	} `json:"schedule"`
-	Timezone string `json:"timezone"`
-	Grace    string `json:"grace"`
-	Target   string `json:"target"`
-	Interval string `json:"interval"`
-	Timeout  string `json:"timeout"`
+	Timezone  string `json:"timezone"`
+	Tolerance string `json:"tolerance"`
+	Grace     string `json:"grace"`
+	Target    string `json:"target"`
+	Interval  string `json:"interval"`
+	Timeout   string `json:"timeout"`
 }
 
 func (m monitor) schedule() string {

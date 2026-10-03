@@ -101,7 +101,7 @@ func newGetCmd(g *globals) *cobra.Command {
 			since := timefmt.Span(now.Sub(m.StateSince))
 			pairs := [][2]string{
 				{"slug", m.Slug}, {"name", m.Name}, {"kind", m.Kind}, {"state", p.State(m.State) + " for " + since},
-				{"schedule", m.schedule()}, {"grace", m.Grace}, {"timezone", m.Timezone},
+				{"schedule", m.schedule()}, {"tolerance", m.Tolerance}, {"grace", m.Grace}, {"timezone", m.Timezone},
 				{"last ping", fmtTime(m.LastObsAt, now, timefmt.Ago)}, {"next due", fmtTime(m.ExpectedAt, now, timefmt.In)},
 				{"tags", strings.Join(m.Tags, ", ")}, {"ping url", m.PingURL},
 			}

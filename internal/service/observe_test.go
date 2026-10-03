@@ -80,20 +80,20 @@ func TestHeartbeatLifecycleThroughStore(t *testing.T) {
 		t.Fatalf("body: %q %q %v", body, ct, err)
 	}
 	m, _ := f.svc.MonitorBySlug(ctx, f.member, "job")
-	if m.State != domain.StateUp || m.LastOkAt == nil || !m.NextDueAt.Equal(start.Add(time.Hour)) || m.LastObsAt == nil {
+	if m.State != domain.StateUp || m.LastOkAt == nil || !m.NextDueAt.Equal(start.Add(time.Hour+30*time.Second)) || m.LastObsAt == nil {
 		t.Fatalf("after ok: %+v", m)
 	}
 
-	// scheduler: nothing due before the deadline
-	if ids, _ := f.svc.ListDue(ctx, f.clock.Add(59*time.Minute), 10); len(ids) != 0 {
+	// scheduler: nothing due before the deadline, nor at it (the tolerance)
+	if ids, _ := f.svc.ListDue(ctx, f.clock.Add(time.Hour), 10); len(ids) != 0 {
 		t.Fatalf("due early: %v", ids)
 	}
 	next, ok, _ := f.svc.NextDueAt(ctx)
-	if !ok || !next.Equal(start.Add(time.Hour)) {
+	if !ok || !next.Equal(start.Add(time.Hour+30*time.Second)) {
 		t.Fatalf("next due at = %v %v", next, ok)
 	}
-	// deadline: up -> late, late delivery enqueued
-	now := f.clock.Add(time.Minute)
+	// tolerance over: up -> late, late delivery enqueued
+	now := f.clock.Add(30 * time.Second)
 	ids, _ := f.svc.ListDue(ctx, now, 10)
 	if len(ids) != 1 {
 		t.Fatalf("due at deadline: %v", ids)
@@ -106,7 +106,7 @@ func TestHeartbeatLifecycleThroughStore(t *testing.T) {
 		t.Fatalf("after deadline: state=%s next=%v", m.State, m.NextDueAt)
 	}
 	// grace: late -> down, incident opened, down delivery enqueued
-	now = f.clock.Add(5 * time.Minute)
+	now = f.clock.Add(5*time.Minute - 30*time.Second)
 	if err := f.svc.Tick(ctx, m.ID, now); err != nil {
 		t.Fatal(err)
 	}

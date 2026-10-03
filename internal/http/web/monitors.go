@@ -332,6 +332,9 @@ func (h *Web) drawerData(c *reqCtx, m *domain.Monitor) (*drawerData, error) {
 		if s.Schedule.Cron != "" {
 			parts[0] += " (" + loc.String() + ")"
 		}
+		if s.Tolerance != 0 && s.Tolerance != domain.DefaultTolerance {
+			parts = append(parts, "tolerance "+s.Tolerance.String())
+		}
 		parts = append(parts, "grace "+s.Grace.String())
 		if s.MaxRuntime > 0 {
 			parts = append(parts, "max runtime "+s.MaxRuntime.String())
@@ -625,7 +628,7 @@ func (h *Web) newForm(c *reqCtx, kind string) formData {
 func formDefaults(kind domain.Kind) map[string]string {
 	v := map[string]string{
 		"name": "", "slug": "", "tags": "",
-		"schedule": "", "schedule_type": "period", "timezone": "", "grace": "5m", "max_runtime": "", "methods": "any", "failure_threshold": "1", "recovery_threshold": "1", "body_limit": "",
+		"schedule": "", "schedule_type": "period", "timezone": "", "grace": "5m", "tolerance": "30s", "max_runtime": "", "methods": "any", "failure_threshold": "1", "recovery_threshold": "1", "body_limit": "",
 		"url": "", "expect_status": "200-299", "interval": "60s", "timeout": "10s", "location": "local", "method": "GET", "headers": "", "retries": "2", "retry_delay": "5s",
 		"body_match": "none", "contains": "", "not_contains": "", "jsonpath": "", "equals": "", "follow_redirects": "1", "verify_tls": "1", "ca_pem": "",
 		"host": "", "port": "", "send": "", "expect": "", "dns_name": "", "dns_type": "A", "resolver": "", "servername": "", "warn_days": "14", "crit_days": "3", "count": "3", "loss_threshold": "0.67",
@@ -660,6 +663,9 @@ func (h *Web) formFromMonitor(c *reqCtx, m *domain.Monitor) formData {
 			f.Values["schedule_type"], f.Values["schedule"] = "period", s.Schedule.Period.String()
 		}
 		f.Values["timezone"], f.Values["grace"] = s.Timezone, s.Grace.String()
+		if s.Tolerance != 0 {
+			f.Values["tolerance"] = s.Tolerance.String()
+		}
 		if s.MaxRuntime != 0 {
 			f.Values["max_runtime"] = s.MaxRuntime.String()
 		}
@@ -671,7 +677,7 @@ func (h *Web) formFromMonitor(c *reqCtx, m *domain.Monitor) formData {
 		if s.BodyLimit != 0 {
 			f.Values["body_limit"] = bytesWord(s.BodyLimit)
 		}
-		f.AdvancedOpen = s.MaxRuntime != 0 || s.FailureThreshold != 1 || s.RecoveryThreshold != 1 || len(s.Methods) > 0 || s.BodyLimit != 0
+		f.AdvancedOpen = (s.Tolerance != 0 && s.Tolerance != domain.DefaultTolerance) || s.MaxRuntime != 0 || s.FailureThreshold != 1 || s.RecoveryThreshold != 1 || len(s.Methods) > 0 || s.BodyLimit != 0
 	}
 	if s := m.Pull; s != nil {
 		fillPullValues(f.Values, m.Kind, s)
@@ -824,6 +830,13 @@ func parseMonitorForm(values map[string][]string, f *formData) *domain.Monitor {
 	if v := get("tags"); v != "" {
 		m.Tags = domain.NormalizeTags(strings.Split(v, ","))
 	}
+	if v := get("tolerance"); v != "" {
+		d, err := domain.ParseDuration(v)
+		if err != nil {
+			f.Errors["tolerance"] = "Use a duration such as 30s or 2m."
+		}
+		spec.Tolerance = d
+	}
 	if v := get("max_runtime"); v != "" && v != "none" {
 		d, err := domain.ParseDuration(v)
 		if err != nil {
@@ -857,7 +870,7 @@ func parseMonitorForm(values map[string][]string, f *formData) *domain.Monitor {
 		spec.BodyLimit = n
 	}
 	m.Heartbeat = spec
-	f.AdvancedOpen = f.AdvancedOpen || f.Errors["failure_threshold"] != "" || f.Errors["recovery_threshold"] != "" || f.Errors["max_runtime"] != "" || f.Errors["methods"] != "" || f.Errors["body_limit"] != ""
+	f.AdvancedOpen = f.AdvancedOpen || f.Errors["failure_threshold"] != "" || f.Errors["recovery_threshold"] != "" || f.Errors["tolerance"] != "" || f.Errors["max_runtime"] != "" || f.Errors["methods"] != "" || f.Errors["body_limit"] != ""
 	return m
 }
 
@@ -1059,7 +1072,7 @@ func applyValidation(f *formData, err error) bool {
 			f.Errors[field] = capitalise(fe.Msg) + "."
 		}
 		switch field {
-		case "failure_threshold", "recovery_threshold", "max_runtime", "methods", "body_limit":
+		case "failure_threshold", "recovery_threshold", "tolerance", "max_runtime", "methods", "body_limit":
 			f.AdvancedOpen = true
 		}
 		for _, k := range advancedPullFields {
@@ -1138,6 +1151,9 @@ func (h *Web) newMonitor(c *reqCtx) error {
 		f.Errors = map[string]string{}
 		if f.Values["grace"] == "" {
 			f.Values["grace"] = "5m"
+		}
+		if f.Values["tolerance"] == "" {
+			f.Values["tolerance"] = "30s"
 		}
 		if m.Kind.IsPull() {
 			// switching kind keeps the shared fields; the kind's own get their defaults

@@ -146,6 +146,7 @@ Every transition writes an `events` row. →`down` opens an incident and enqueue
 | --- | --- | --- |
 | `schedule` | `{period: "1h"}` or `{cron: "0 3 * * *"}` or `{oncalendar: "Mon..Fri 09:00"}` | exactly one; `period` ≥ 60 s; cron is 5-field with names, ranges, steps; OnCalendar via a small systemd-compatible parser (phase 1, cron and period in phase 0) |
 | `timezone` | project timezone | IANA name; applies to cron/oncalendar; next-due is computed with `time.LoadLocation` and re-evaluated after every ping |
+| `tolerance` | `"30s"` | time after the expected deadline during which a ping is still on time; `late` starts when it runs out. 0 or absent means the default; at most `grace` |
 | `grace` | `"5m"` | time after the expected deadline before `late` becomes `down`; min 60 s, max 365 d |
 | `max_runtime` | none | if set, a `start` without a following ok/fail within this duration produces a synthetic `fail` observation (`reason: run_timeout`) |
 | `failure_threshold` | 1 | consecutive fail signals before `down` (lets a job retry once quietly) |
@@ -153,7 +154,7 @@ Every transition writes an `events` row. →`down` opens an incident and enqueue
 | `methods` | any | restrict to `POST` to defeat link prefetchers |
 | `body_limit` | instance default 64 kB | per-monitor cap on captured body |
 
-Deadline rule: `expected_at` = for `period`, `last_ok_at + period`; for cron/oncalendar, the first schedule occurrence strictly after `last_ok_at` (or after creation for `new`). `late` at `expected_at`; `down` at `expected_at + grace`. The scheduler keeps `next_due_at` on the monitor row and wakes on the minimum; a ping resets it in the same transaction that stores the observation. DST: cron occurrences are computed in the monitor's location; a wall-clock time that does not exist on a spring-forward day is skipped, one that occurs twice on a fall-back day fires once (first occurrence) — both cases are in the test table.
+Deadline rule: `expected_at` = for `period`, `last_ok_at + period`; for cron/oncalendar, the first schedule occurrence strictly after `last_ok_at` (or after creation for `new`). `late` at `expected_at + tolerance` (a job that fires at its deadline and pings a few seconds later is on time, so cron-scheduled monitors do not flap); `down` at `expected_at + grace`. The scheduler keeps `next_due_at` on the monitor row and wakes on the minimum; a ping resets it in the same transaction that stores the observation. DST: cron occurrences are computed in the monitor's location; a wall-clock time that does not exist on a spring-forward day is skipped, one that occurs twice on a fall-back day fires once (first occurrence) — both cases are in the test table.
 
 **Pull monitors (`kind: http | tcp | dns | tls | icmp`)**
 
@@ -367,7 +368,7 @@ The UI is one list and one drawer per entity, rendered by the server, with htmx 
 
 - Every page is a full server render; htmx adds partial swaps (`hx-get` on filters, `hx-post` on forms with `hx-target` on the list) and polling. No client-side state, no JSON in the browser, no build step. Progressive enhancement: everything works with JavaScript disabled, just with full reloads.
 - Forms post to the same handlers as the API's service methods and render validation errors inline next to the field (`aria-describedby`), never as a toast.
-- The monitor form explains itself as it is filled in: a hidden trigger posts the form to `…/m/preview` on change (debounced 300 ms) and the handler answers with `hx-partial` fragments for the schedule sentence (`Next runs: tonight 03:00 · Wed 03:00 · Thu 03:00`), the grace sentence (`Late at 03:00, down at 03:05.`), the `Advanced` summary and the `As YAML` box. The same function fills those sentences on the first render and on a 422, so nothing depends on JavaScript.
+- The monitor form explains itself as it is filled in: a hidden trigger posts the form to `…/m/preview` on change (debounced 300 ms) and the handler answers with `hx-partial` fragments for the schedule sentence (`Next runs: tonight 03:00 · Wed 03:00 · Thu 03:00`), the grace sentence (`Late at 03:00:30, down at 03:05.`, the deadline plus the tolerance and plus the grace), the `Advanced` summary and the `As YAML` box. The same function fills those sentences on the first render and on a 422, so nothing depends on JavaScript.
 - One drawer at a time, opened by URL (`hx-push-url`), closed with Escape or the close button. No modals; destructive actions use a two-step inline confirm (`Delete → Really delete?`).
 - Polling uses `hx-trigger="every Ns [document.visibilityState=='visible']"` so hidden tabs stop polling; responses include `ETag`, unchanged content returns 304 and htmx leaves the DOM alone.
 - Time is shown relative (`3 min ago`, `in 2 h`) with the absolute timestamp in the monitor's timezone on hover and in the drawer.

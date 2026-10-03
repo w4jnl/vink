@@ -32,6 +32,7 @@ func (s Schedule) String() string {
 
 // Defaults for heartbeat specs, from the design document.
 const (
+	DefaultTolerance  = Duration(30 * time.Second)
 	DefaultGrace      = Duration(5 * time.Minute)
 	MinGrace          = Duration(60 * time.Second)
 	MaxGrace          = Duration(365 * 24 * time.Hour)
@@ -48,6 +49,9 @@ type HeartbeatSpec struct {
 	Schedule Schedule `json:"schedule" yaml:"schedule"`
 	// Timezone is an IANA name; empty means the project timezone.
 	Timezone string `json:"timezone,omitempty" yaml:"timezone,omitempty"`
+	// Tolerance is how long after the expected time a ping still counts as
+	// on time; `late` starts when it runs out. Never more than Grace.
+	Tolerance Duration `json:"tolerance,omitempty" yaml:"tolerance,omitempty"`
 	// Grace is how long after the expected time `late` becomes `down`.
 	Grace Duration `json:"grace" yaml:"grace"`
 	// MaxRuntime turns a start without a finish into a synthetic fail.
@@ -66,6 +70,9 @@ type HeartbeatSpec struct {
 func (s *HeartbeatSpec) Normalize() {
 	if s.Grace == 0 {
 		s.Grace = DefaultGrace
+	}
+	if s.Tolerance == 0 {
+		s.Tolerance = DefaultTolerance
 	}
 	if s.FailureThreshold == 0 {
 		s.FailureThreshold = DefaultThreshold
@@ -93,6 +100,11 @@ func (s HeartbeatSpec) Validate() error {
 		ve.Addf("grace", "must be at least %s", MinGrace)
 	} else if s.Grace > MaxGrace {
 		ve.Addf("grace", "must be at most %s", MaxGrace)
+	}
+	if s.Tolerance < 0 {
+		ve.Add("tolerance", "must not be negative")
+	} else if s.Tolerance > s.Grace {
+		ve.Addf("tolerance", "must be at most the grace (%s)", s.Grace)
 	}
 	if s.MaxRuntime < 0 || s.MaxRuntime > MaxRuntimeCeiling {
 		ve.Addf("max_runtime", "must be between 0 and %s", MaxRuntimeCeiling)

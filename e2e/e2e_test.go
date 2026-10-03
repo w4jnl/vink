@@ -2,7 +2,8 @@
 
 // Package e2e runs the binary against a temp database. The heartbeat
 // smoke test is the phase 0 gate: a heartbeat with a one-minute period
-// and grace goes late, then down with a webhook delivery, then up again.
+// and grace goes late once the 30 s tolerance is over, then down with a
+// webhook delivery, then up again.
 // The homelab test is the phase 1 gate, the agent test the phase 2 gate
 // and the onboarding test the phase 3 gate. Run with `make e2e`; together
 // they take about six minutes.
@@ -65,8 +66,8 @@ func TestHeartbeatSmoke(t *testing.T) {
 	if s := in.state("smoke"); s != "up" {
 		t.Fatalf("after ping: %s", s)
 	}
-	t.Logf("up after %s; waiting for late (period 60s)", time.Since(start).Round(time.Second))
-	waitFor(t, 90*time.Second, func() bool { return in.state("smoke") == "late" })
+	t.Logf("up after %s; waiting for late (period 60s + tolerance 30s)", time.Since(start).Round(time.Second))
+	waitFor(t, 120*time.Second, func() bool { return in.state("smoke") == "late" })
 	t.Logf("late after %s; waiting for down (grace 60s) and the webhook", time.Since(start).Round(time.Second))
 	waitFor(t, 90*time.Second, func() bool { return in.state("smoke") == "down" })
 	waitFor(t, 15*time.Second, func() bool { return len(receiver.kinds()) >= 1 })

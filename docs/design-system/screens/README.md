@@ -41,7 +41,7 @@ The people, hosts, keys and incidents in the screens are made up.
 
 - **Edit monitor** is the create form in the drawer at `…/m/{slug}/edit`: titled with the monitor's name, `KindPicker` locked, Save instead of Create monitor, and Delete monitor (two-step) at the right of the footer. Changing the kind is an API/YAML operation that recreates the monitor.
 - **Kind switch**: changing the kind radio does `hx-get` of the same form with `?kind=…` and swaps the fields below the picker, keeping Name, Slug and Tags.
-- **Live hints** ("Next runs", "Late at 03:00, down at 03:30", the failures sentence) come from a `hx-post` of the form to a small preview handler on `change`, debounced 300 ms; without JavaScript they appear after submit. That handler is an addition to docs/design.md: a UI-only route that validates and describes the spec without saving it.
+- **Live hints** ("Next runs", "Late at 03:00:30, down at 03:30", the failures sentence) come from a `hx-post` of the form to a small preview handler on `change`, debounced 300 ms; without JavaScript they appear after submit. That handler is an addition to docs/design.md: a UI-only route that validates and describes the spec without saving it.
 - **Advanced** stays open when any field inside it has an error. The summary line always shows the current values.
 - **Settings panels**: one open at a time; opening one hides the tab's Add button. Save swaps the panel for the row; Cancel restores the row. Delete is inside the edit panel (two-step), except Revoke on API keys.
 - **Channel test** posts to `/api/v1/channels/{id}/test` and puts the result `Notice` under the row: the notifier's error verbatim in mono on failure.

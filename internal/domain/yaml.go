@@ -31,6 +31,9 @@ func MonitorYAML(m *Monitor) string {
 		if s.Timezone != "" {
 			line("timezone", yamlScalar(s.Timezone))
 		}
+		if s.Tolerance != 0 && s.Tolerance != DefaultTolerance {
+			line("tolerance", s.Tolerance.String())
+		}
 		if s.Grace != 0 && s.Grace != DefaultGrace {
 			line("grace", s.Grace.String())
 		}

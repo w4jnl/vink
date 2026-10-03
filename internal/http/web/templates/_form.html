@@ -21,7 +21,7 @@
 
 {{define "advanced"}}{{fieldrow (list (field (dict "ID" "max_runtime" "Label" "Max runtime" "Value" .Values.max_runtime "Mono" true "Placeholder" "none" "Hint" "A /start with no finish in time counts as a failure." "Error" .Errors.max_runtime)) (field (dict "ID" "methods" "Label" "Methods" "Control" "select" "Value" .Values.methods "Options" (opts "any" "Any" "post" "POST only") "Hint" "POST only stops link previews from pinging." "Error" .Errors.methods))) false}}
 {{fieldrow (list (field (dict "ID" "failure_threshold" "Label" "Down after" "Value" .Values.failure_threshold "Mono" true "Suffix" "failures" "Error" .Errors.failure_threshold)) (field (dict "ID" "recovery_threshold" "Label" "Up after" "Value" .Values.recovery_threshold "Mono" true "Suffix" "successes" "Error" .Errors.recovery_threshold))) false}}
-{{field (dict "ID" "body_limit" "Label" "Body limit" "Value" .Values.body_limit "Mono" true "Hint" "vink keeps this much of each ping body." "Error" .Errors.body_limit)}}{{end}}
+{{fieldrow (list (field (dict "ID" "tolerance" "Label" "Tolerance" "Value" .Values.tolerance "Mono" true "Placeholder" "30s" "Hint" "A ping this long after the deadline is still on time; at most the grace." "Error" .Errors.tolerance)) (field (dict "ID" "body_limit" "Label" "Body limit" "Value" .Values.body_limit "Mono" true "Hint" "vink keeps this much of each ping body." "Error" .Errors.body_limit))) false}}{{end}}
 
 {{define "form-pull"}}<input type="hidden" name="pull_form" value="1">
 {{if eq .Kind "http"}}{{field (dict "ID" "url" "Label" "URL" "Value" .Values.url "Mono" true "Placeholder" "https://api.example.com/healthz" "Error" .Errors.url "Attrs" (attrs "required" ""))}}

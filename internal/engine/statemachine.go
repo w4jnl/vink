@@ -121,11 +121,14 @@ func Apply(m *domain.Monitor, obs *domain.Observation, now time.Time, loc *time.
 			if err != nil {
 				return d, err
 			}
+			// a ping inside the tolerance is on time; late starts when
+			// it runs out, down when the grace does
+			lateAt := expected.Add(spec.Tolerance.Std())
 			downAt := expected.Add(spec.Grace.Std())
 			switch {
 			case !now.Before(downAt):
 				flip(domain.StateDown, "grace over")
-			case !now.Before(expected):
+			case !now.Before(lateAt):
 				flip(domain.StateLate, "deadline passed")
 			}
 		}
@@ -167,7 +170,7 @@ func (d *Decision) plan(spec *domain.HeartbeatSpec, loc *time.Location) error {
 			return err
 		}
 		d.ExpectedAt = &expected
-		deadline := expected
+		deadline := expected.Add(spec.Tolerance.Std())
 		if d.To == domain.StateLate {
 			deadline = expected.Add(spec.Grace.Std())
 		}

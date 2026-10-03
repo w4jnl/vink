@@ -2,7 +2,8 @@
 
 A heartbeat monitor expects a job to check in on a schedule. The job does that by requesting a
 URL when it runs; vink does the rest: it knows when the next check-in is due, turns the monitor
-`late` when the deadline passes, `down` when the grace is over or the job reports a failure, and
+`late` when the deadline passes by more than the tolerance, `down` when the grace is over or the
+job reports a failure, and
 opens an incident and alerts the routes that match. This page is for the person writing the job.
 
 ## The ping URL
@@ -182,7 +183,7 @@ a one-hour grace, then records the ping:
 This is the quickest way to cover many jobs; edit the schedule afterwards in the drawer. A slug
 is lower-case letters, digits and dashes.
 
-## Schedules, grace and the states
+## Schedules, tolerance, grace and the states
 
 A heartbeat is either **periodic** (`period: 1h`, 60 s or more; the clock restarts at each
 ping, so the deadline is the last ping plus the period) or **cron** (`0 3 * * *`, five fields
@@ -194,9 +195,14 @@ as you type.
 | --- | --- | --- |
 | new | ◌ | created, no ping yet |
 | up | ● | pinged in time |
-| late | ◐ | the deadline passed; nothing is sent to channels unless a route asks for `late` |
+| late | ◐ | the deadline passed and the tolerance ran out; nothing is sent to channels unless a route asks for `late` |
 | down | ◆ | the grace after the deadline is over, or a failure arrived; an incident opens and the routes alert |
 | paused | ‖ | paused by hand; nothing is expected |
+
+The **tolerance** (`30s` by default, under Advanced in the form) is how long after the deadline a
+ping still counts as on time. A cron job that starts exactly at its deadline and pings a few
+seconds later never goes `late`; a periodic job whose pings drift by a few seconds is fine too.
+Set it to the job's normal jitter, never more than the grace.
 
 The **grace** is how long after the deadline `late` becomes `down`. Size it for the job's
 normal variance, not for the schedule: a nightly backup that sometimes runs twenty minutes long
@@ -268,10 +274,11 @@ state flips, are below with their reason: `deadline passed`, `grace over`, `exit
 
 - **`404`**: the key or the slug is wrong, or the monitor belongs to another project. Both
   cases look the same on purpose. Check the URL in the drawer.
-- **The monitor is `late` right after a ping**: a periodic monitor's deadline is the ping plus
-  the period; a cron monitor's is the next occurrence. If the job runs more often than the
-  schedule says, it is still fine; if it runs less often, shorten the schedule or lengthen the
-  grace.
+- **The monitor goes `late` for a minute at every run**: the job pings later than the deadline
+  plus the tolerance. A periodic monitor's deadline is the last ping plus the period, so a job
+  that runs every five minutes with a `5m` period is late by its own run time at every cycle;
+  give it a `6m` period or a tolerance that covers the run. A cron monitor's deadline is the
+  next occurrence; raise the tolerance to the job's start-up jitter.
 - **A `/start` without a finish** stays open until the next ping; with `max_runtime` it turns
   into a failure at the limit.
 - **`429`**: the job pings faster than ten times a minute; batch the progress into fewer `/log`

@@ -14,7 +14,7 @@ func hb(period, grace string) *domain.Monitor {
 		ID: "m", Slug: "job", Kind: domain.KindHeartbeat, State: domain.StateNew, StateSince: t0, BaseAt: t0,
 		Heartbeat: &domain.HeartbeatSpec{
 			Schedule: domain.Schedule{Period: domain.MustDuration(period)}, Grace: domain.MustDuration(grace),
-			FailureThreshold: 1, RecoveryThreshold: 1,
+			Tolerance: domain.DefaultTolerance, FailureThreshold: 1, RecoveryThreshold: 1,
 		},
 	}
 }
@@ -38,11 +38,16 @@ func TestNewMonitorHasDeadlineFromCreation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if d.Changed || d.NextDueAt == nil || !d.NextDueAt.Equal(t0.Add(time.Hour)) {
+	if d.Changed || d.NextDueAt == nil || !d.NextDueAt.Equal(t0.Add(time.Hour+30*time.Second)) {
 		t.Fatalf("new tick: changed=%v next=%v", d.Changed, d.NextDueAt)
 	}
-	// deadline passes without a ping
+	// the deadline itself is inside the tolerance
 	d, _ = Apply(m, nil, t0.Add(time.Hour), time.UTC)
+	if d.Changed {
+		t.Fatalf("a tick at the deadline must not flip: %+v", d)
+	}
+	// the tolerance runs out without a ping
+	d, _ = Apply(m, nil, t0.Add(time.Hour+30*time.Second), time.UTC)
 	if !d.Changed || d.To != domain.StateLate || d.Reason != "deadline passed" {
 		t.Fatalf("expected new->late, got %+v", d)
 	}
@@ -58,14 +63,14 @@ func TestFullHeartbeatLifecycle(t *testing.T) {
 	if !d.Changed || d.To != domain.StateUp || d.Reason != "first ok" {
 		t.Fatalf("first ok: %+v", d)
 	}
-	if !d.NextDueAt.Equal(t0.Add(time.Hour)) || !d.ExpectedAt.Equal(t0.Add(time.Hour)) {
-		t.Fatalf("next due after ok = %v", d.NextDueAt)
+	if !d.NextDueAt.Equal(t0.Add(time.Hour+30*time.Second)) || !d.ExpectedAt.Equal(t0.Add(time.Hour)) {
+		t.Fatalf("next due after ok = %v, expected %v", d.NextDueAt, d.ExpectedAt)
 	}
 	applyTo(t, m, d)
 	// on-time ping keeps up and moves the deadline
 	at := t0.Add(50 * time.Minute)
 	d, _ = Apply(m, ping(domain.SignalOK, true, at), at, time.UTC)
-	if d.Changed || !d.NextDueAt.Equal(at.Add(time.Hour)) {
+	if d.Changed || !d.NextDueAt.Equal(at.Add(time.Hour+30*time.Second)) {
 		t.Fatalf("on-time ping: %+v", d)
 	}
 	applyTo(t, m, d)
@@ -74,8 +79,17 @@ func TestFullHeartbeatLifecycle(t *testing.T) {
 	if d.Changed {
 		t.Fatal("early tick must not flip")
 	}
-	// deadline: up -> late
-	d, _ = Apply(m, nil, at.Add(time.Hour), time.UTC)
+	// a ping a few seconds after the deadline is on time: a cron job that
+	// fires at the deadline and pings at once must never flap
+	lateByABit := at.Add(time.Hour + 10*time.Second)
+	d, _ = Apply(m, ping(domain.SignalOK, true, lateByABit), lateByABit, time.UTC)
+	if d.Changed || !d.NextDueAt.Equal(lateByABit.Add(time.Hour+30*time.Second)) {
+		t.Fatalf("ping inside the tolerance: %+v", d)
+	}
+	at = lateByABit
+	applyTo(t, m, d)
+	// tolerance over: up -> late
+	d, _ = Apply(m, nil, at.Add(time.Hour+30*time.Second), time.UTC)
 	if !d.Changed || d.To != domain.StateLate {
 		t.Fatalf("deadline: %+v", d)
 	}
@@ -99,7 +113,7 @@ func TestFullHeartbeatLifecycle(t *testing.T) {
 	// ok: down -> up
 	rec := at.Add(6 * time.Hour)
 	d, _ = Apply(m, ping(domain.SignalOK, true, rec), rec, time.UTC)
-	if !d.Changed || d.To != domain.StateUp || d.Reason != "recovered" || !d.NextDueAt.Equal(rec.Add(time.Hour)) {
+	if !d.Changed || d.To != domain.StateUp || d.Reason != "recovered" || !d.NextDueAt.Equal(rec.Add(time.Hour+30*time.Second)) {
 		t.Fatalf("recovery: %+v", d)
 	}
 }
@@ -173,7 +187,7 @@ func TestStartLogAndRunDuration(t *testing.T) {
 	if d.Changed || d.RunStartedAt == nil || d.RunID != "r1" {
 		t.Fatalf("start: %+v", d)
 	}
-	if !d.NextDueAt.Equal(t0.Add(time.Hour)) {
+	if !d.NextDueAt.Equal(t0.Add(time.Hour + 30*time.Second)) {
 		t.Fatalf("start must not move the deadline: %v", d.NextDueAt)
 	}
 	applyTo(t, m, d)
@@ -238,7 +252,7 @@ func TestPlanAfterResume(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !exp.Equal(resumed.Add(time.Hour)) || !next.Equal(resumed.Add(time.Hour)) {
+	if !exp.Equal(resumed.Add(time.Hour)) || !next.Equal(resumed.Add(time.Hour+30*time.Second)) {
 		t.Fatalf("resume plan: expected=%v next=%v", exp, next)
 	}
 	m.Paused = true
@@ -256,7 +270,7 @@ func TestCronDeadlineUsesLocation(t *testing.T) {
 	m.LastOkAt = &ok
 	m.BaseAt = ok
 	d, _ := Apply(m, nil, ok.Add(time.Minute), ams)
-	want := time.Date(2026, 9, 28, 3, 0, 0, 0, ams)
+	want := time.Date(2026, 9, 28, 3, 0, 30, 0, ams)
 	if !d.NextDueAt.Equal(want) {
 		t.Fatalf("cron next due = %v, want %v", d.NextDueAt, want)
 	}

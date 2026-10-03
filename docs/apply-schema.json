@@ -331,6 +331,9 @@
         "timezone": {
           "type": "string"
         },
+        "tolerance": {
+          "$ref": "#/$defs/duration"
+        },
         "grace": {
           "$ref": "#/$defs/duration"
         },

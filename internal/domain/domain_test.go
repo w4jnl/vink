@@ -26,6 +26,10 @@ func TestHeartbeatSpecValidate(t *testing.T) {
 		{"grace too short", func(s *HeartbeatSpec) { s.Grace = MustDuration("30s") }, "grace"},
 		{"grace too long", func(s *HeartbeatSpec) { s.Grace = MustDuration("366d") }, "grace"},
 		{"grace 365d ok", func(s *HeartbeatSpec) { s.Grace = MustDuration("365d") }, ""},
+		{"tolerance zero after normalize is 30s", func(s *HeartbeatSpec) { s.Tolerance = 0 }, ""},
+		{"tolerance equal to the grace", func(s *HeartbeatSpec) { s.Tolerance = s.Grace }, ""},
+		{"tolerance over the grace", func(s *HeartbeatSpec) { s.Tolerance = MustDuration("6m") }, "tolerance"},
+		{"tolerance negative", func(s *HeartbeatSpec) { s.Tolerance = -1 }, "tolerance"},
 		{"timezone ok", func(s *HeartbeatSpec) { s.Timezone = "Europe/Amsterdam" }, ""},
 		{"timezone bad", func(s *HeartbeatSpec) { s.Timezone = "Mars/Olympus" }, "timezone"},
 		{"failure threshold zero after normalize is 1", func(s *HeartbeatSpec) { s.FailureThreshold = 0 }, ""},
@@ -74,6 +78,9 @@ func TestHeartbeatSpecJSONRoundTrip(t *testing.T) {
 	}
 	if s.Grace != MustDuration("30m") || s.MaxRuntime != MustDuration("2h") || s.Schedule.Cron != "0 3 * * *" {
 		t.Errorf("decoded %+v", s)
+	}
+	if s.Tolerance != DefaultTolerance {
+		t.Errorf("a stored spec without a tolerance gets the default, got %s", s.Tolerance)
 	}
 	out, err := json.Marshal(s)
 	if err != nil {

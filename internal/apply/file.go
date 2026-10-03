@@ -189,6 +189,7 @@ type Monitor struct {
 	Tags              []string          `json:"tags,omitempty" yaml:"tags,flow,omitempty"`
 	Schedule          *domain.Schedule  `json:"schedule,omitempty" yaml:"schedule,flow,omitempty"`
 	Timezone          string            `json:"timezone,omitempty" yaml:"timezone,omitempty"`
+	Tolerance         domain.Duration   `json:"tolerance,omitempty" yaml:"tolerance,omitempty"`
 	Grace             domain.Duration   `json:"grace,omitempty" yaml:"grace,omitempty"`
 	MaxRuntime        domain.Duration   `json:"max_runtime,omitempty" yaml:"max_runtime,omitempty"`
 	FailureThreshold  int               `json:"failure_threshold,omitempty" yaml:"failure_threshold,omitempty"`
@@ -223,7 +224,7 @@ func (m Monitor) ToDomain() *domain.Monitor {
 		d.Pull = spec
 		return d
 	}
-	spec := &domain.HeartbeatSpec{Timezone: m.Timezone, Grace: m.Grace, MaxRuntime: m.MaxRuntime, FailureThreshold: m.FailureThreshold, RecoveryThreshold: m.RecoveryThreshold, Methods: m.Methods, BodyLimit: m.BodyLimit}
+	spec := &domain.HeartbeatSpec{Timezone: m.Timezone, Tolerance: m.Tolerance, Grace: m.Grace, MaxRuntime: m.MaxRuntime, FailureThreshold: m.FailureThreshold, RecoveryThreshold: m.RecoveryThreshold, Methods: m.Methods, BodyLimit: m.BodyLimit}
 	if m.Schedule != nil {
 		spec.Schedule = *m.Schedule
 	}
@@ -241,6 +242,9 @@ func MonitorFrom(d *domain.Monitor) Monitor {
 		sched := s.Schedule
 		m.Schedule = &sched
 		m.Timezone, m.MaxRuntime, m.Methods, m.BodyLimit = s.Timezone, s.MaxRuntime, s.Methods, s.BodyLimit
+		if s.Tolerance != 0 && s.Tolerance != domain.DefaultTolerance {
+			m.Tolerance = s.Tolerance
+		}
 		if s.Grace != domain.DefaultGrace {
 			m.Grace = s.Grace
 		}

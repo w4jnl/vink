@@ -18,6 +18,7 @@ type MonitorIn struct {
 	Tags              []string         `json:"tags"`
 	Schedule          *domain.Schedule `json:"schedule"`
 	Timezone          string           `json:"timezone"`
+	Tolerance         domain.Duration  `json:"tolerance"`
 	Grace             domain.Duration  `json:"grace"`
 	MaxRuntime        domain.Duration  `json:"max_runtime"`
 	FailureThreshold  int              `json:"failure_threshold"`
@@ -53,7 +54,7 @@ func (in MonitorIn) toDomain() *domain.Monitor {
 		return m
 	}
 	spec := &domain.HeartbeatSpec{
-		Timezone: in.Timezone, Grace: in.Grace, MaxRuntime: in.MaxRuntime, FailureThreshold: in.FailureThreshold,
+		Timezone: in.Timezone, Tolerance: in.Tolerance, Grace: in.Grace, MaxRuntime: in.MaxRuntime, FailureThreshold: in.FailureThreshold,
 		RecoveryThreshold: in.RecoveryThreshold, Methods: in.Methods, BodyLimit: in.BodyLimit,
 	}
 	if in.Schedule != nil {
@@ -68,7 +69,7 @@ func monitorInFrom(m *domain.Monitor) MonitorIn {
 	if s := m.Heartbeat; s != nil {
 		sched := s.Schedule
 		in.Schedule = &sched
-		in.Timezone, in.Grace, in.MaxRuntime = s.Timezone, s.Grace, s.MaxRuntime
+		in.Timezone, in.Tolerance, in.Grace, in.MaxRuntime = s.Timezone, s.Tolerance, s.Grace, s.MaxRuntime
 		in.FailureThreshold, in.RecoveryThreshold, in.Methods, in.BodyLimit = s.FailureThreshold, s.RecoveryThreshold, s.Methods, s.BodyLimit
 	}
 	if s := m.Pull; s != nil {
@@ -89,6 +90,7 @@ type MonitorOut struct {
 	Tags              []string          `json:"tags"`
 	Schedule          *domain.Schedule  `json:"schedule,omitempty"`
 	Timezone          string            `json:"timezone,omitempty"`
+	Tolerance         domain.Duration   `json:"tolerance,omitempty"`
 	Grace             domain.Duration   `json:"grace,omitempty"`
 	MaxRuntime        domain.Duration   `json:"max_runtime,omitempty"`
 	FailureThreshold  int               `json:"failure_threshold,omitempty"`
@@ -128,7 +130,7 @@ func monitorOut(svc *service.Service, p *domain.Project, m *domain.Monitor, show
 	if s := m.Heartbeat; s != nil {
 		sched := s.Schedule
 		out.Schedule = &sched
-		out.Timezone, out.Grace, out.MaxRuntime = s.Timezone, s.Grace, s.MaxRuntime
+		out.Timezone, out.Tolerance, out.Grace, out.MaxRuntime = s.Timezone, s.Tolerance, s.Grace, s.MaxRuntime
 		out.FailureThreshold, out.RecoveryThreshold, out.Methods, out.BodyLimit = s.FailureThreshold, s.RecoveryThreshold, s.Methods, s.BodyLimit
 		out.ExpectedAt = svc.ExpectedAt(m, p.Timezone)
 	}

@@ -15,8 +15,9 @@ func TestCreateMonitorDefaultsAndPlan(t *testing.T) {
 	if m.State != domain.StateNew || m.Paused || m.Name != "nightly-backup" {
 		t.Fatalf("created: %+v", m)
 	}
-	if m.NextDueAt == nil || !m.NextDueAt.Equal(start.Add(time.Hour)) {
-		t.Fatalf("next due = %v", m.NextDueAt)
+	// the wake-up is the deadline plus the default 30 s tolerance
+	if m.NextDueAt == nil || !m.NextDueAt.Equal(start.Add(time.Hour+30*time.Second)) || m.Heartbeat.Tolerance != domain.DefaultTolerance {
+		t.Fatalf("next due = %v, tolerance %s", m.NextDueAt, m.Heartbeat.Tolerance)
 	}
 	if len(m.Tags) != 2 || m.Tags[1] != "prod" {
 		t.Fatalf("tags = %v", m.Tags)
@@ -101,7 +102,7 @@ func TestListGetUpdateDelete(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if upd.Name != "A job" || upd.Tags[0] != "x" || !upd.NextDueAt.Equal(start.Add(3*time.Hour)) {
+	if upd.Name != "A job" || upd.Tags[0] != "x" || !upd.NextDueAt.Equal(start.Add(3*time.Hour+30*time.Second)) {
 		t.Fatalf("update: %+v next=%v", upd, upd.NextDueAt)
 	}
 	if _, err := f.svc.UpdateMonitor(ctx, f.member, "a-job", &domain.Monitor{Slug: "renamed", Name: "n"}); err == nil {
@@ -151,7 +152,7 @@ func TestPauseAndResume(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if r.Paused || r.State != domain.StateNew || !r.BaseAt.Equal(resumed) || !r.NextDueAt.Equal(resumed.Add(time.Hour)) {
+	if r.Paused || r.State != domain.StateNew || !r.BaseAt.Equal(resumed) || !r.NextDueAt.Equal(resumed.Add(time.Hour+30*time.Second)) {
 		t.Fatalf("resumed: %+v next=%v", r, r.NextDueAt)
 	}
 	events, _ := f.svc.ListEvents(ctx, f.member, "job", 10)

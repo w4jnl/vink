@@ -443,7 +443,7 @@ func TestCreateAndEditForm(t *testing.T) {
 		t.Fatalf("new form: %d", form.code)
 	}
 	form.has(t, `id="monitor-form"`, `for="name"`, `for="slug"`, `for="schedule"`, `name="schedule_type"`, `for="timezone"`, `Europe/Amsterdam (project)`, `for="grace"`, `for="tags"`,
-		`vk-details__title">Advanced</span>`, "max runtime none · down after 1 · methods any · body 64 KB", `for="body_limit"`, "Ping URL", "As YAML", "kind: heartbeat", `Create monitor`, `hx-post="/o/homelab/p/prod/m/preview"`)
+		`vk-details__title">Advanced</span>`, "tolerance 30s · max runtime none · down after 1 · methods any · body 64 KB", `for="tolerance"`, `for="body_limit"`, "Ping URL", "As YAML", "kind: heartbeat", `Create monitor`, `hx-post="/o/homelab/p/prod/m/preview"`)
 	// the kind switch keeps the name and shows the kind's fields
 	sw := e.get(projPath+"/m/new?kind=http&name=Web", true)
 	sw.has(t, `value="Web"`, `for="url"`, `value="200-299"`)
@@ -465,13 +465,18 @@ func TestCreateAndEditForm(t *testing.T) {
 	if pv.code != 200 {
 		t.Fatalf("preview: %d %s", pv.code, pv.body)
 	}
-	pv.has(t, `<hx-partial hx-target="#schedule-msg"`, "Next runs:", `hx-target="#grace-msg"`, "Late at 03:00, down at 03:05.", `hx-target="#monitor-form .vk-codebox"`, "nightly-backup", `cron: &quot;0 3 * * *&quot;`)
-	ok := e.post(projPath+"/m/new", url.Values{"name": {"Nightly backup"}, "schedule_type": {"cron"}, "schedule": {"0 3 * * *"}, "grace": {"30m"}, "tags": {"Backup, prod"}, "max_runtime": {"2h"}}, true)
+	pv.has(t, `<hx-partial hx-target="#schedule-msg"`, "Next runs:", `hx-target="#grace-msg"`, "Late at 03:00:30, down at 03:05.", `hx-target="#monitor-form .vk-codebox"`, "nightly-backup", `cron: &quot;0 3 * * *&quot;`)
+	// a tolerance over the grace is refused with the field under Advanced open
+	tooTolerant := e.post(projPath+"/m/new", url.Values{"name": {"Nightly backup"}, "schedule_type": {"cron"}, "schedule": {"0 3 * * *"}, "grace": {"30m"}, "tolerance": {"1h"}}, true)
+	if tooTolerant.code != 422 || !strings.Contains(tooTolerant.body, "Must be at most the grace (30m).") || !strings.Contains(tooTolerant.body, `<details class="vk-details" open>`) {
+		t.Fatalf("tolerance over grace: %d %s", tooTolerant.code, tooTolerant.body)
+	}
+	ok := e.post(projPath+"/m/new", url.Values{"name": {"Nightly backup"}, "schedule_type": {"cron"}, "schedule": {"0 3 * * *"}, "grace": {"30m"}, "tolerance": {"2m"}, "tags": {"Backup, prod"}, "max_runtime": {"2h"}}, true)
 	if ok.code != 204 || ok.hdr.Get("HX-Redirect") != projPath+"/m/nightly-backup" {
 		t.Fatalf("create: %d %v %s", ok.code, ok.hdr, ok.body)
 	}
 	m, err := e.svc.MonitorBySlug(context.Background(), e.scope, "nightly-backup")
-	if err != nil || m.Heartbeat.Schedule.Cron != "0 3 * * *" || m.Heartbeat.Grace.String() != "30m" || len(m.Tags) != 2 || m.Heartbeat.MaxRuntime.String() != "2h" {
+	if err != nil || m.Heartbeat.Schedule.Cron != "0 3 * * *" || m.Heartbeat.Grace.String() != "30m" || m.Heartbeat.Tolerance.String() != "2m" || len(m.Tags) != 2 || m.Heartbeat.MaxRuntime.String() != "2h" {
 		t.Fatalf("created monitor: %+v %v", m, err)
 	}
 	dup := e.post(projPath+"/m/new", url.Values{"name": {"Nightly backup"}, "schedule_type": {"period"}, "schedule": {"1h"}}, false)

@@ -9,8 +9,8 @@ func TestMonitorYAML(t *testing.T) {
 	if got := MonitorYAML(m); got != want {
 		t.Errorf("got:\n%s\nwant:\n%s", got, want)
 	}
-	m2 := &Monitor{Slug: "x", Name: "x", Kind: KindHeartbeat, Heartbeat: &HeartbeatSpec{Schedule: Schedule{Period: MustDuration("1h")}, Grace: DefaultGrace, MaxRuntime: MustDuration("2h"), FailureThreshold: 2, RecoveryThreshold: 1, Methods: []string{"POST"}, BodyLimit: 1024}}
-	want2 := "slug: x\nkind: heartbeat\nschedule: {period: 1h}\nmax_runtime: 2h\nfailure_threshold: 2\nmethods: [POST]\nbody_limit: 1024"
+	m2 := &Monitor{Slug: "x", Name: "x", Kind: KindHeartbeat, Heartbeat: &HeartbeatSpec{Schedule: Schedule{Period: MustDuration("1h")}, Tolerance: MustDuration("2m"), Grace: DefaultGrace, MaxRuntime: MustDuration("2h"), FailureThreshold: 2, RecoveryThreshold: 1, Methods: []string{"POST"}, BodyLimit: 1024}}
+	want2 := "slug: x\nkind: heartbeat\nschedule: {period: 1h}\ntolerance: 2m\nmax_runtime: 2h\nfailure_threshold: 2\nmethods: [POST]\nbody_limit: 1024"
 	if got := MonitorYAML(m2); got != want2 {
 		t.Errorf("got:\n%s\nwant:\n%s", got, want2)
 	}
