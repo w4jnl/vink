@@ -6,6 +6,8 @@
 # Requires: a clean tree on main pushed to origin, and ssh access to the repos.
 set -euo pipefail
 ver=${1:?usage: scripts/release.sh <version>   e.g. 0.1.0}
+# GitHub's SSH endpoint resets a connection now and then; a push or pull gets three tries.
+retry() { local n; for n in 1 2 3; do "$@" && return 0; [ "$n" -lt 3 ] && { echo "release.sh: $* failed, retrying in 10 s" >&2; sleep 10; }; done; return 1; }
 ver=${ver#v}
 R=$(cd "$(dirname "$0")/.." && pwd)
 cd "$R"
@@ -20,14 +22,14 @@ grep -qE "^## $ver \([0-9]{4}-[0-9]{2}-[0-9]{2}\)" CHANGELOG.md || { echo "relea
 go vet ./... && go test ./... >/dev/null && echo "tests ok"
 
 git tag -a "v$ver" -m "vink v$ver"
-git push -q origin "v$ver"
+retry git push -q origin "v$ver"
 echo "tag v$ver pushed; the release workflow builds the assets and the image"
 echo "release: https://github.com/w4jnl/vink/releases/tag/v$ver"
 echo "CI:      https://github.com/w4jnl/vink/actions"
 
 TAP=${VINK_TAP_DIR:-$R/../homebrew-tap}
 [ -d "$TAP/.git" ] || git clone -q git@github.com:w4jnl/homebrew-tap.git "$TAP"
-git -C "$TAP" pull -q --ff-only
+retry git -C "$TAP" pull -q --ff-only
 f=$TAP/Formula/vink.rb
 if [ ! -f "$f" ]; then
   echo "no Formula/vink.rb in the tap yet; nothing to bump"
@@ -43,6 +45,6 @@ done
 sed -i '' -e "s#^  url \".*\"#  url \"$url\"#" -e "s#^  sha256 \".*\"#  sha256 \"$sha\"#" "$f"
 git -C "$TAP" add Formula/vink.rb
 git -C "$TAP" commit -q -m "vink $ver"
-git -C "$TAP" push -q
+retry git -C "$TAP" push -q
 echo "tap bumped: $f"
 echo "users: brew update && brew upgrade vink"
