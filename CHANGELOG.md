@@ -6,6 +6,13 @@ updates this file first. Dates are the tag dates.
 
 ## Unreleased
 
+- The web UI works on phones and tablets. Under 960px the drawer is the page (Close or Escape
+  brings the list back); under 640px the top bar wraps into two rows, monitor and incident rows
+  go two-line, settings rows wrap, forms stack their fields with the kind picker two across,
+  tabs scroll sideways and the uptime bars fit; touch screens get 40px controls and 16px inputs,
+  so Safari no longer zooms on focus. Wide screens show one 1120px column. The project switcher
+  now sits before the section links in the top bar. Observation panels lead with the absolute
+  time, and the agent drawer has a Close button.
 - A history page per monitor at `…/m/{slug}/history`, reached by a History button in the
   drawer: the drawer's head over the 24-hour and 90-day bars, then one timeline of observations
   and state changes newest first, grouped by day, with chips for ok, failures, runs and changes,

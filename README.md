@@ -126,6 +126,8 @@ hosted synthetic monitor).
 - **History**: a drawer with the last day's bar, observations and state changes for every
   monitor, and a full page behind it with the whole timeline grouped by day, filtered by
   outcome and period, loading older rows as you scroll.
+- **Any screen**: one stylesheet, no build step, and the same pages on a phone, a tablet and a
+  wide monitor; the drawer becomes the page where there is no room beside the list.
 - **Alerts**: routes match tags and send `down`, `up` and `late` to SMTP, webhooks with Go
   templates, ntfy, Gotify, Matrix, Slack-compatible hooks and Alertmanager; repeats while an
   incident stays unacknowledged; six delivery attempts with backoff; one-click acknowledgement
