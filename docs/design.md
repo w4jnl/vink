@@ -220,8 +220,8 @@ The API is the product's real interface: the CLI is a client of it, the web UI c
 | `PUT /api/v1/monitors/{slug}` | full replace; `PATCH` merges top-level fields |
 | `DELETE /api/v1/monitors/{slug}` |  |
 | `POST /api/v1/monitors/{slug}/pause` · `/resume` · `/check` | `check` runs a pull monitor now and returns the observation |
-| `GET /api/v1/monitors/{slug}/observations?since=&until=&cursor=` | newest first; `?body=1` on a single observation returns the stored body |
-| `GET /api/v1/monitors/{slug}/events` | state flips |
+| `GET /api/v1/monitors/{slug}/observations?since=&until=&kind=&cursor=` | newest first; `kind` is `ok`, `fail` (fail pings, non-zero exits, run timeouts, failed and confirming checks) or `run` (start and log); `?body=1` on a single observation returns the stored body |
+| `GET /api/v1/monitors/{slug}/events?since=&until=&cursor=` | state flips, newest first, paged like observations |
 | `GET /api/v1/incidents?open=1` · `POST /api/v1/incidents/{id}/ack` |  |
 | `GET` and `POST /api/v1/channels` · `PUT` and `DELETE /api/v1/channels/{id}` · `POST /api/v1/channels/{id}/test` | secrets are write-only: responses return `"***"` |
 | `GET` and `POST /api/v1/routes` · `PUT` and `DELETE /api/v1/routes/{id}` |  |
@@ -351,7 +351,8 @@ The UI is one list and one drawer per entity, rendered by the server, with htmx 
 | --- | --- | --- |
 | `/` | redirect to last project or the only project |  |
 | `/o/{org}/p/{project}` | Monitors: filter bar (state chips with counts, tag chips, kind, text), table rows: state dot, name, kind glyph, last observation relative time, next due or latency sparkline (24 h), tags | list body polls every 15 s (`hx-trigger="every 15s"`) and swaps rows; a row click opens the drawer |
-| `…/m/{slug}` | Monitor drawer (also a full page at the same URL for deep links): header (state, since, pause/resume, check now), ping URL with copy button (heartbeat) or target (pull), 24 h timeline strip, last 20 observations with expand-to-body, events, edit form, "as YAML" toggle | drawer polls every 10 s while open |
+| `…/m/{slug}` | Monitor drawer (also a full page at the same URL for deep links): header (state, since, pause/resume, check now), ping URL with copy button (heartbeat) or target (pull), 24 h timeline strip, last 20 observations with expand-to-body, events, edit form, "as YAML" toggle, a History button | drawer polls every 10 s while open |
+| `…/m/{slug}/history` | Monitor history, full page: the drawer's head (state, since, actions, summary) over the compact 24 h and 90 d bars, then one timeline of observations and state changes newest first, grouped by day; kind chips `All · ok · failures · runs · changes`; a period `24 h · 7 d · 30 d · 90 d` (default 7 d) or an exact `since`/`until` window, each day heading linking to its day; 50 rows a page with `Older` at the bottom, which loads itself as it scrolls into view | the head polls every 10 s with the stream's newest row on its URL and offers Reload when the stream is behind; the stream is a snapshot |
 | `…/m/new` | create form: kind selector first, then only that kind's fields; advanced fields (thresholds, confirm, methods, body limit) behind one `Advanced` disclosure; `…/m/{slug}/edit` is the same form filled in. `POST …/m/preview` and `…/m/{slug}/preview` validate the form without saving and return the schedule and grace sentences, the `Advanced` summary and the YAML as `hx-partial`s |  |
 | `…/incidents` | open incidents on top with ack buttons, resolved below, filter by monitor/tag | polls every 15 s |
 | `…/settings/{tab}` with tab = channels, routes, maintenance, pages, keys | one tab per table; each tab is a list with inline add/edit forms; channel rows have a `Test` button | no polling |
@@ -371,6 +372,7 @@ The UI is one list and one drawer per entity, rendered by the server, with htmx 
 - The monitor form explains itself as it is filled in: a hidden trigger posts the form to `…/m/preview` on change (debounced 300 ms) and the handler answers with `hx-partial` fragments for the schedule sentence (`Next runs: tonight 03:00 · Wed 03:00 · Thu 03:00`), the grace sentence (`Late at 03:00:30, down at 03:05.`, the deadline plus the tolerance and plus the grace), the `Advanced` summary and the `As YAML` box. The same function fills those sentences on the first render and on a 422, so nothing depends on JavaScript.
 - One drawer at a time, opened by URL (`hx-push-url`), closed with Escape or the close button. No modals; destructive actions use a two-step inline confirm (`Delete → Really delete?`).
 - Polling uses `hx-trigger="every Ns [document.visibilityState=='visible']"` so hidden tabs stop polling; responses include `ETag`, unchanged content returns 304 and htmx leaves the DOM alone.
+- Long lists scroll on without end: the `Older` link at the bottom carries `hx-trigger="revealed"` and swaps itself for the next page and the next link, and the same element is a plain link to that page without JavaScript. The history page's cursor is `before=<millis>.<id>`, shared by observations and events because both are keyed by `(at, id)`.
 - Time is shown relative (`3 min ago`, `in 2 h`) with the absolute timestamp in the monitor's timezone on hover and in the drawer.
 - State colours: up green, late amber, down red, paused grey, new dotted outline. Every state also has a glyph and a word so colour is never the only signal. One CSS file, custom properties for tokens, `prefers-color-scheme` dark mode, system font stack, no icon font (inline SVG sprite).
 - Keyboard: `/` focuses search, `Esc` closes the drawer, `n` opens create. Nothing else.

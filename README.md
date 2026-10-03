@@ -123,6 +123,9 @@ hosted synthetic monitor).
 - **Checks**: HTTP with status, keyword and JSON path assertions, redirects and a private CA; TCP
   with a banner; DNS; TLS expiry; ICMP. Each on an interval from 10 s with a timeout, confirm
   retries, failure and recovery thresholds, latency sparklines, `check now`.
+- **History**: a drawer with the last day's bar, observations and state changes for every
+  monitor, and a full page behind it with the whole timeline grouped by day, filtered by
+  outcome and period, loading older rows as you scroll.
 - **Alerts**: routes match tags and send `down`, `up` and `late` to SMTP, webhooks with Go
   templates, ntfy, Gotify, Matrix, Slack-compatible hooks and Alertmanager; repeats while an
   incident stays unacknowledged; six delivery attempts with backoff; one-click acknowledgement

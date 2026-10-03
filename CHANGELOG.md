@@ -6,6 +6,14 @@ updates this file first. Dates are the tag dates.
 
 ## Unreleased
 
+- A history page per monitor at `…/m/{slug}/history`, reached by a History button in the
+  drawer: the drawer's head over the 24-hour and 90-day bars, then one timeline of observations
+  and state changes newest first, grouped by day, with chips for ok, failures, runs and changes,
+  a period of 24 h to 90 d or an exact window, day headings that link to their day, and an
+  Older link that loads the next 50 rows as it scrolls into view. The head polls and offers a
+  reload when newer rows exist. Pause, Resume and Check now work from the page.
+- The API takes `kind=ok|fail|run` on a monitor's observations, and its events page with
+  `since`, `until` and `cursor` like observations do, answering with `next_cursor`.
 - The Traefik and Apache deploy examples open `/static/` and `/a/` next to the status pages:
   a status page's stylesheet and the one-click acknowledgement links in alerts are anonymous
   routes too. Without them a status page renders unstyled for anyone without a session and
