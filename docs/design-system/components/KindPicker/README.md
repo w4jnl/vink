@@ -4,4 +4,4 @@ The first field of the create form: six radio cards, one per monitor kind, each 
 
 **Provide** `value`; `locked: true` on the edit form, because changing the kind recreates the monitor and resets its state.
 
-**Use** only in the monitor form. The cards are three across in the 560px drawer.
+**Use** only in the monitor form. The cards are three across in the 560px drawer, two across under 640px.

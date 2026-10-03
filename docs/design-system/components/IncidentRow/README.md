@@ -4,4 +4,4 @@ One incident: monitor, reason, when it opened, how long, and what happens next. 
 
 **Provide** `state` (`open`, `acked`, `resolved`), `name`, `slug`, `href` (the monitor), `reason`, `opened` (relative, with `openedAbs` on hover), `duration`, `ackedBy` or `resolved`.
 
-**Use** 44px rows like the monitor list. Ack posts with htmx and swaps the row; acking silences repeats but keeps the incident open until the monitor is up.
+**Use** 44px rows like the monitor list; under 640px a row is two lines, glyph, name and the action above, reason and the opening clock below, the duration left out. Ack posts with htmx and swaps the row; acking silences repeats but keeps the incident open until the monitor is up.

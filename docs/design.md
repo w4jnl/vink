@@ -377,7 +377,7 @@ The UI is one list and one drawer per entity, rendered by the server, with htmx 
 - State colours: up green, late amber, down red, paused grey, new dotted outline. Every state also has a glyph and a word so colour is never the only signal. One CSS file, custom properties for tokens, `prefers-color-scheme` dark mode, system font stack, no icon font (inline SVG sprite).
 - Keyboard: `/` focuses search, `Esc` closes the drawer, `n` opens create. Nothing else.
 - Empty states teach: an empty project shows the ping URL pattern and a two-line crontab example; an empty channel list shows the SMTP snippet.
-- Responsive: the list collapses to name + state + relative time under 640 px; the drawer becomes a full page.
+- Responsive, by CSS alone: beside an open drawer the list drops its trend column under 1280 px; under 960 px the drawer is the page (the list hides while a drawer is open, Close or Escape brings it back; deep links render the drawer alone on first paint); under 640 px rows go two-line, the top bar two-row, forms one column and tabs scroll; coarse pointers get 40 px controls and 16 px inputs.
 
 **Simplicity budget**: the top bar has four things; a page has at most one filter bar, one list and one drawer; a form shows at most eight fields before `Advanced`. Anything that does not fit is an API/YAML feature, not a UI feature.
 

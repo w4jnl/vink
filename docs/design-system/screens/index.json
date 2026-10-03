@@ -201,5 +201,76 @@
   "title": "Invite expired",
   "width": 1280,
   "fill": true
+ },
+ {
+  "board": "MainPhone",
+  "file": "monitors",
+  "title": "Monitors, phone",
+  "width": 390,
+  "fill": false,
+  "variant": "list"
+ },
+ {
+  "board": "DrawerPhone",
+  "file": "monitors",
+  "title": "Monitor drawer as the page, phone",
+  "width": 390,
+  "fill": false
+ },
+ {
+  "board": "NewHeartbeatPhone",
+  "file": "monitor-new-heartbeat",
+  "title": "New monitor: heartbeat, phone",
+  "width": 390,
+  "fill": false
+ },
+ {
+  "board": "EditMonitorPhone",
+  "file": "monitor-edit",
+  "title": "Edit monitor, phone",
+  "width": 390,
+  "fill": false
+ },
+ {
+  "board": "IncidentsPhone",
+  "file": "incidents",
+  "title": "Incidents, phone",
+  "width": 390,
+  "fill": false
+ },
+ {
+  "board": "ChannelsPhone",
+  "file": "settings-channels",
+  "title": "Settings: channels, phone",
+  "width": 390,
+  "fill": false
+ },
+ {
+  "board": "OrgMembersPhone",
+  "file": "org-members",
+  "title": "Org members, phone",
+  "width": 390,
+  "fill": false
+ },
+ {
+  "board": "OrgAuditPhone",
+  "file": "org-audit",
+  "title": "Audit log, phone",
+  "width": 390,
+  "fill": false
+ },
+ {
+  "board": "SwitcherPhone",
+  "file": "switcher-menu",
+  "title": "Project switcher, phone",
+  "width": 390,
+  "fill": false
+ },
+ {
+  "board": "LoginPhone",
+  "file": "login",
+  "title": "Sign in, phone",
+  "width": 390,
+  "fill": true
  }
 ]

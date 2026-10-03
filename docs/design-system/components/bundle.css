@@ -482,13 +482,14 @@ p.vk-field__hint { margin: 0; }
 @media (max-width: 960px) {
   .vk-top { padding: 0 var(--space-4); }
   .vk-top__mark span { display: none; }
-  .vk-top__search { flex: 0 1 220px; min-width: 72px; }
+  .vk-top__search { flex: 0 3 220px; min-width: 72px; }
   .vk-page { grid-template-columns: minmax(0, 1fr); }
   .vk-page:not(.vk-page--full) > .vk-main { display: none; }
   .vk-drawer { border-left: 0; box-shadow: none; }
   .vk-drawer__actions { flex-wrap: wrap; }
   .vk-irow { grid-template-columns: 16px minmax(120px, 1fr) minmax(0, 160px) 128px 120px 128px; }
   .vk-audit__body { padding-left: calc(12px + 48px + 2 * var(--space-3) + var(--space-4)); }
+  .vk-srow__cell--m { width: 120px; } .vk-srow__cell--l { width: 176px; } .vk-srow__actions { width: 120px; }
 }
 @media (max-width: 640px) {
   /* top bar: mark, switcher and user on the first row; the section links on a second, 44px row */
@@ -503,7 +504,7 @@ p.vk-field__hint { margin: 0; }
   .vk-menu__item > span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
   /* containers */
   .vk-main { padding: var(--space-4); }
-  .vk-main__head, .vk-main__head .vk-main__actions, .vk-tabhead, .vk-filterbar, .vk-inlineform, .vk-seg, .vk-banner, .vk-status__foot { flex-wrap: wrap; }
+  .vk-main__head, .vk-main__head .vk-main__actions, .vk-tabhead, .vk-filterbar, .vk-filterbar > .vk-actions, .vk-panel__head, .vk-inlineform, .vk-banner, .vk-status__foot { flex-wrap: wrap; }
   .vk-filterbar { gap: var(--space-2) var(--space-4); }
   .vk-drawer { padding: var(--space-4); gap: var(--space-4); }
   .vk-drawer__foot { margin: auto calc(-1 * var(--space-4)) 0; padding: var(--space-3) var(--space-4); flex-wrap: wrap; }
@@ -534,7 +535,7 @@ p.vk-field__hint { margin: 0; }
   .vk-irow > .vk-glyph { grid-row: 1 / 3; }
   .vk-irow > :nth-child(3) { grid-column: 2; grid-row: 2; }
   .vk-irow > :nth-child(4) { grid-column: 3; grid-row: 2; text-align: right; }
-  .vk-irow > :nth-child(5) { display: none; }
+  .vk-irow > :nth-child(5), .vk-irow__name > .vk-row__slug { display: none; }
   .vk-irow__act { grid-column: 3; grid-row: 1; }
   .vk-obs { grid-template-columns: 12px 16px 72px minmax(0, 1fr) auto; column-gap: var(--space-2); }
   .vk-obsrow__body { padding-left: 0; }
