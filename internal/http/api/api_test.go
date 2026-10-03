@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -375,8 +376,48 @@ func TestObservationsEventsIncidentsStatus(t *testing.T) {
 	r = e.key(e.rw, "GET", "/monitors/job/events", nil)
 	var ev page[EventOut]
 	r.json(t, &ev)
-	if len(ev.Items) != 2 || ev.Items[0].To != domain.StateDown || ev.Items[1].To != domain.StateUp {
-		t.Fatalf("events: %+v", ev.Items)
+	if len(ev.Items) != 2 || ev.Items[0].To != domain.StateDown || ev.Items[1].To != domain.StateUp || ev.NextCursor != nil {
+		t.Fatalf("events: %+v", ev)
+	}
+	// events page like observations: a cursor, a window, both tenancy-scoped
+	r = e.key(e.rw, "GET", "/monitors/job/events?limit=1", nil)
+	var first page[EventOut]
+	r.json(t, &first)
+	if len(first.Items) != 1 || first.Items[0].To != domain.StateDown || first.NextCursor == nil {
+		t.Fatalf("events page 1: %+v", first)
+	}
+	r = e.key(e.rw, "GET", "/monitors/job/events?limit=1&cursor="+*first.NextCursor, nil)
+	var second page[EventOut]
+	r.json(t, &second)
+	if len(second.Items) != 1 || second.Items[0].To != domain.StateUp {
+		t.Fatalf("events page 2: %+v", second)
+	}
+	r = e.key(e.rw, "GET", "/monitors/job/events?until="+strconv.FormatInt(e.now.Add(-time.Hour).Unix(), 10), nil)
+	r.json(t, &ev)
+	if len(ev.Items) != 1 || ev.Items[0].To != domain.StateUp {
+		t.Fatalf("events until: %+v", ev.Items)
+	}
+	if r := e.key(e.rw, "GET", "/monitors/job/events?since=soon", nil); r.code != 400 {
+		t.Errorf("bad since on events: %d", r.code)
+	}
+	// kind narrows observations; a fail ping shows under fail and not under ok
+	if _, _, err := e.svc.RecordPing(ctx, tgt, service.PingObservation{Signal: domain.SignalFail, Msg: "disk full"}); err != nil {
+		t.Fatal(err)
+	}
+	r = e.key(e.rw, "GET", "/monitors/job/observations?kind=fail", nil)
+	r.json(t, &obs)
+	if len(obs.Items) != 1 || obs.Items[0].Signal != "fail" {
+		t.Fatalf("kind=fail: %+v", obs.Items)
+	}
+	r = e.key(e.rw, "GET", "/monitors/job/observations?kind=ok", nil)
+	r.json(t, &obs)
+	if len(obs.Items) != 1 || obs.Items[0].Signal != "ok" {
+		t.Fatalf("kind=ok: %+v", obs.Items)
+	}
+	for _, bad := range []string{"x", "change"} {
+		if r := e.key(e.rw, "GET", "/monitors/job/observations?kind="+bad, nil); r.code != 400 {
+			t.Errorf("kind=%s: %d", bad, r.code)
+		}
 	}
 	r = e.key(e.rw, "GET", "/incidents?open=1", nil)
 	var inc page[IncidentOut]

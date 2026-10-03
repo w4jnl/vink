@@ -310,17 +310,12 @@ func (a *API) listObservations(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	cursor, err := decodeCursor(r.URL.Query().Get("cursor"), 2)
+	p, err := historyPage(r, since, until, limit)
 	if err != nil {
 		return err
 	}
-	p := service.HistoryPage{Since: since, Until: until, Limit: limit}
-	if cursor != nil {
-		ms, err := strconv.ParseInt(cursor[0], 10, 64)
-		if err != nil {
-			return badRequest("invalid cursor")
-		}
-		p.CursorAt, p.CursorID = domain.FromMillis(ms), cursor[1]
+	if p.Kind = r.URL.Query().Get("kind"); p.Kind == service.KindChange || !service.ValidHistoryKind(p.Kind) {
+		return badRequest("kind must be ok, fail or run")
 	}
 	obs, err := a.svc.ListObservations(r.Context(), sc, r.PathValue("slug"), p)
 	if err != nil {
@@ -370,12 +365,41 @@ func (a *API) getObservation(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
+// historyPage reads the window and cursor shared by observations and events.
+func historyPage(r *http.Request, since, until time.Time, limit int) (service.HistoryPage, error) {
+	p := service.HistoryPage{Since: since, Until: until, Limit: limit}
+	cursor, err := decodeCursor(r.URL.Query().Get("cursor"), 2)
+	if err != nil {
+		return p, err
+	}
+	if cursor != nil {
+		ms, err := strconv.ParseInt(cursor[0], 10, 64)
+		if err != nil {
+			return p, badRequest("invalid cursor")
+		}
+		p.CursorAt, p.CursorID = domain.FromMillis(ms), cursor[1]
+	}
+	return p, nil
+}
+
 func (a *API) listEvents(w http.ResponseWriter, r *http.Request) error {
 	limit, err := limitParam(r)
 	if err != nil {
 		return err
 	}
-	events, err := a.svc.ListEvents(r.Context(), scope(r), r.PathValue("slug"), limit)
+	since, err := timeParam(r, "since")
+	if err != nil {
+		return err
+	}
+	until, err := timeParam(r, "until")
+	if err != nil {
+		return err
+	}
+	p, err := historyPage(r, since, until, limit)
+	if err != nil {
+		return err
+	}
+	events, err := a.svc.ListEventsPage(r.Context(), scope(r), r.PathValue("slug"), p)
 	if err != nil {
 		return err
 	}
@@ -383,7 +407,13 @@ func (a *API) listEvents(w http.ResponseWriter, r *http.Request) error {
 	for _, e := range events {
 		items = append(items, eventOut(e))
 	}
-	writeJSON(w, http.StatusOK, page[EventOut]{Items: items})
+	var next *string
+	if len(events) == limit {
+		last := events[len(events)-1]
+		c := encodeCursor(strconv.FormatInt(domain.Millis(last.At), 10), last.ID)
+		next = &c
+	}
+	writeJSON(w, http.StatusOK, page[EventOut]{Items: items, NextCursor: next})
 	return nil
 }
 

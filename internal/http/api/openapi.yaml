@@ -461,6 +461,7 @@ paths:
       parameters:
         - {name: since, in: query, schema: {type: string}, description: RFC 3339 or Unix seconds.}
         - {name: until, in: query, schema: {type: string}}
+        - {name: kind, in: query, schema: {type: string, enum: [ok, fail, run]}, description: "ok: successful pings and checks; fail: fail pings, non-zero exits, run timeouts, failed and confirming checks; run: start and log signals. Absent: every observation."}
         - $ref: "#/components/parameters/cursor"
         - $ref: "#/components/parameters/limit"
       responses: {"200": {description: Page of observations.}}
@@ -474,8 +475,12 @@ paths:
     parameters: [{$ref: "#/components/parameters/slug"}]
     get:
       summary: State flips, newest first
-      parameters: [{$ref: "#/components/parameters/limit"}]
-      responses: {"200": {description: Events.}}
+      parameters:
+        - {name: since, in: query, schema: {type: string}, description: RFC 3339 or Unix seconds.}
+        - {name: until, in: query, schema: {type: string}}
+        - $ref: "#/components/parameters/cursor"
+        - $ref: "#/components/parameters/limit"
+      responses: {"200": {description: Page of events, with next_cursor like observations.}}
   /incidents:
     get:
       summary: Incidents, open first
