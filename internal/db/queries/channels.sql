@@ -18,5 +18,11 @@ SET name = ?, kind = ?, config = ?, enabled = ?, updated_at = ?
 WHERE project_id = ? AND id = ?
 RETURNING *;
 
+-- name: SetChannelEnabled :one
+UPDATE channels
+SET enabled = ?, updated_at = ?
+WHERE project_id = ? AND id = ?
+RETURNING *;
+
 -- name: DeleteChannel :execrows
 DELETE FROM channels WHERE project_id = ? AND id = ?;

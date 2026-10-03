@@ -192,6 +192,41 @@ func (s *Service) UpdateChannel(ctx context.Context, sc domain.Scope, id string,
 	return out, nil
 }
 
+// SetChannelEnabled flips a channel on or off. The config is neither
+// decrypted for validation nor re-sealed: a toggle must work even when
+// the instance can no longer validate the kind (an SMTP channel on a
+// server without [smtp] host, say), since a disabled channel is exactly
+// what such a setup wants.
+func (s *Service) SetChannelEnabled(ctx context.Context, sc domain.Scope, id string, enabled bool) (*domain.Channel, error) {
+	if err := requireEdit(sc); err != nil {
+		return nil, err
+	}
+	cur, err := s.Channel(ctx, sc, id)
+	if err != nil {
+		return nil, err
+	}
+	var out *domain.Channel
+	err = s.db.Tx(ctx, func(q *db.Queries) error {
+		row, err := q.SetChannelEnabled(ctx, db.SetChannelEnabledParams{Enabled: enabled, UpdatedAt: domain.Millis(s.now()), ProjectID: sc.ProjectID, ID: id})
+		if err != nil {
+			return notFoundIfNoRows(err, "channel")
+		}
+		out, err = s.channelFromRow(row)
+		if err != nil {
+			return err
+		}
+		e := projectEntry(sc, "channel.update", out.Name, out.ID)
+		e.Before, e.After = channelSnapshot(cur), channelSnapshot(out)
+		e.Detail = map[string]any{"fields": changedFields(e.Before, e.After)}
+		return s.record(ctx, q, sc, e)
+	})
+	if err != nil {
+		return nil, err
+	}
+	s.log.Info("channel toggled", "project_id", sc.ProjectID, "channel", out.Name, "enabled", enabled, "actor", sc.Actor)
+	return out, nil
+}
+
 // DeleteChannel removes a channel and, by cascade, its routes.
 func (s *Service) DeleteChannel(ctx context.Context, sc domain.Scope, id string) error {
 	if err := requireEdit(sc); err != nil {

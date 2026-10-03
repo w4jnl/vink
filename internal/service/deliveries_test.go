@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -213,6 +214,45 @@ func firstEventID(t *testing.T, f *fixture, slug string) string {
 		t.Fatalf("events: %v %v", events, err)
 	}
 	return events[len(events)-1].ID
+}
+
+func TestToggleWorksWhenTheKindCannotBeValidated(t *testing.T) {
+	f := newFixture(t)
+	withNotifier(t, f)
+	ctx := context.Background()
+	ch, err := f.svc.CreateChannel(ctx, f.member, &domain.Channel{Name: "mail", Kind: domain.ChannelWebhook, Config: json.RawMessage(`{"url":"https://hooks.example.com/x"}`), Enabled: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// the instance lost what the kind needs (an SMTP channel on a server without [smtp] host)
+	f.svc.SetChannelValidator(func(domain.ChannelKind, []byte) error { return errors.New("no mail server is configured") })
+	if _, err := f.svc.UpdateChannel(ctx, f.member, ch.ID, &domain.Channel{Name: "mail", Enabled: false}); err == nil {
+		t.Fatal("an update still validates")
+	}
+	off, err := f.svc.SetChannelEnabled(ctx, f.member, ch.ID, false)
+	if err != nil || off.Enabled {
+		t.Fatalf("toggle off: %+v %v", off, err)
+	}
+	on, err := f.svc.SetChannelEnabled(ctx, f.member, ch.ID, true)
+	if err != nil || !on.Enabled || string(on.Config) != string(ch.Config) {
+		t.Fatalf("toggle on: %+v %v", on, err)
+	}
+	if _, err := f.svc.SetChannelEnabled(ctx, f.viewer, ch.ID, false); err == nil {
+		t.Fatal("a viewer must not toggle")
+	}
+	if _, err := f.svc.SetChannelEnabled(ctx, f.member, "01ARZ3NDEKTSV4RRFFQ69G5FAV", false); err == nil {
+		t.Fatal("an unknown channel must be not found")
+	}
+	entries, _ := f.svc.AuditLog(ctx, f.admin, AuditFilter{OrgID: f.org.ID, Changes: true})
+	var toggles int
+	for _, e := range entries.Entries {
+		if e.Action == "channel.update" {
+			toggles++
+		}
+	}
+	if toggles != 2 {
+		t.Fatalf("audit rows for the toggles: %d", toggles)
+	}
 }
 
 func TestDeliveryFailureBackoffAndDisabledChannel(t *testing.T) {

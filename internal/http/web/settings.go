@@ -716,9 +716,7 @@ func (h *Web) toggleChannel(c *reqCtx) error {
 	if err != nil {
 		return err
 	}
-	upd := *ch
-	upd.Enabled = !ch.Enabled
-	if _, err := h.svc.UpdateChannel(ctx, c.scope, ch.ID, &upd); err != nil {
+	if _, err := h.svc.SetChannelEnabled(ctx, c.scope, ch.ID, !ch.Enabled); err != nil {
 		return err
 	}
 	if c.htmx() {

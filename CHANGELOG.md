@@ -6,6 +6,8 @@ updates this file first. Dates are the tag dates.
 
 ## Unreleased
 
+- Switching a channel on or off no longer re-validates its configuration, so an SMTP channel
+  can be toggled on a server that has no `[smtp] host` set; it failed with a 500.
 - The web UI works on phones and tablets. Under 960px the drawer is the page (Close or Escape
   brings the list back); under 640px the top bar wraps into two rows, monitor and incident rows
   go two-line, settings rows wrap, forms stack their fields with the kind picker two across,

@@ -160,6 +160,42 @@ func (q *Queries) ListChannels(ctx context.Context, projectID string) ([]Channel
 	return items, nil
 }
 
+const setChannelEnabled = `-- name: SetChannelEnabled :one
+UPDATE channels
+SET enabled = ?, updated_at = ?
+WHERE project_id = ? AND id = ?
+RETURNING id, project_id, org_id, name, kind, config, enabled, created_at, updated_at
+`
+
+type SetChannelEnabledParams struct {
+	Enabled   bool
+	UpdatedAt int64
+	ProjectID string
+	ID        string
+}
+
+func (q *Queries) SetChannelEnabled(ctx context.Context, arg SetChannelEnabledParams) (Channel, error) {
+	row := q.db.QueryRowContext(ctx, setChannelEnabled,
+		arg.Enabled,
+		arg.UpdatedAt,
+		arg.ProjectID,
+		arg.ID,
+	)
+	var i Channel
+	err := row.Scan(
+		&i.ID,
+		&i.ProjectID,
+		&i.OrgID,
+		&i.Name,
+		&i.Kind,
+		&i.Config,
+		&i.Enabled,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const updateChannel = `-- name: UpdateChannel :one
 UPDATE channels
 SET name = ?, kind = ?, config = ?, enabled = ?, updated_at = ?

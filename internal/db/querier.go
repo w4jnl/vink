@@ -237,6 +237,7 @@ type Querier interface {
 	// tenancy: org (org keys have no project)
 	RevokeOrgAPIKey(ctx context.Context, arg RevokeOrgAPIKeyParams) (int64, error)
 	RotatePingKey(ctx context.Context, arg RotatePingKeyParams) error
+	SetChannelEnabled(ctx context.Context, arg SetChannelEnabledParams) (Channel, error)
 	SetInstanceAdmin(ctx context.Context, arg SetInstanceAdminParams) (int64, error)
 	// tenancy: root (instance facts)
 	SetInstanceMeta(ctx context.Context, arg SetInstanceMetaParams) error
