@@ -4,7 +4,7 @@ User-facing changes per release, newest first. `scripts/release.sh` refuses to t
 that has no section here and uses the section as the GitHub release notes, so every release
 updates this file first. Dates are the tag dates.
 
-## Unreleased
+## 0.1.2 (2026-10-03)
 
 - Alerts say why. A `down` caused by a ping carries the ping's `?msg=` (or, without one, the
   last 20 lines of a text body) and its exit code: as `exit` and `message` lines in every
@@ -13,11 +13,13 @@ updates this file first. Dates are the tag dates.
 - Heartbeats have a `tolerance` (default `30s`, at most the grace): a ping this long after the
   deadline is still on time, and `late` starts when it runs out. A cron job that fires at its
   deadline and pings a second later no longer flaps late and back every run. The field sits
-  under Advanced in the form, in the API, in `vink.yaml` and in `vink monitors show`; the grace
+  under Advanced in the form, in the API, in `vink.yaml` and in `vink get`; the grace
   hint reads "Late at 03:00:30, down at 03:05." Existing monitors get the default.
 - The drawer's 24-hour legend shows the share of the day the monitor was up, weighted by time
   like the status page. It counted cells before, so one late minute in an hour cost the whole
   hour and a monitor that was late once an hour read 0.0% up under a bar that was mostly fine.
+- modernc.org/sqlite 1.60.1; the release workflow runs on actions/checkout 7 and
+  docker/setup-qemu-action 4.
 
 ## 0.1.1 (2026-10-02)
 
