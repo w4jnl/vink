@@ -2,6 +2,7 @@ package web
 
 import (
 	"context"
+	"html"
 	"io"
 	"log/slog"
 	"net/http"
@@ -2024,5 +2025,116 @@ func TestOIDCSignInPage(t *testing.T) {
 	}
 	if r := e3.doWith("GET", "/login?oidc_error=access_denied", nil); r.code != 200 {
 		t.Fatalf("error page must not loop: %d", r.code)
+	}
+}
+
+func TestHistoryPage(t *testing.T) {
+	e := newEnv(t)
+	e.monitor("nightly", "backup")
+	ctx := context.Background()
+	tgt, _ := e.svc.ResolvePing(ctx, e.project.PingKey, "nightly", "", false)
+	for i := 0; i < 60; i++ {
+		e.now = e.now.Add(time.Minute)
+		if _, _, err := e.svc.RecordPing(ctx, tgt, service.PingObservation{Signal: domain.SignalOK, RemoteAddr: "192.168.30.5"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	path := projPath + "/m/nightly/history"
+	full := e.get(path, false)
+	if full.code != 200 {
+		t.Fatalf("history page: %d", full.code)
+	}
+	full.has(t, `<title>Nightly · history · vink</title>`, `class="vk-page vk-page--full"`, `<div id="history-head" hx-get="/o/homelab/p/prod/m/nightly/history?newest=`, `hx-trigger="every 10s`,
+		`<h1>Nightly <span class="vk-row__slug">nightly</span></h1>`, `>Back<`, `>Edit<`, `>Pause<`, "every 1h · grace 5m · due in", `aria-label="last 24 hours"`, `aria-label="last 90 days"`,
+		`<h2 class="vk-listhead">Today <span><a class="vk-link" href="/o/homelab/p/prod/m/nightly/history?since=`, `name="kind" value="fail"`, `name="kind" value="change"`, `name="period" value="7d" checked`,
+		`class="vk-irows"`, `ok · from 192.168.30.5`, `hx-trigger="revealed"`, `>Older<`)
+	if strings.Count(full.body, `class="vk-obs"`) != 50 || strings.Contains(full.body, "new → up") {
+		t.Fatalf("first page: %d rows, event on it: %v", strings.Count(full.body, `class="vk-obs"`), strings.Contains(full.body, "new → up"))
+	}
+	// the sentinel's partial continues the same day without a heading and ends without a sentinel
+	rowsURL := regexp.MustCompile(`hx-get="([^"]*partial=rows[^"]*)"`).FindStringSubmatch(full.body)
+	if rowsURL == nil {
+		t.Fatal("no rows sentinel")
+	}
+	rows := e.get(html.UnescapeString(rowsURL[1]), true)
+	if rows.code != 200 || strings.Contains(rows.body, "<html") || strings.Contains(rows.body, "vk-listhead") || strings.Contains(rows.body, "revealed") {
+		t.Fatalf("rows partial: %d %s", rows.code, rows.body)
+	}
+	if n := strings.Count(rows.body, `class="vk-obs"`); n != 11 || !strings.Contains(rows.body, "new → up · first ok") {
+		t.Fatalf("second page: %d rows: %s", n, rows.body)
+	}
+	// the plain Older link is a full page from that cursor
+	older := regexp.MustCompile(`<a class="vk-btn" href="([^"]*before=[^"]*)">Older</a>`).FindStringSubmatch(full.body)
+	if older == nil {
+		t.Fatal("no plain Older link")
+	}
+	if p := e.get(html.UnescapeString(older[1]), false); p.code != 200 || !strings.Contains(p.body, "<html") || strings.Count(p.body, `class="vk-obs"`) != 11 {
+		t.Fatalf("older page: %d", p.code)
+	}
+	if p := e.get(path+"?before=nonsense", false); p.code != 404 {
+		t.Fatalf("bad cursor: %d", p.code)
+	}
+	// kinds and periods
+	changes := e.get(path+"?kind=change", true)
+	if changes.code != 200 || strings.Contains(changes.body, "<html") || strings.Count(changes.body, `class="vk-obs"`) != 1 || !strings.Contains(changes.body, "new → up") {
+		t.Fatalf("changes: %d %s", changes.code, changes.body)
+	}
+	changes.has(t, `aria-pressed="true" name="kind" value="">`, `>changes<`) // the pressed chip clears on click
+	if p := e.get(path+"?kind=fail", false); !strings.Contains(p.body, "No failures in the last 7 days") {
+		t.Fatalf("empty failures: %s", p.body)
+	}
+	if p := e.get(path+"?period=24h", false); !strings.Contains(p.body, `name="period" value="24h" checked`) || strings.Count(p.body, `class="vk-obs"`) != 50 {
+		t.Fatalf("period 24h: %d rows", strings.Count(p.body, `class="vk-obs"`))
+	}
+	// an exact window: the segmented control is unchecked and the window stays in the form
+	dayLink := regexp.MustCompile(`vk-listhead">Today <span><a class="vk-link" href="([^"]+)"`).FindStringSubmatch(full.body)
+	if dayLink == nil {
+		t.Fatal("no day link")
+	}
+	day := e.get(html.UnescapeString(dayLink[1]), false)
+	if day.code != 200 || strings.Contains(day.body, `value="7d" checked`) || !strings.Contains(day.body, `name="since" value="2026-09-27T00:00:00&#43;02:00"`) || !strings.Contains(day.body, `name="until" value="2026-09-27T23:59:59&#43;02:00"`) || strings.Count(day.body, `class="vk-obs"`) != 50 {
+		t.Fatalf("day window: %d rows=%d checked=%v", day.code, strings.Count(day.body, `class="vk-obs"`), strings.Contains(day.body, `value="7d" checked`))
+	}
+	if p := e.get(path+"?since=2026-09-28T00:00:00Z", false); !strings.Contains(p.body, "Nothing in this window") {
+		t.Fatal("a window after every row must be empty")
+	}
+	// the head polls with an ETag and notices newer rows
+	head := e.get(path+"?partial=head", false)
+	if head.code != 200 || !strings.HasPrefix(head.body, `<div id="history-head"`) || head.hdr.Get("ETag") == "" || strings.Contains(head.body, "New rows arrived") {
+		t.Fatalf("head partial: %d %q", head.code, head.body[:60])
+	}
+	req := httptest.NewRequest("GET", path+"?partial=head", nil)
+	req.AddCookie(e.cookie)
+	req.Header.Set("If-None-Match", head.hdr.Get("ETag"))
+	rec := httptest.NewRecorder()
+	e.srv.ServeHTTP(rec, req)
+	if rec.Code != 304 {
+		t.Fatalf("head etag: %d", rec.Code)
+	}
+	newest := regexp.MustCompile(`newest=([0-9]+\.[0-9A-Z]+)`).FindStringSubmatch(full.body)
+	if newest == nil {
+		t.Fatal("no newest key on the poll URL")
+	}
+	if p := e.get(path+"?partial=head&newest="+newest[1], true); strings.Contains(p.body, "New rows arrived") {
+		t.Fatal("nothing new yet")
+	}
+	e.now = e.now.Add(time.Minute)
+	_, _, _ = e.svc.RecordPing(ctx, tgt, service.PingObservation{Signal: domain.SignalOK})
+	stale := e.get(path+"?partial=head&newest="+newest[1], true)
+	stale.has(t, "New rows arrived", `href="/o/homelab/p/prod/m/nightly/history?period=7d">Reload</a>`)
+	// actions come back to the page; the drawer links here; tenancy holds
+	paused := e.post(projPath+"/m/nightly/pause", url.Values{"next": {path + "?period=24h"}}, false)
+	if paused.code != 303 || paused.hdr.Get("Location") != path+"?period=24h" {
+		t.Fatalf("pause from history: %d %s", paused.code, paused.hdr.Get("Location"))
+	}
+	if p := e.get(path, false); !strings.Contains(p.body, ">Resume<") {
+		t.Fatal("paused page must offer Resume")
+	}
+	if elsewhere := e.post(projPath+"/m/nightly/resume", url.Values{"next": {"https://evil.example/"}}, false); elsewhere.hdr.Get("Location") != projPath+"/m/nightly" {
+		t.Fatalf("a foreign next must be ignored: %s", elsewhere.hdr.Get("Location"))
+	}
+	e.get(projPath+"/m/nightly", true).has(t, `href="/o/homelab/p/prod/m/nightly/history">History</a>`)
+	if p := e.get("/o/acme/p/prod/m/nightly/history", false); p.code != 404 {
+		t.Fatalf("cross-tenant history: %d", p.code)
 	}
 }

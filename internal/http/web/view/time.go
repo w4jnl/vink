@@ -28,3 +28,20 @@ func Clock(t time.Time, loc *time.Location) string { return timefmt.Clock(t, loc
 
 // RunDuration renders a job duration.
 func RunDuration(ms int64) string { return timefmt.RunDuration(ms) }
+
+// DayLabel names the day of t for a list grouped by day in loc: the label
+// is "Today", "Yesterday" or the weekday, the date reads "Mon 2 Jan", and
+// the key is the ISO date that tells two groups apart.
+func DayLabel(t, now time.Time, loc *time.Location) (label, date, key string) {
+	day := t.In(loc)
+	key = day.Format("2006-01-02")
+	switch key {
+	case now.In(loc).Format("2006-01-02"):
+		label = "Today"
+	case now.In(loc).AddDate(0, 0, -1).Format("2006-01-02"):
+		label = "Yesterday"
+	default:
+		label = day.Format("Monday")
+	}
+	return label, day.Format("Mon 2 Jan"), key
+}

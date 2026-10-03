@@ -312,41 +312,14 @@ func (h *Web) drawerData(c *reqCtx, m *domain.Monitor) (*drawerData, error) {
 	if m.State != domain.StateNew {
 		d.Badge.Since = view.For(m.StateSince, c.now)
 	}
-	if s := m.Pull; s != nil {
+	if m.Pull != nil {
 		d.Pull = true
-		d.Target = s.Target()
-		if s.HTTP != nil {
-			d.Target = s.HTTP.Method + " " + s.HTTP.URL
+		d.Target = m.Pull.Target()
+		if m.Pull.HTTP != nil {
+			d.Target = m.Pull.HTTP.Method + " " + m.Pull.HTTP.URL
 		}
-		parts := []string{"every " + view.Span(s.Interval.Std()), "timeout " + view.Span(s.Timeout.Std()), "down after " + strconv.Itoa(s.FailureThreshold) + " failures"}
-		if s.Confirm.Retries > 0 {
-			parts = append(parts, "confirm "+strconv.Itoa(s.Confirm.Retries)+"×")
-		}
-		if m.NextDueAt != nil && !m.Paused {
-			parts = append(parts, "next "+view.In(*m.NextDueAt, c.now))
-		}
-		d.Summary = strings.Join(parts, " · ")
 	}
-	if s := m.Heartbeat; s != nil {
-		parts := []string{s.Schedule.String()}
-		if s.Schedule.Cron != "" {
-			parts[0] += " (" + loc.String() + ")"
-		}
-		if s.Tolerance != 0 && s.Tolerance != domain.DefaultTolerance {
-			parts = append(parts, "tolerance "+s.Tolerance.String())
-		}
-		parts = append(parts, "grace "+s.Grace.String())
-		if s.MaxRuntime > 0 {
-			parts = append(parts, "max runtime "+s.MaxRuntime.String())
-		}
-		if s.FailureThreshold > 1 {
-			parts = append(parts, "down after "+strconv.Itoa(s.FailureThreshold)+" failures")
-		}
-		if exp := h.svc.ExpectedAt(m, c.project.Timezone); exp != nil && !m.Paused {
-			parts = append(parts, "due "+view.In(*exp, c.now))
-		}
-		d.Summary = strings.Join(parts, " · ")
-	}
+	d.Summary = h.summaryLine(c, m, loc)
 	events, err := h.svc.EventsSince(ctx, c.scope, m, c.now.Add(-24*time.Hour))
 	if err != nil {
 		return nil, err
@@ -380,6 +353,43 @@ func (h *Web) drawerData(c *reqCtx, m *domain.Monitor) (*drawerData, error) {
 		d.Events = append(d.Events, eventRow{State: string(e.To), Ago: view.Ago(e.At, c.now), Abs: view.Abs(e.At, loc), Text: text})
 	}
 	return d, nil
+}
+
+// summaryLine is the one-line spec under the target or ping URL:
+// "every 1h · grace 5m · due in 41 min".
+func (h *Web) summaryLine(c *reqCtx, m *domain.Monitor, loc *time.Location) string {
+	if s := m.Pull; s != nil {
+		parts := []string{"every " + view.Span(s.Interval.Std()), "timeout " + view.Span(s.Timeout.Std()), "down after " + strconv.Itoa(s.FailureThreshold) + " failures"}
+		if s.Confirm.Retries > 0 {
+			parts = append(parts, "confirm "+strconv.Itoa(s.Confirm.Retries)+"×")
+		}
+		if m.NextDueAt != nil && !m.Paused {
+			parts = append(parts, "next "+view.In(*m.NextDueAt, c.now))
+		}
+		return strings.Join(parts, " · ")
+	}
+	s := m.Heartbeat
+	if s == nil {
+		return ""
+	}
+	parts := []string{s.Schedule.String()}
+	if s.Schedule.Cron != "" {
+		parts[0] += " (" + loc.String() + ")"
+	}
+	if s.Tolerance != 0 && s.Tolerance != domain.DefaultTolerance {
+		parts = append(parts, "tolerance "+s.Tolerance.String())
+	}
+	parts = append(parts, "grace "+s.Grace.String())
+	if s.MaxRuntime > 0 {
+		parts = append(parts, "max runtime "+s.MaxRuntime.String())
+	}
+	if s.FailureThreshold > 1 {
+		parts = append(parts, "down after "+strconv.Itoa(s.FailureThreshold)+" failures")
+	}
+	if exp := h.svc.ExpectedAt(m, c.project.Timezone); exp != nil && !m.Paused {
+		parts = append(parts, "due "+view.In(*exp, c.now))
+	}
+	return strings.Join(parts, " · ")
 }
 
 func obsRowFor(o *domain.Observation, loc *time.Location, match string) obsRow {
@@ -519,9 +529,14 @@ func (h *Web) resumeMonitor(c *reqCtx) error {
 	return h.afterAction(c)
 }
 
-// afterAction re-renders the drawer for htmx or redirects to the monitor.
+// afterAction re-renders the drawer for htmx or redirects to the monitor;
+// a form from the history page says so with next and goes back there.
 func (h *Web) afterAction(c *reqCtx) error {
 	path := c.projectPath() + "/m/" + c.r.PathValue("slug")
+	if next := c.r.FormValue("next"); strings.HasPrefix(next, path+"/history") && !c.htmx() {
+		http.Redirect(c.w, c.r, next, http.StatusSeeOther)
+		return nil
+	}
 	if c.htmx() {
 		m, err := h.svc.MonitorBySlug(c.r.Context(), c.scope, c.r.PathValue("slug"))
 		if err != nil {

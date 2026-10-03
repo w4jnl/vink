@@ -10,6 +10,7 @@ import (
 
 	"github.com/w4jnl/vink/internal/domain"
 	"github.com/w4jnl/vink/internal/http/web/ui"
+	"github.com/w4jnl/vink/internal/http/web/view"
 	"github.com/w4jnl/vink/internal/service"
 	"github.com/w4jnl/vink/internal/timefmt"
 )
@@ -233,21 +234,12 @@ func (h *Web) auditView(c *reqCtx, o auditOpts) (*auditView, error) {
 	if loc == nil {
 		loc = time.UTC
 	}
-	today := c.now.In(loc).Format("2006-01-02")
-	yesterday := c.now.In(loc).AddDate(0, 0, -1).Format("2006-01-02")
 	opened := q.before != ""
 	for _, e := range page.Entries {
 		day := e.At.In(loc)
-		key := day.Format("2006-01-02")
-		if len(v.Groups) == 0 || v.Groups[len(v.Groups)-1].Date != day.Format("Mon 2 Jan") {
-			label := day.Format("Monday")
-			switch key {
-			case today:
-				label = "Today"
-			case yesterday:
-				label = "Yesterday"
-			}
-			v.Groups = append(v.Groups, auditDay{Label: label, Date: day.Format("Mon 2 Jan")})
+		label, date, _ := view.DayLabel(e.At, c.now, loc)
+		if len(v.Groups) == 0 || v.Groups[len(v.Groups)-1].Date != date {
+			v.Groups = append(v.Groups, auditDay{Label: label, Date: date})
 		}
 		scope := ""
 		switch {

@@ -1,0 +1,21 @@
+{{define "history-head"}}<div id="history-head" hx-get="{{.PollPath}}" hx-trigger="every 10s [document.visibilityState=='visible']" hx-swap="outerHTML">
+<div class="vk-main__head"><h1>{{.Name}} <span class="vk-row__slug">{{.Slug}}</span></h1><span class="vk-main__actions">{{if and .Pull (not .Paused)}}{{button (dict "Label" "Check now" "Type" "submit" "Attrs" (attrs "form" "check-form"))}}{{end}}{{if .Paused}}{{button (dict "Label" "Resume" "Type" "submit" "Attrs" (attrs "form" "resume-form"))}}{{else}}{{button (dict "Label" "Pause" "Type" "submit" "Attrs" (attrs "form" "pause-form"))}}{{end}}{{button (dict "Label" "Edit" "Href" (print .Path "/edit"))}}{{button (dict "Label" "Back" "Href" .Path "Attrs" (attrs "data-drawer-close" "1"))}}</span></div>
+<div class="vk-inline vk-inline--flush">{{statebadge .Badge}}{{range .Tags}}{{tag .}}{{end}}</div>
+<p class="vk-field__hint">{{.Summary}}</p>
+{{uptimebar .HourCells true "last 24 hours" .HourLegend}}
+{{uptimebar .DayCells true "last 90 days" .DayLegend}}
+{{if .Notice}}{{notice "info" "New rows arrived" "The timeline below is a snapshot from when the page loaded." (button (dict "Label" "Reload" "Href" .ReloadPath))}}{{end}}
+<form id="pause-form" class="vk-sr" method="post" action="{{.Path}}/pause"><input type="hidden" name="_csrf" value="{{.CSRF}}"><input type="hidden" name="next" value="{{.ReloadPath}}"></form>
+<form id="resume-form" class="vk-sr" method="post" action="{{.Path}}/resume"><input type="hidden" name="_csrf" value="{{.CSRF}}"><input type="hidden" name="next" value="{{.ReloadPath}}"></form>
+{{if .Pull}}<form id="check-form" class="vk-sr" method="post" action="{{.Path}}/check"><input type="hidden" name="_csrf" value="{{.CSRF}}"><input type="hidden" name="next" value="{{.ReloadPath}}"></form>{{end}}
+</div>{{end}}
+
+{{define "history-stream"}}<div id="history-stream">
+<form class="vk-filterbar" method="get" action="{{.PagePath}}" hx-get="{{.PagePath}}" hx-target="#history-stream" hx-swap="outerHTML" hx-trigger="submit, change" hx-push-url="true"><div class="vk-chips">{{range .Chips}}{{chip .}}{{end}}</div>{{segmented (dict "Name" "period" "Label" "Period" "Options" (opts "24h" "24 h" "7d" "7 d" "30d" "30 d" "90d" "90 d") "Value" (list .Period) "Mono" true)}}{{if .Since}}<input type="hidden" name="since" value="{{.Since}}">{{end}}{{if .Until}}<input type="hidden" name="until" value="{{.Until}}">{{end}}</form>
+{{template "history-rows" .}}{{if .Empty}}<div class="vk-empty"><h3>{{.Empty}}</h3><p>Pings, checks and state changes land here as they happen.</p></div>{{end}}
+</div>{{end}}
+
+{{define "history-rows"}}{{range .Groups}}{{if not .Continued}}<h2 class="vk-listhead">{{.Label}} <span><a class="vk-link" href="{{.Href}}">{{.Date}}</a></span></h2>{{end}}<div class="vk-irows">{{range .Rows}}{{template "obs-row" .}}{{end}}</div>
+{{end}}{{template "history-sentinel" .}}{{end}}
+
+{{define "history-sentinel"}}{{if .Older}}<div class="vk-actions" hx-get="{{.Older.Rows}}" hx-trigger="revealed" hx-swap="outerHTML">{{button (dict "Label" "Older" "Href" .Older.Page)}}</div>{{end}}{{end}}

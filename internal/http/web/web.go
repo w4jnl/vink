@@ -112,6 +112,7 @@ func (h *Web) Mount(mux *http.ServeMux) {
 	mux.Handle("POST "+p+"/m/new", h.project(h.createMonitor))
 	mux.Handle("POST "+p+"/m/preview", h.project(h.previewMonitor))
 	mux.Handle("GET "+p+"/m/{slug}", h.project(h.monitor))
+	mux.Handle("GET "+p+"/m/{slug}/history", h.project(h.history))
 	mux.Handle("GET "+p+"/m/{slug}/obs/{id}/body", h.project(h.observationBody))
 	mux.Handle("GET "+p+"/m/{slug}/edit", h.project(h.editMonitor))
 	mux.Handle("POST "+p+"/m/{slug}/edit", h.project(h.updateMonitor))
