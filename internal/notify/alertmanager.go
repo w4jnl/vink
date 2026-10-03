@@ -3,6 +3,7 @@ package notify
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -89,6 +90,12 @@ func (a *Alertmanager) Send(ctx context.Context, cfg json.RawMessage, n Notifica
 	annotations := map[string]string{"summary": n.Title(), "description": n.Text()}
 	if n.Event.Reason != "" {
 		annotations["reason"] = n.Event.Reason
+	}
+	if n.Message != "" {
+		annotations["message"] = n.Message
+	}
+	if n.ExitCode != nil {
+		annotations["exit_code"] = fmt.Sprint(*n.ExitCode)
 	}
 	if n.Links.Monitor != "" {
 		annotations["monitor_url"] = n.Links.Monitor

@@ -6,6 +6,10 @@ updates this file first. Dates are the tag dates.
 
 ## Unreleased
 
+- Alerts say why. A `down` caused by a ping carries the ping's `?msg=` (or, without one, the
+  last 20 lines of a text body) and its exit code: as `exit` and `message` lines in every
+  channel's text, as `message` and `exit_code` in the webhook payload, and as Alertmanager
+  annotations. Repeats carry them too. The PagerDuty and Opsgenie templates include the message.
 - Heartbeats have a `tolerance` (default `30s`, at most the grace): a ping this long after the
   deadline is still on time, and `late` starts when it runs out. A cron job that fires at its
   deadline and pings a second later no longer flaps late and back every run. The field sits

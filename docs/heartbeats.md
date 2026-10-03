@@ -146,7 +146,10 @@ Two ways to attach text to a ping:
   curl -fsS "$URL/1?msg=$(python3 -c 'import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1]))' 'repository is already locked by PID 4120')"
   ```
 
-Both work on every signal, including `/log`.
+Both work on every signal, including `/log`. When a ping takes the monitor `down`, what it
+carried goes into the alert: the `?msg=` as it is, or, without one, the last 20 lines of a text
+body (at most 2,000 bytes), plus the exit code. A deadline that passes has nothing to say beyond
+its reason.
 
 ## `vink run`: one command for all of it
 

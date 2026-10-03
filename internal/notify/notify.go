@@ -5,12 +5,14 @@
 package notify
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/w4jnl/vink/internal/domain"
 )
@@ -38,8 +40,51 @@ type Notification struct {
 	Incident *domain.Incident
 	Repeat   bool
 	Links    Links
+	// Message is what the job said with the ping that caused the flip: its
+	// ?msg=, or the tail of a text body. Empty when nothing was sent or the
+	// flip came from a deadline.
+	Message string
+	// ExitCode is the code the finishing ping carried, when it carried one.
+	ExitCode *int64
 	// Test marks the synthetic notification sent by a channel test.
 	Test bool
+}
+
+// Excerpt limits.
+const (
+	ExcerptLines = 20
+	ExcerptBytes = 2000
+)
+
+// Excerpt is the part of a ping body that fits in a notification: the last
+// ExcerptLines lines, at most ExcerptBytes, with a leading "…" when cut;
+// empty for a body that is not text.
+func Excerpt(body []byte) string {
+	body = bytes.TrimSpace(body)
+	if len(body) == 0 || !utf8.Valid(body) || bytes.IndexByte(body, 0) >= 0 {
+		return ""
+	}
+	cut := false
+	if len(body) > ExcerptBytes {
+		body = body[len(body)-ExcerptBytes:]
+		if i := bytes.IndexByte(body, '\n'); i >= 0 && i < len(body)-1 {
+			body = body[i+1:]
+		}
+		cut = true
+	}
+	lines := strings.Split(string(body), "\n")
+	if len(lines) > ExcerptLines {
+		lines = lines[len(lines)-ExcerptLines:]
+		cut = true
+	}
+	for i, l := range lines {
+		lines[i] = strings.TrimRight(l, " \t\r")
+	}
+	out := strings.Join(lines, "\n")
+	if cut {
+		out = "…\n" + out
+	}
+	return out
 }
 
 // Kind is the short event word: down, up, late or test.
@@ -79,6 +124,13 @@ func (n Notification) Text() string {
 		if n.Event.Reason != "" {
 			fmt.Fprintf(&b, "reason    %s\n", n.Event.Reason)
 		}
+		if n.ExitCode != nil {
+			fmt.Fprintf(&b, "exit      %d\n", *n.ExitCode)
+		}
+		if n.Message != "" {
+			// continuation lines sit under the first one
+			fmt.Fprintf(&b, "message   %s\n", strings.ReplaceAll(n.Message, "\n", "\n          "))
+		}
 		if len(n.Monitor.Tags) > 0 {
 			fmt.Fprintf(&b, "tags      %s\n", strings.Join(n.Monitor.Tags, ", "))
 		}
@@ -103,6 +155,8 @@ type Payload struct {
 	At        time.Time  `json:"at"`
 	Repeat    bool       `json:"repeat"`
 	Reason    string     `json:"reason,omitempty"`
+	Message   string     `json:"message,omitempty"`
+	ExitCode  *int64     `json:"exit_code,omitempty"`
 	Monitor   pMonitor   `json:"monitor"`
 	Project   pProject   `json:"project"`
 	Incident  *pIncident `json:"incident,omitempty"`
@@ -140,7 +194,7 @@ func (n Notification) Payload() Payload {
 		tags = []string{}
 	}
 	p := Payload{
-		Event: n.Kind(), Title: n.Title(), Text: n.Text(), At: n.Event.At.UTC(), Repeat: n.Repeat, Reason: n.Event.Reason,
+		Event: n.Kind(), Title: n.Title(), Text: n.Text(), At: n.Event.At.UTC(), Repeat: n.Repeat, Reason: n.Event.Reason, Message: n.Message, ExitCode: n.ExitCode,
 		Monitor:   pMonitor{ID: n.Monitor.ID, Slug: n.Monitor.Slug, Name: n.Monitor.Name, Kind: string(n.Monitor.Kind), Tags: tags, State: string(n.Monitor.State), StateSince: n.Monitor.StateSince.UTC()},
 		Project:   pProject{Slug: n.Project.Slug, Name: n.Project.Name, Timezone: n.Project.Timezone},
 		FromState: string(n.Event.From), ToState: string(n.Event.To), Links: n.Links,

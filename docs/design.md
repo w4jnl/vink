@@ -523,8 +523,12 @@ type Notification struct {
     Incident   *domain.Incident  // nil for late/up-without-incident
     Repeat     bool              // true for repeat_every re-sends
     Links      Links             // monitor URL, incident URL, ack URL (signed, one-click)
+    Message    string            // what the ping behind the event said: its ?msg=, else the tail of a text body (20 lines, 2,000 bytes)
+    ExitCode   *int64            // the exit code that ping carried, if any
 }
 ```
+
+A notification is built from the delivery's event; when the event points at an observation (a fail or exit ping, a synthetic run timeout, a failed check), the observation's exit code and message ride along, so the alert itself says why the job failed. Deadline flips carry neither. The text body prints them as `exit` and `message` lines under `reason`, the webhook payload as `message` and `exit_code`, Alertmanager as annotations.
 
 | Kind | Config | Notes |
 | --- | --- | --- |

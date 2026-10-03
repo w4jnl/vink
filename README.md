@@ -223,8 +223,9 @@ the events in its `on` list to its channels, with an optional `repeat_every` whi
 stays unacknowledged. Channels are `smtp`, `webhook` (a Go template over the notification;
 `docs/webhook-templates/` has PagerDuty, Opsgenie, Discord and Telegram), `ntfy`, `gotify`,
 `matrix`, `slackhook` and `alertmanager`. Deliveries go through an outbox: six attempts at 30 s,
-2 min, 10 min, 30 min and 2 h, in order per monitor. Every notification carries a signed
-acknowledgement link that works for seven days without a sign-in. Maintenance windows, one-off
+2 min, 10 min, 30 min and 2 h, in order per monitor. A `down` caused by a ping carries the
+ping's message (`?msg=` or the tail of its body) and exit code, so the alert says why. Every
+notification carries a signed acknowledgement link that works for seven days without a sign-in. Maintenance windows, one-off
 or weekly with a timezone, hold alerts back for the monitors that carry their tags.
 
 ### Status pages and badges

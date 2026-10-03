@@ -56,6 +56,51 @@ func TestTitleTextPayload(t *testing.T) {
 	if tn.Kind() != "test" || !strings.Contains(tn.Text(), "test notification") {
 		t.Errorf("test notification: %q", tn.Text())
 	}
+	// what the job said travels with the alert: the exit code and the
+	// message, with continuation lines indented under the label
+	one := int64(1)
+	n.ExitCode, n.Message = &one, "repository is already locked by PID 4120\nunlock with restic unlock"
+	text = n.Text()
+	for _, want := range []string{"reason    grace over\nexit      1\nmessage   repository is already locked by PID 4120\n          unlock with restic unlock\ntags      backup, prod"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("text missing %q:\n%s", want, text)
+		}
+	}
+	raw, _ := json.Marshal(n.Payload())
+	if !strings.Contains(string(raw), `"message":"repository is already locked by PID 4120\nunlock with restic unlock"`) || !strings.Contains(string(raw), `"exit_code":1`) {
+		t.Errorf("payload: %s", raw)
+	}
+	if raw, _ := json.Marshal(sample().Payload()); strings.Contains(string(raw), `"message"`) || strings.Contains(string(raw), `"exit_code"`) {
+		t.Errorf("empty message and exit code must be omitted: %s", raw)
+	}
+}
+
+func TestExcerpt(t *testing.T) {
+	long := strings.Repeat("x", 1500) + "\n" + strings.Repeat("y", 1500)
+	var many []string
+	for i := 1; i <= 25; i++ {
+		many = append(many, "line "+strings.Repeat("0", 2)+string(rune('a'+i%26)))
+	}
+	cases := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{"short", "disk full on /mnt/backup\n", "disk full on /mnt/backup"},
+		{"trailing spaces and crlf", "a  \r\nb\t\r\n", "a\nb"},
+		{"empty", "   \n", ""},
+		{"binary", "abc\x00def", ""},
+		{"invalid utf8", "caf\xff", ""},
+		{"too many lines keeps the tail", strings.Join(many, "\n"), "…\n" + strings.Join(many[5:], "\n")},
+		{"too many bytes keeps whole lines", long, "…\n" + strings.Repeat("y", 1500)},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := Excerpt([]byte(c.in)); got != c.want {
+				t.Fatalf("Excerpt = %q, want %q", got, c.want)
+			}
+		})
+	}
 }
 
 func TestRegistry(t *testing.T) {

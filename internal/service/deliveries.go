@@ -119,6 +119,9 @@ func (s *Service) BuildNotification(ctx context.Context, d domain.Delivery) (*no
 	}
 	project.OrgSlug = org.Slug
 	n := &notify.Notification{Event: *eventFromRow(evRow), Monitor: *m, Project: *project, Repeat: d.Repeat}
+	if err := s.attachObservation(ctx, q, d.ProjectID, n); err != nil {
+		return nil, err
+	}
 	if inc, err := q.GetOpenIncidentForMonitor(ctx, db.GetOpenIncidentForMonitorParams{ProjectID: d.ProjectID, MonitorID: d.MonitorID}); err == nil {
 		n.Incident = incidentFrom(incidentRow{inc.ID, inc.MonitorID, inc.ProjectID, inc.OpenedAt, inc.ResolvedAt, inc.AckedBy, inc.AckedAt, inc.OpenEventID, inc.CloseEventID, m.Slug, m.Name, m.TagsJSON(), n.Event.Reason})
 	} else if !db.IsNotFound(err) {
@@ -126,6 +129,38 @@ func (s *Service) BuildNotification(ctx context.Context, d domain.Delivery) (*no
 	}
 	n.Links = s.links(project, m, n.Incident)
 	return n, nil
+}
+
+// attachObservation copies what the ping or check behind the event said
+// into the notification: the exit code and the ?msg=, or the tail of a
+// text body when there was no msg. An observation the retention job has
+// already removed leaves the notification as it is.
+func (s *Service) attachObservation(ctx context.Context, q *db.Queries, projectID string, n *notify.Notification) error {
+	if n.Event.ObservationID == "" {
+		return nil
+	}
+	row, err := q.GetObservation(ctx, db.GetObservationParams{ProjectID: projectID, ID: n.Event.ObservationID})
+	if db.IsNotFound(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	obs := observationFromRow(row)
+	n.ExitCode = obs.ExitCode
+	n.Message, _ = obs.Detail["msg"].(string)
+	if n.Message != "" || !obs.HasBody {
+		return nil
+	}
+	body, err := q.GetBody(ctx, db.GetBodyParams{ProjectID: projectID, ObservationID: obs.ID})
+	if db.IsNotFound(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	n.Message = notify.Excerpt(body.Content)
+	return nil
 }
 
 // links builds the UI URLs for a notification.

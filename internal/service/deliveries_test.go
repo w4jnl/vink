@@ -147,6 +147,74 @@ func TestDownToWebhookThroughDispatcher(t *testing.T) {
 	}
 }
 
+func TestFailPingMessageReachesTheChannel(t *testing.T) {
+	f := newFixture(t)
+	withNotifier(t, f)
+	rc := newReceiver(t)
+	ctx := context.Background()
+	if _, err := f.svc.CreateChannel(ctx, f.member, &domain.Channel{Name: "hook", Kind: domain.ChannelWebhook, Config: json.RawMessage(`{"url":"` + rc.srv.URL + `"}`), Enabled: true}); err != nil {
+		t.Fatal(err)
+	}
+	f.heartbeat(t, "job", "1h", "5m", "prod")
+	tgt, _ := f.svc.ResolvePing(ctx, f.project.PingKey, "job", "", false)
+	if _, _, err := f.svc.RecordPing(ctx, tgt, PingObservation{Signal: domain.SignalOK}); err != nil {
+		t.Fatal(err)
+	}
+	disp := engine.NewDispatcher(f.svc, f.svc.log, f.clock.Now)
+	// an exit code with a ?msg=: both land in the text and the payload
+	one := int64(1)
+	f.clock.Add(time.Minute)
+	if _, _, err := f.svc.RecordPing(ctx, tgt, PingObservation{Signal: domain.SignalExit, ExitCode: &one, Msg: "repository is already locked by PID 4120", Body: []byte("ignored when a msg is there")}); err != nil {
+		t.Fatal(err)
+	}
+	if sent, _, err := disp.RunOnce(ctx); err != nil || sent != 1 {
+		t.Fatalf("dispatch: sent=%d err=%v", sent, err)
+	}
+	body := rc.last()
+	if body["event"] != "down" || body["message"] != "repository is already locked by PID 4120" || body["exit_code"] != float64(1) || body["reason"] != "exit 1" {
+		t.Fatalf("payload: %v", body)
+	}
+	if text, _ := body["text"].(string); !strings.Contains(text, "exit      1\nmessage   repository is already locked by PID 4120\n") {
+		t.Fatalf("text: %q", text)
+	}
+	// recovery carries neither
+	f.clock.Add(time.Minute)
+	if _, _, err := f.svc.RecordPing(ctx, tgt, PingObservation{Signal: domain.SignalOK}); err != nil {
+		t.Fatal(err)
+	}
+	if sent, _, _ := disp.RunOnce(ctx); sent != 1 {
+		t.Fatalf("up: sent=%d", sent)
+	}
+	if body := rc.last(); body["event"] != "up" || body["message"] != nil || body["exit_code"] != nil {
+		t.Fatalf("up payload: %v", body)
+	}
+	// a /fail with a POST body and no msg: the tail of the body is the message
+	f.clock.Add(time.Minute)
+	if _, _, err := f.svc.RecordPing(ctx, tgt, PingObservation{Signal: domain.SignalFail, Body: []byte("restic backup /home\nFatal: unable to open repository\n"), ContentType: "text/plain"}); err != nil {
+		t.Fatal(err)
+	}
+	if sent, _, _ := disp.RunOnce(ctx); sent != 1 {
+		t.Fatalf("down again: sent=%d", sent)
+	}
+	if body := rc.last(); body["event"] != "down" || body["message"] != "restic backup /home\nFatal: unable to open repository" || body["exit_code"] != nil {
+		t.Fatalf("body payload: %v", body)
+	}
+	// a deadline flip has no observation and says nothing
+	if n, err := f.svc.BuildNotification(ctx, domain.Delivery{ProjectID: f.project.ID, EventID: firstEventID(t, f, "job"), MonitorID: tgt.Monitor.ID}); err != nil || n.Message != "" || n.ExitCode != nil {
+		t.Fatalf("first ok event: %+v %v", n, err)
+	}
+}
+
+// firstEventID is the oldest event of a monitor: the new → up flip.
+func firstEventID(t *testing.T, f *fixture, slug string) string {
+	t.Helper()
+	events, err := f.svc.ListEvents(context.Background(), f.member, slug, 50)
+	if err != nil || len(events) == 0 {
+		t.Fatalf("events: %v %v", events, err)
+	}
+	return events[len(events)-1].ID
+}
+
 func TestDeliveryFailureBackoffAndDisabledChannel(t *testing.T) {
 	f := newFixture(t)
 	withNotifier(t, f)
