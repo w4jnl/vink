@@ -55,7 +55,7 @@ func TestRunCheckDrivesPullState(t *testing.T) {
 	if m.State != domain.StateUp || m.NextDueAt == nil || !m.NextDueAt.Equal(start.Add(10*time.Second)) || m.LastOkAt == nil {
 		t.Fatalf("after first ok: %+v", m)
 	}
-	obs, _ := f.svc.ListObservations(ctx, f.member, "web", ObservationPage{Limit: 10})
+	obs, _ := f.svc.ListObservations(ctx, f.member, "web", HistoryPage{Limit: 10})
 	if len(obs) != 1 || !obs[0].OK || obs[0].LatencyMs == nil || obs[0].Source != "local" || obs[0].Detail["status"] != float64(200) {
 		t.Fatalf("observation: %+v", obs)
 	}
@@ -73,7 +73,7 @@ func TestRunCheckDrivesPullState(t *testing.T) {
 	if m.State != domain.StateLate || m.FailStreak != 1 {
 		t.Fatalf("after first failure: %s streak=%d", m.State, m.FailStreak)
 	}
-	obs, _ = f.svc.ListObservations(ctx, f.member, "web", ObservationPage{Limit: 10})
+	obs, _ = f.svc.ListObservations(ctx, f.member, "web", HistoryPage{Limit: 10})
 	if len(obs) != 3 || obs[0].OK || obs[0].Detail["reason"] != "503 Service Unavailable" || obs[0].Detail["attempt"] != float64(2) || obs[1].Detail["attempts"] != float64(2) {
 		t.Fatalf("confirm observations: %+v %+v", obs[0].Detail, obs[1].Detail)
 	}

@@ -11,6 +11,14 @@ WHERE project_id = ? AND monitor_id = ?
 ORDER BY at DESC, id DESC
 LIMIT ?;
 
+-- name: ListEventsPage :many
+SELECT * FROM events
+WHERE project_id = sqlc.arg(project_id) AND monitor_id = sqlc.arg(monitor_id)
+  AND at >= sqlc.arg(since) AND at <= sqlc.arg(until)
+  AND (at < sqlc.arg(cursor_at) OR (at = sqlc.arg(cursor_at) AND id < sqlc.arg(cursor_id)))
+ORDER BY at DESC, id DESC
+LIMIT sqlc.arg(page_size);
+
 -- name: ListEventsSince :many
 SELECT * FROM events
 WHERE project_id = ? AND monitor_id = ? AND at >= ?

@@ -218,7 +218,7 @@ func (h *Web) row(c *reqCtx, m *domain.Monitor, current bool, points []float64) 
 	} else {
 		row.Last = view.Ago(*m.LastObsAt, c.now)
 		row.LastAbs = view.Abs(*m.LastObsAt, loc)
-		if last, err := h.svc.ListObservations(c.r.Context(), c.scope, m.Slug, service.ObservationPage{Limit: 1}); err == nil && len(last) == 1 {
+		if last, err := h.svc.ListObservations(c.r.Context(), c.scope, m.Slug, service.HistoryPage{Limit: 1}); err == nil && len(last) == 1 {
 			row.Last += lastDatum(last[0])
 		}
 	}
@@ -353,7 +353,7 @@ func (h *Web) drawerData(c *reqCtx, m *domain.Monitor) (*drawerData, error) {
 	}
 	d.Cells = view.HourCells(c.now, m.CreatedAt, m.State, events)
 	d.Legend = []string{"24 h ago", upLabel(view.UpPercent(c.now, m.CreatedAt, m.State, events, 24*time.Hour), ""), "now"}
-	obs, err := h.svc.ListObservations(ctx, c.scope, m.Slug, service.ObservationPage{Limit: 20})
+	obs, err := h.svc.ListObservations(ctx, c.scope, m.Slug, service.HistoryPage{Limit: 20})
 	if err != nil {
 		return nil, err
 	}

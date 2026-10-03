@@ -314,7 +314,7 @@ func (a *API) listObservations(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	p := service.ObservationPage{Since: since, Until: until, Limit: limit}
+	p := service.HistoryPage{Since: since, Until: until, Limit: limit}
 	if cursor != nil {
 		ms, err := strconv.ParseInt(cursor[0], 10, 64)
 		if err != nil {

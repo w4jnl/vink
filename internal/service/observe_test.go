@@ -158,13 +158,13 @@ func TestHeartbeatLifecycleThroughStore(t *testing.T) {
 		t.Errorf("delivery kinds: %v", kinds)
 	}
 
-	page, err := f.svc.ListObservations(ctx, f.member, "job", ObservationPage{Limit: 10})
+	page, err := f.svc.ListObservations(ctx, f.member, "job", HistoryPage{Limit: 10})
 	if err != nil || len(page) != 2 || page[0].Signal != domain.SignalExit || page[1].HasBody != true {
 		t.Fatalf("observations: %v %v", page, err)
 	}
 	// cursor: page of 1, then the rest
-	first, _ := f.svc.ListObservations(ctx, f.member, "job", ObservationPage{Limit: 1})
-	rest, _ := f.svc.ListObservations(ctx, f.member, "job", ObservationPage{Limit: 1, CursorAt: first[0].At, CursorID: first[0].ID})
+	first, _ := f.svc.ListObservations(ctx, f.member, "job", HistoryPage{Limit: 1})
+	rest, _ := f.svc.ListObservations(ctx, f.member, "job", HistoryPage{Limit: 1, CursorAt: first[0].At, CursorID: first[0].ID})
 	if len(first) != 1 || len(rest) != 1 || rest[0].ID == first[0].ID {
 		t.Fatalf("cursor paging: %v %v", first, rest)
 	}
@@ -232,7 +232,7 @@ func TestStartRunDurationAndTimeout(t *testing.T) {
 	if got.State != domain.StateDown {
 		t.Fatalf("after run timeout: %s", got.State)
 	}
-	page, _ := f.svc.ListObservations(ctx, f.member, "long", ObservationPage{Limit: 1})
+	page, _ := f.svc.ListObservations(ctx, f.member, "long", HistoryPage{Limit: 1})
 	if len(page) != 1 || page[0].Source != "local" || page[0].Detail["reason"] != "run_timeout" {
 		t.Fatalf("synthetic observation: %+v", page)
 	}
@@ -250,7 +250,7 @@ func TestPausedMonitorStoresPingsWithoutFlipping(t *testing.T) {
 	if err != nil || d.Changed {
 		t.Fatalf("paused ping: %+v %v", d, err)
 	}
-	page, _ := f.svc.ListObservations(ctx, f.member, "job", ObservationPage{})
+	page, _ := f.svc.ListObservations(ctx, f.member, "job", HistoryPage{})
 	if len(page) != 1 {
 		t.Fatal("observation must be stored while paused")
 	}

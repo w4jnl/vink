@@ -172,6 +172,7 @@ type Querier interface {
 	// tenancy: root (scheduler)
 	ListDueMonitors(ctx context.Context, arg ListDueMonitorsParams) ([]Monitor, error)
 	ListEvents(ctx context.Context, arg ListEventsParams) ([]Event, error)
+	ListEventsPage(ctx context.Context, arg ListEventsPageParams) ([]Event, error)
 	ListEventsSince(ctx context.Context, arg ListEventsSinceParams) ([]Event, error)
 	ListIncidents(ctx context.Context, arg ListIncidentsParams) ([]ListIncidentsRow, error)
 	// tenancy: org
@@ -183,6 +184,9 @@ type Querier interface {
 	ListMonitors(ctx context.Context, projectID string) ([]Monitor, error)
 	// tenancy: root (metrics endpoint, instance-wide)
 	ListMonitorsForMetrics(ctx context.Context) ([]ListMonitorsForMetricsRow, error)
+	// kind narrows the page: '' for all, 'ok' for successful pings and checks,
+	// 'fail' for failures (fail pings, non-zero exits, run timeouts, failed and
+	// confirming checks), 'run' for start and log signals.
 	ListObservations(ctx context.Context, arg ListObservationsParams) ([]Observation, error)
 	ListObservationsSince(ctx context.Context, arg ListObservationsSinceParams) ([]Observation, error)
 	ListOpenIncidents(ctx context.Context, projectID string) ([]ListOpenIncidentsRow, error)

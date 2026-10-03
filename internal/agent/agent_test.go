@@ -125,7 +125,7 @@ func TestAgentAgainstGateway(t *testing.T) {
 		cur, _ := svc.MonitorBySlug(ctx, member, "web")
 		return cur != nil && cur.State == domain.StateUp
 	})
-	obs, _ := svc.ListObservations(ctx, member, "web", service.ObservationPage{Limit: 5})
+	obs, _ := svc.ListObservations(ctx, member, "web", service.HistoryPage{Limit: 5})
 	if len(obs) == 0 || obs[0].Source != "agent:dc1" || obs[0].LatencyMs == nil || obs[0].Detail["status"] != float64(200) {
 		t.Fatalf("observation: %+v", obs)
 	}
@@ -148,7 +148,7 @@ func TestAgentAgainstGateway(t *testing.T) {
 		cur, _ := svc.MonitorBySlug(ctx, member, "web")
 		return cur != nil && cur.State == domain.StateDown
 	})
-	obs, _ = svc.ListObservations(ctx, member, "web", service.ObservationPage{Limit: 5})
+	obs, _ = svc.ListObservations(ctx, member, "web", service.HistoryPage{Limit: 5})
 	if obs[0].OK || obs[0].Detail["reason"] == nil || obs[0].Detail["attempts"] != float64(2) {
 		t.Fatalf("failed observation: %+v", obs[0])
 	}

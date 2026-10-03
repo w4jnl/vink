@@ -196,8 +196,12 @@ SELECT id, monitor_id, project_id, at, source, signal, ok, latency_ms, exit_code
 WHERE project_id = ?1 AND monitor_id = ?2
   AND at >= ?3 AND at <= ?4
   AND (at < ?5 OR (at = ?5 AND id < ?6))
+  AND (?7 = ''
+    OR (?7 = 'ok' AND ok = 1 AND signal IN ('ok', 'exit'))
+    OR (?7 = 'fail' AND ok = 0 AND signal NOT IN ('start', 'log'))
+    OR (?7 = 'run' AND signal IN ('start', 'log')))
 ORDER BY at DESC, id DESC
-LIMIT ?7
+LIMIT ?8
 `
 
 type ListObservationsParams struct {
@@ -207,9 +211,13 @@ type ListObservationsParams struct {
 	Until     int64
 	CursorAt  int64
 	CursorID  string
+	Kind      interface{}
 	PageSize  int64
 }
 
+// kind narrows the page: ” for all, 'ok' for successful pings and checks,
+// 'fail' for failures (fail pings, non-zero exits, run timeouts, failed and
+// confirming checks), 'run' for start and log signals.
 func (q *Queries) ListObservations(ctx context.Context, arg ListObservationsParams) ([]Observation, error) {
 	rows, err := q.db.QueryContext(ctx, listObservations,
 		arg.ProjectID,
@@ -218,6 +226,7 @@ func (q *Queries) ListObservations(ctx context.Context, arg ListObservationsPara
 		arg.Until,
 		arg.CursorAt,
 		arg.CursorID,
+		arg.Kind,
 		arg.PageSize,
 	)
 	if err != nil {

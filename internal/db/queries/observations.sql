@@ -6,10 +6,17 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 SELECT * FROM observations WHERE project_id = ? AND id = ?;
 
 -- name: ListObservations :many
+-- kind narrows the page: '' for all, 'ok' for successful pings and checks,
+-- 'fail' for failures (fail pings, non-zero exits, run timeouts, failed and
+-- confirming checks), 'run' for start and log signals.
 SELECT * FROM observations
 WHERE project_id = sqlc.arg(project_id) AND monitor_id = sqlc.arg(monitor_id)
   AND at >= sqlc.arg(since) AND at <= sqlc.arg(until)
   AND (at < sqlc.arg(cursor_at) OR (at = sqlc.arg(cursor_at) AND id < sqlc.arg(cursor_id)))
+  AND (sqlc.arg(kind) = ''
+    OR (sqlc.arg(kind) = 'ok' AND ok = 1 AND signal IN ('ok', 'exit'))
+    OR (sqlc.arg(kind) = 'fail' AND ok = 0 AND signal NOT IN ('start', 'log'))
+    OR (sqlc.arg(kind) = 'run' AND signal IN ('start', 'log')))
 ORDER BY at DESC, id DESC
 LIMIT sqlc.arg(page_size);
 

@@ -81,7 +81,7 @@ func (e *env) do(method, path string, body string, hdr map[string]string) *httpt
 
 func (e *env) lastObs(t *testing.T, slug string) *domain.Observation {
 	t.Helper()
-	page, err := e.svc.ListObservations(context.Background(), e.scope, slug, service.ObservationPage{Limit: 1})
+	page, err := e.svc.ListObservations(context.Background(), e.scope, slug, service.HistoryPage{Limit: 1})
 	if err != nil || len(page) == 0 {
 		t.Fatalf("no observation for %s: %v", slug, err)
 	}

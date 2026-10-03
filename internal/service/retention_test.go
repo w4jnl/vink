@@ -31,7 +31,7 @@ func TestPruneKeepsRecentAndEvents(t *testing.T) {
 	if pruned.Observations != 1 || pruned.Bodies != 2 {
 		t.Fatalf("pruned: %+v", pruned)
 	}
-	obs, _ := f.svc.ListObservations(ctx, f.member, "job", ObservationPage{Limit: 10})
+	obs, _ := f.svc.ListObservations(ctx, f.member, "job", HistoryPage{Limit: 10})
 	if len(obs) != 2 {
 		t.Fatalf("observations left: %d", len(obs))
 	}

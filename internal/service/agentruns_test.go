@@ -105,7 +105,7 @@ func TestAgentAssignmentResultsAndSweep(t *testing.T) {
 	if m.State != domain.StateUp || m.NextDueAt == nil || !m.NextDueAt.Equal(at.Add(time.Minute)) {
 		t.Fatalf("after ok: %s next=%v", m.State, m.NextDueAt)
 	}
-	obs, _ := f.svc.ListObservations(ctx, f.member, "by-name", ObservationPage{Limit: 10})
+	obs, _ := f.svc.ListObservations(ctx, f.member, "by-name", HistoryPage{Limit: 10})
 	if len(obs) != 1 || obs[0].Source != "agent:dc1" || obs[0].Detail["status"] != float64(200) {
 		t.Fatalf("observations: %+v", obs)
 	}

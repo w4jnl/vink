@@ -296,7 +296,7 @@ func (h *Web) agentDrawerFor(c *reqCtx, name string, editLabels bool, form *agen
 			row.Last = "no checks yet"
 		default:
 			row.Last = view.Ago(*m.LastObsAt, c.now)
-			if last, err := h.svc.ListObservations(ctx, domain.Scope{OrgID: c.org.ID, ProjectID: m.ProjectID, Role: domain.RoleViewer, UserID: c.scope.UserID, InstanceAdmin: c.scope.InstanceAdmin}, m.Slug, service.ObservationPage{Limit: 1}); err == nil && len(last) == 1 {
+			if last, err := h.svc.ListObservations(ctx, domain.Scope{OrgID: c.org.ID, ProjectID: m.ProjectID, Role: domain.RoleViewer, UserID: c.scope.UserID, InstanceAdmin: c.scope.InstanceAdmin}, m.Slug, service.HistoryPage{Limit: 1}); err == nil && len(last) == 1 {
 				row.Last += lastDatum(last[0])
 			}
 		}

@@ -190,7 +190,7 @@ func TestCLIPingRunLogsStatusAck(t *testing.T) {
 	if code != 3 || !strings.Contains(out, "from job") || !strings.Contains(errs, "oops") {
 		t.Fatalf("run: code=%d out=%q err=%q", code, out, errs)
 	}
-	obs, _ := e.svc.ListObservations(context.Background(), e.scope, "job", service.ObservationPage{Limit: 10})
+	obs, _ := e.svc.ListObservations(context.Background(), e.scope, "job", service.HistoryPage{Limit: 10})
 	if len(obs) != 3 || obs[0].Signal != domain.SignalExit || *obs[0].ExitCode != 3 || obs[0].DurationMs == nil || !obs[0].HasBody {
 		t.Fatalf("observations after run: %+v", obs)
 	}
@@ -242,7 +242,7 @@ func TestCLIPingRunLogsStatusAck(t *testing.T) {
 	if _, _, code := e.run("body text\n", "ping", "job", "--exit", "0", "--rid", "01ARZ3NDEKTSV4RRFFQ69G5FAV", "--body", "-"); code != 0 {
 		t.Fatal("ping exit 0")
 	}
-	obs, _ = e.svc.ListObservations(context.Background(), e.scope, "job", service.ObservationPage{Limit: 1})
+	obs, _ = e.svc.ListObservations(context.Background(), e.scope, "job", service.HistoryPage{Limit: 1})
 	if obs[0].DurationMs == nil || !obs[0].HasBody || !obs[0].OK {
 		t.Fatalf("paired ping: %+v", obs[0])
 	}

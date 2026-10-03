@@ -109,6 +109,65 @@ func (q *Queries) ListEvents(ctx context.Context, arg ListEventsParams) ([]Event
 	return items, nil
 }
 
+const listEventsPage = `-- name: ListEventsPage :many
+SELECT id, monitor_id, project_id, at, from_state, to_state, reason, observation_id FROM events
+WHERE project_id = ?1 AND monitor_id = ?2
+  AND at >= ?3 AND at <= ?4
+  AND (at < ?5 OR (at = ?5 AND id < ?6))
+ORDER BY at DESC, id DESC
+LIMIT ?7
+`
+
+type ListEventsPageParams struct {
+	ProjectID string
+	MonitorID string
+	Since     int64
+	Until     int64
+	CursorAt  int64
+	CursorID  string
+	PageSize  int64
+}
+
+func (q *Queries) ListEventsPage(ctx context.Context, arg ListEventsPageParams) ([]Event, error) {
+	rows, err := q.db.QueryContext(ctx, listEventsPage,
+		arg.ProjectID,
+		arg.MonitorID,
+		arg.Since,
+		arg.Until,
+		arg.CursorAt,
+		arg.CursorID,
+		arg.PageSize,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Event
+	for rows.Next() {
+		var i Event
+		if err := rows.Scan(
+			&i.ID,
+			&i.MonitorID,
+			&i.ProjectID,
+			&i.At,
+			&i.FromState,
+			&i.ToState,
+			&i.Reason,
+			&i.ObservationID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listEventsSince = `-- name: ListEventsSince :many
 SELECT id, monitor_id, project_id, at, from_state, to_state, reason, observation_id FROM events
 WHERE project_id = ? AND monitor_id = ? AND at >= ?
