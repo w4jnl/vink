@@ -4,12 +4,12 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{{if .Title}}{{.Title}} · {{end}}vink</title>
-<link rel="stylesheet" href="{{static "tokens.css"}}">
-<link rel="stylesheet" href="{{static "bundle.css"}}">
-<link rel="icon" type="image/svg+xml" href="{{if .Down}}{{static "favicon-down.svg"}}{{else}}{{static "favicon.svg"}}{{end}}" data-icon-up="{{static "favicon.svg"}}" data-icon-down="{{static "favicon-down.svg"}}">
+<link rel="stylesheet" href="{{.Root}}{{static "tokens.css"}}">
+<link rel="stylesheet" href="{{.Root}}{{static "bundle.css"}}">
+<link rel="icon" type="image/svg+xml" href="{{if .Down}}{{.Root}}{{static "favicon-down.svg"}}{{else}}{{.Root}}{{static "favicon.svg"}}{{end}}" data-icon-up="{{.Root}}{{static "favicon.svg"}}" data-icon-down="{{.Root}}{{static "favicon-down.svg"}}">
 {{if .CSRF}}<meta name="csrf-token" content="{{.CSRF}}">{{end}}
-<script src="{{static "htmx.min.js"}}" defer></script>
-<script src="{{static "vink.js"}}" defer></script>
+<script src="{{.Root}}{{static "htmx.min.js"}}" defer></script>
+<script src="{{.Root}}{{static "vink.js"}}" defer></script>
 </head>
 <body class="vk-app{{if .Fill}} vk-app--fill{{end}}">
 {{if .ProjectPath}}{{template "topbar" .}}{{end}}

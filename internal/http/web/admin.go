@@ -49,7 +49,7 @@ func (h *Web) orgMember(fn handlerFn) http.Handler {
 	})
 }
 
-func (c *reqCtx) orgPath() string { return "/o/" + c.org.Slug + "/admin" }
+func (c *reqCtx) orgPath() string { return c.href("/o/" + c.org.Slug + "/admin") }
 
 type adminData struct {
 	base

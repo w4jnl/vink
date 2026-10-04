@@ -282,7 +282,7 @@ func (h *Web) agentDrawerFor(c *reqCtx, name string, editLabels bool, form *agen
 			byProject[m.ProjectID]++
 			continue
 		}
-		row := ui.MonitorRowProps{State: string(m.State), Name: m.Name, Slug: m.Slug, Kind: string(m.Kind), Tags: m.Tags, Href: "/o/" + c.org.Slug + "/p/" + p.Slug + "/m/" + m.Slug, Points: []float64{}}
+		row := ui.MonitorRowProps{State: string(m.State), Name: m.Name, Slug: m.Slug, Kind: string(m.Kind), Tags: m.Tags, Href: c.href("/o/" + c.org.Slug + "/p/" + p.Slug + "/m/" + m.Slug), Points: []float64{}}
 		if len(row.Tags) > 3 {
 			row.Tags = row.Tags[:3]
 		}
@@ -311,7 +311,7 @@ func (h *Web) agentDrawerFor(c *reqCtx, name string, editLabels bool, form *agen
 	}
 	sort.Slice(ids, func(i, j int) bool { return projects[ids[i]].Slug < projects[ids[j]].Slug })
 	for _, id := range ids {
-		d.More = append(d.More, moreLink{Text: strconv.Itoa(byProject[id]) + " more in " + projects[id].Slug, Href: "/o/" + c.org.Slug + "/p/" + projects[id].Slug})
+		d.More = append(d.More, moreLink{Text: strconv.Itoa(byProject[id]) + " more in " + projects[id].Slug, Href: c.href("/o/" + c.org.Slug + "/p/" + projects[id].Slug)})
 	}
 	if state != domain.AgentConnected && late > 0 {
 		when := "when the agent went away"

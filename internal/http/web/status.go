@@ -20,6 +20,7 @@ import (
 // Public status pages: no identity, no script, cacheable for 30 s.
 
 type statusData struct {
+	Root      string // the deployment's path prefix, "" on a custom domain
 	Title     string
 	Slug      string
 	Down      bool
@@ -110,7 +111,7 @@ func (h *Web) statusPage(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	if !h.unlocked(r, page) {
-		return h.renderLocked(w, page, "", http.StatusOK)
+		return h.renderLocked(w, r, page, "", http.StatusOK)
 	}
 	return h.renderStatus(w, r, page)
 }
@@ -124,13 +125,13 @@ func (h *Web) statusUnlock(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	if !h.svc.CheckStatusPassword(page, r.PostFormValue("password")) {
-		return h.renderLocked(w, page, "Wrong password.", http.StatusUnauthorized)
+		return h.renderLocked(w, r, page, "Wrong password.", http.StatusUnauthorized)
 	}
 	http.SetCookie(w, &http.Cookie{ //nolint:gosec // Secure follows the instance's base URL scheme; a plain-http homelab has no TLS to require
-		Name: statusCookie(page.Slug), Value: h.svc.StatusToken(page), Path: "/", MaxAge: 24 * 60 * 60, HttpOnly: true, SameSite: http.SameSiteLaxMode,
+		Name: statusCookie(page.Slug), Value: h.svc.StatusToken(page), Path: cookiePath(middleware.Prefix(r)), MaxAge: 24 * 60 * 60, HttpOnly: true, SameSite: http.SameSiteLaxMode,
 		Secure: r.TLS != nil || strings.HasPrefix(h.svc.Config().BaseURL, "https://"),
 	})
-	http.Redirect(w, r, "/s/"+page.Slug, http.StatusSeeOther) //nolint:gosec // the slug comes from the database row, validated on save
+	http.Redirect(w, r, middleware.Href(r, "/s/"+page.Slug), http.StatusSeeOther) //nolint:gosec // the slug comes from the database row, validated on save
 	return nil
 }
 
@@ -142,8 +143,8 @@ func upLabel(pct, tail string) string {
 	return pct + " up" + tail
 }
 
-func (h *Web) renderLocked(w http.ResponseWriter, page *domain.StatusPage, msg string, status int) error {
-	out, err := h.tmpl.Render("status", "status-locked", statusData{Title: page.Title, Slug: page.Slug, Error: msg})
+func (h *Web) renderLocked(w http.ResponseWriter, r *http.Request, page *domain.StatusPage, msg string, status int) error {
+	out, err := h.tmpl.Render("status", "status-locked", statusData{Root: middleware.Prefix(r), Title: page.Title, Slug: page.Slug, Error: msg})
 	if err != nil {
 		return err
 	}
@@ -164,7 +165,7 @@ func (h *Web) renderStatus(w http.ResponseWriter, r *http.Request, page *domain.
 	if err != nil {
 		loc = time.UTC
 	}
-	d := statusData{Title: page.Title, Slug: page.Slug, Down: st.Down > 0, Updated: "updated " + timefmt.Clock(now, loc) + " " + now.In(loc).Format("MST")}
+	d := statusData{Root: middleware.Prefix(r), Title: page.Title, Slug: page.Slug, Down: st.Down > 0, Updated: "updated " + timefmt.Clock(now, loc) + " " + now.In(loc).Format("MST")}
 	d.Banner = statusBanner(st, loc)
 	for _, g := range st.Groups {
 		group := statusGroup{Name: g.Name}
@@ -292,4 +293,12 @@ func badgeSVG(label, value, color string) string {
 		`<g fill="#fff" text-anchor="middle" font-family="Verdana,Geneva,DejaVu Sans,sans-serif" font-size="11">`+
 		`<text x="%d" y="14">%s</text><text x="%d" y="14">%s</text></g></svg>`,
 		w, e(label), e(value), e(label), e(value), lw, lw, vw, color, lw/2, e(label), lw+vw/2, e(value))
+}
+
+// cookiePath scopes a cookie to the deployment's prefix.
+func cookiePath(prefix string) string {
+	if prefix == "" {
+		return "/"
+	}
+	return prefix
 }

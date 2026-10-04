@@ -56,7 +56,7 @@ func (h *Web) projectsTab(c *reqCtx, status int, panel *projectPanel) error {
 		counts := problems[c.org.Slug+"/"+p.Slug]
 		n := counts.Down + counts.Late + counts.Up + counts.Paused + counts.New
 		total += n
-		path := "/o/" + c.org.Slug + "/p/" + p.Slug
+		path := c.href("/o/" + c.org.Slug + "/p/" + p.Slug)
 		d.Rows = append(d.Rows, orgProjectRow{
 			Slug: p.Slug, Sub: path + " · " + p.Timezone, Href: path,
 			Cells: []ui.Cell{

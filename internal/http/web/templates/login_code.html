@@ -1,13 +1,13 @@
 {{define "content"}}<main class="vk-auth">
 <div class="vk-auth__brand">{{mark 22}}<span>vink</span></div>
-<form class="vk-auth__card" action="/login/code" method="post">
+<form class="vk-auth__card" action="{{.Root}}/login/code" method="post">
 <h1>Two-factor sign-in</h1>
 {{if .Recovery}}<p>Enter one of your recovery codes for <b>{{.Subject}}</b>. It works once.</p>
 {{field (dict "ID" "recovery" "Label" "Recovery code" "Mono" true "Placeholder" "XXXX-XXXX" "Error" .Error "Attrs" (attrs "autofocus" "" "required" "" "autocomplete" "off"))}}{{else}}<p>Enter the code from your authenticator app for <b>{{.Subject}}</b>.</p>
 {{field (dict "ID" "otp" "Label" "Code" "Otp" true "Error" .Error "Attrs" (attrs "autofocus" "" "required" ""))}}{{end}}
 {{button (dict "Label" "Verify" "Variant" "primary" "Type" "submit" "Block" true)}}
-{{if .Recovery}}<p>Have your phone? <a class="vk-link" href="/login/code">Use the app</a>.</p>{{else}}<p>Lost your phone? <a class="vk-link" href="/login/code?recovery=1">Use a recovery code</a>.</p>{{end}}
-<p><a class="vk-link" href="/login">Back to sign in</a></p>
+{{if .Recovery}}<p>Have your phone? <a class="vk-link" href="{{.Root}}/login/code">Use the app</a>.</p>{{else}}<p>Lost your phone? <a class="vk-link" href="{{.Root}}/login/code?recovery=1">Use a recovery code</a>.</p>{{end}}
+<p><a class="vk-link" href="{{.Root}}/login">Back to sign in</a></p>
 </form>
 <p class="vk-auth__foot">vink {{.Version}} · w4j.nl</p>
 </main>{{end}}

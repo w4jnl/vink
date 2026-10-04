@@ -116,4 +116,11 @@ func TestMountUnderRewritesRedirects(t *testing.T) {
 	if MountUnder("", inner) == nil || Prefix(httptest.NewRequest("GET", "/", nil)) != "" {
 		t.Error("no prefix means the handler as it is and an empty prefix")
 	}
+	pr := httptest.NewRequest("GET", "/x", nil)
+	pr = pr.WithContext(WithPrefix(pr.Context(), "/vink"))
+	for in, want := range map[string]string{"/o/x": "/vink/o/x", "/vink/o/x": "/vink/o/x", "/vink": "/vink", "/": "/vink/", "/vinkish": "/vink/vinkish"} {
+		if got := Href(pr, in); got != want {
+			t.Errorf("Href(%q) = %q, want %q", in, got, want)
+		}
+	}
 }

@@ -106,7 +106,7 @@ type userPanel struct {
 }
 
 func (h *Web) instanceData(c *reqCtx, tab string) (instanceData, error) {
-	d := instanceData{base: h.baseFor(c, "Instance", "none"), Tab: tab, TabPath: "/admin/" + tab, Version: version.Version, Flash: c.r.URL.Query().Get("flash"), Tone: "ok"}
+	d := instanceData{base: h.baseFor(c, "Instance", "none"), Tab: tab, TabPath: c.href("/admin/" + tab), Version: version.Version, Flash: c.r.URL.Query().Get("flash"), Tone: "ok"}
 	if u, err := url.Parse(h.svc.Config().BaseURL); err == nil {
 		d.Host = u.Host
 	}
@@ -120,7 +120,7 @@ func (h *Web) instanceData(c *reqCtx, tab string) (instanceData, error) {
 		return d, err
 	}
 	for _, t := range instanceTabs {
-		tab := ui.Tab{ID: t.ID, Label: t.Label, Href: "/admin/" + t.ID}
+		tab := ui.Tab{ID: t.ID, Label: t.Label, Href: c.href("/admin/" + t.ID)}
 		switch t.ID {
 		case "orgs":
 			tab.Count = ui.Count(len(orgs))
@@ -143,7 +143,7 @@ func (h *Web) instanceData(c *reqCtx, tab string) (instanceData, error) {
 }
 
 func (h *Web) instanceHome(c *reqCtx) error {
-	http.Redirect(c.w, c.r, "/admin/orgs", http.StatusSeeOther)
+	http.Redirect(c.w, c.r, c.href("/admin/orgs"), http.StatusSeeOther)
 	return nil
 }
 
@@ -184,11 +184,11 @@ func (h *Web) instanceTab(c *reqCtx) error {
 // --- orgs -----------------------------------------------------------------
 
 func (h *Web) newOrgPanel(c *reqCtx) *orgPanel {
-	return &orgPanel{Title: "Add org", Action: "/admin/orgs", CancelPath: "/admin/orgs", CSRF: c.csrf(), Values: map[string]string{}, Errors: map[string]string{}}
+	return &orgPanel{Title: "Add org", Action: c.href("/admin/orgs"), CancelPath: c.href("/admin/orgs"), CSRF: c.csrf(), Values: map[string]string{}, Errors: map[string]string{}}
 }
 
 func (h *Web) editOrgPanel(c *reqCtx, org *domain.Org) *orgPanel {
-	p := &orgPanel{Title: "Edit " + org.Slug, Action: "/admin/orgs/" + org.Slug, CancelPath: "/admin/orgs", CSRF: c.csrf(), EditID: org.Slug,
+	p := &orgPanel{Title: "Edit " + org.Slug, Action: c.href("/admin/orgs/" + org.Slug), CancelPath: c.href("/admin/orgs"), CSRF: c.csrf(), EditID: org.Slug,
 		Values: map[string]string{"org_slug": org.Slug, "org_name": org.Name, "org_q_mon": quotaString(org.QuotaMonitors), "org_q_ag": quotaString(org.QuotaAgents)}, Errors: map[string]string{}}
 	return p
 }
@@ -235,11 +235,11 @@ func (h *Web) orgsTab(c *reqCtx, status int, panel *orgPanel) error {
 		default:
 			sub += " · owners " + strings.Join(o.Owners, ", ")
 		}
-		row := orgRow{Slug: o.Org.Slug, Sub: sub, Href: "/o/" + o.Org.Slug + "/admin/members", Muted: o.Projects == 0,
+		row := orgRow{Slug: o.Org.Slug, Sub: sub, Href: c.href("/o/" + o.Org.Slug + "/admin/members"), Muted: o.Projects == 0,
 			Cells: []ui.Cell{{HTML: ui.Usage(o.Monitors, quotaInt(o.Org.QuotaMonitors), "monitors"), Size: "l"}, {HTML: ui.Usage(o.Agents, quotaInt(o.Org.QuotaAgents), "agents"), Size: "l"}}}
-		row.Actions = ui.Button(ui.ButtonProps{Label: "Edit", Href: "/admin/orgs?edit=" + url.QueryEscape(o.Org.Slug)})
+		row.Actions = ui.Button(ui.ButtonProps{Label: "Edit", Href: c.href("/admin/orgs?edit=" + url.QueryEscape(o.Org.Slug))})
 		if o.Projects == 0 {
-			row.Actions += postForm(c, "/admin/orgs/"+o.Org.Slug+"/delete", false, ui.Button(ui.ButtonProps{Label: "Delete", Variant: "danger", Confirm: "Really delete?", Type: "submit"}))
+			row.Actions += postForm(c, c.href("/admin/orgs/"+o.Org.Slug+"/delete"), false, ui.Button(ui.ButtonProps{Label: "Delete", Variant: "danger", Confirm: "Really delete?", Type: "submit"}))
 		}
 		d.OrgRows = append(d.OrgRows, row)
 	}
@@ -428,7 +428,7 @@ func (h *Web) usersTab(c *reqCtx, status int, panel *userPanel) error {
 		}
 		row := userRow{ID: u.ID, Lead: string(ui.Avatar(u.Name())), TitleHTML: title, Sub: userSub(u, loc), Muted: u.Disabled(),
 			Cells:   []ui.Cell{{Text: strings.Join(roles, " · "), Size: "l"}, {HTML: flag, Size: "m"}, {Text: seenCell(u.LastSeenAt, c.now), Size: "m", Mono: true}},
-			Actions: ui.Button(ui.ButtonProps{Label: "Edit", Href: "/admin/users?edit=" + url.QueryEscape(u.ID)}),
+			Actions: ui.Button(ui.ButtonProps{Label: "Edit", Href: c.href("/admin/users?edit=" + url.QueryEscape(u.ID))}),
 		}
 		d.UserRows = append(d.UserRows, row)
 	}
@@ -453,10 +453,10 @@ func (h *Web) userPanelFor(c *reqCtx, id string, link *noteData) (*userPanel, er
 			sub += " · " + strings.Join(roles, " · ")
 		}
 		p := &userPanel{
-			ID: u.ID, Title: "Edit " + u.Name(), Sub: sub, Action: "/admin/users/" + u.ID, CancelPath: "/admin/users", CSRF: c.csrf(),
+			ID: u.ID, Title: "Edit " + u.Name(), Sub: sub, Action: c.href("/admin/users/" + u.ID), CancelPath: c.href("/admin/users"), CSRF: c.csrf(),
 			IsAdmin: u.InstanceAdmin, Local: u.Source == "local", TOTPOn: u.TOTPOn(), Disabled: u.Disabled(), Self: u.ID == c.principal.User.ID,
-			ResetTOTPPath: "/admin/users/" + u.ID + "/totp-reset", ResetLinkPath: "/admin/users/" + u.ID + "/reset-link",
-			DisablePath: "/admin/users/" + u.ID + "/disable", EnablePath: "/admin/users/" + u.ID + "/enable", Link: link,
+			ResetTOTPPath: c.href("/admin/users/" + u.ID + "/totp-reset"), ResetLinkPath: c.href("/admin/users/" + u.ID + "/reset-link"),
+			DisablePath: c.href("/admin/users/" + u.ID + "/disable"), EnablePath: c.href("/admin/users/" + u.ID + "/enable"), Link: link,
 			AdminHint: "Can create orgs, set quotas, and see and change every org.",
 		}
 		if u.Source != "local" {
@@ -613,7 +613,7 @@ func (h *Web) resetForm(c *reqCtx, link *service.ResetLink, errMsg string) reset
 	if link.Name != "" && link.Name != link.Subject {
 		who = link.Name + " (" + link.Subject + ")"
 	}
-	d := resetData{base: h.baseFor(c, "Set a new password", ""), Action: c.r.URL.Path, Who: who, Maker: link.CreatedBy, Until: link.ExpiresAt.UTC().Format("Mon 2 Jan 15:04 MST"), Error: errMsg}
+	d := resetData{base: h.baseFor(c, "Set a new password", ""), Action: c.href(c.r.URL.Path), Who: who, Maker: link.CreatedBy, Until: link.ExpiresAt.UTC().Format("Mon 2 Jan 15:04 MST"), Error: errMsg}
 	d.Fill = true
 	return d
 }
@@ -624,7 +624,7 @@ func (h *Web) expiredReset(c *reqCtx, link *service.ResetLink) error {
 		Lead:    "The link for " + link.Subject + " was valid for 24 hours and works once.",
 		KV:      []kv{{"account", link.Subject}, {"made by", link.CreatedBy}, {"expired", link.ExpiresAt.UTC().Format("Mon 2 Jan 15:04 MST")}},
 		Note:    "Ask an instance admin for a new one. A link that was already used shows this page too.",
-		Actions: []ui.ButtonProps{{Label: "Go to sign in", Variant: "primary", Href: "/login"}},
+		Actions: []ui.ButtonProps{{Label: "Go to sign in", Variant: "primary", Href: c.href("/login")}},
 	}
 	return h.authPage(c, http.StatusGone, page)
 }
@@ -651,12 +651,12 @@ func (h *Web) resetPassword(c *reqCtx) error {
 	}
 	if _, err := h.authn.Login(c.w, c.r, u.Subject, password); err != nil {
 		if errors.Is(err, auth.ErrNeedsCode) {
-			http.Redirect(c.w, c.r, "/login/code", http.StatusSeeOther)
+			http.Redirect(c.w, c.r, c.href("/login/code"), http.StatusSeeOther)
 			return nil
 		}
-		http.Redirect(c.w, c.r, "/login", http.StatusSeeOther)
+		http.Redirect(c.w, c.r, c.href("/login"), http.StatusSeeOther)
 		return nil
 	}
-	http.Redirect(c.w, c.r, "/", http.StatusSeeOther)
+	http.Redirect(c.w, c.r, c.href("/"), http.StatusSeeOther)
 	return nil
 }

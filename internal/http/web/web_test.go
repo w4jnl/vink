@@ -42,6 +42,7 @@ type env struct {
 	cookie  *http.Cookie
 	csrf    string
 	now     time.Time
+	prefix  string
 }
 
 func newEnv(t *testing.T) *env {
@@ -52,19 +53,35 @@ func newEnv(t *testing.T) *env {
 // newEnvAuth is newEnv with its own auth config.
 func newEnvAuth(t *testing.T, authCfg config.Auth) *env {
 	t.Helper()
+	return newEnvWith(t, authCfg, "")
+}
+
+// newEnvPrefix is newEnv mounted under a path, as a deployment at
+// https://host<prefix> is.
+func newEnvPrefix(t *testing.T, prefix string) *env {
+	t.Helper()
+	return newEnvWith(t, config.Default().Auth, prefix)
+}
+
+func newEnvWith(t *testing.T, authCfg config.Auth, prefix string) *env {
+	t.Helper()
 	d := dbtest.Open(t)
 	logOut := io.Discard
 	if os.Getenv("VINK_TEST_LOG") != "" {
 		logOut = os.Stderr
 	}
 	quiet := slog.New(slog.NewTextHandler(logOut, nil))
-	svc := service.New(d, nil, quiet, service.DefaultConfig())
+	svcCfg := service.DefaultConfig()
+	if prefix != "" {
+		svcCfg.BaseURL, svcCfg.PingBaseURL = "http://vink.test"+prefix, "http://vink.test"+prefix
+	}
+	svc := service.New(d, nil, quiet, svcCfg)
 	reg, err := notify.NewRegistry(notify.Options{AllowPrivateTargets: true})
 	if err != nil {
 		t.Fatal(err)
 	}
 	svc.SetNotifier(reg)
-	e := &env{t: t, db: d, svc: svc, now: time.Date(2026, 9, 27, 12, 0, 0, 0, time.UTC)}
+	e := &env{t: t, db: d, svc: svc, now: time.Date(2026, 9, 27, 12, 0, 0, 0, time.UTC), prefix: prefix}
 	svc.SetClock(func() time.Time { return e.now })
 	ctx := context.Background()
 	admin := domain.Scope{InstanceAdmin: true, Role: domain.RoleOwner}
@@ -75,7 +92,7 @@ func newEnvAuth(t *testing.T, authCfg config.Auth) *env {
 	user, _ := svc.CreateLocalUser(ctx, admin, "j", "j@example.com", "Jaro", "correct horse", false)
 	_ = svc.SetMembership(ctx, admin, user.ID, e.org.ID, domain.RoleAdmin)
 	e.scope = domain.Scope{OrgID: e.org.ID, ProjectID: e.project.ID, UserID: user.ID, Role: domain.RoleAdmin, Actor: "test"}
-	authn, err := auth.New(svc, authCfg, "http://localhost:8080", quiet)
+	authn, err := auth.New(svc, authCfg, "http://localhost:8080"+prefix, quiet)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -87,7 +104,7 @@ func newEnvAuth(t *testing.T, authCfg config.Auth) *env {
 	e.web.SetClock(func() time.Time { return e.now })
 	mux := http.NewServeMux()
 	e.web.Mount(mux)
-	e.srv = middleware.Chain(e.web.CustomDomains(mux, mux), middleware.RequestID)
+	e.srv = middleware.Chain(e.web.CustomDomains(middleware.MountUnder(prefix, mux), mux), middleware.RequestID)
 
 	if !authCfg.Local.Enabled {
 		return e
@@ -2147,4 +2164,124 @@ func TestHistoryPage(t *testing.T) {
 	if p := e.get("/o/acme/p/prod/m/nightly/history", false); p.code != 404 {
 		t.Fatalf("cross-tenant history: %d", p.code)
 	}
+}
+
+// TestDeployedUnderAPath is the proof for the prefixed form: every page
+// renders under the prefix and nowhere else, and every path it writes,
+// in links, htmx attributes, redirects and cookies, carries the prefix.
+func TestDeployedUnderAPath(t *testing.T) {
+	e := newEnvPrefix(t, "/vink")
+	ctx := context.Background()
+	if e.cookie.Path != "/vink" {
+		t.Fatalf("session cookie path = %q", e.cookie.Path)
+	}
+	if err := e.svc.SetInstanceAdmin(ctx, domain.Scope{InstanceAdmin: true, Role: domain.RoleOwner}, "j", true); err != nil {
+		t.Fatal(err)
+	}
+	e.monitor("nightly", "backup")
+	tgt, _ := e.svc.ResolvePing(ctx, e.project.PingKey, "nightly", "", false)
+	_, _, _ = e.svc.RecordPing(ctx, tgt, service.PingObservation{Signal: domain.SignalOK, Body: []byte("x")})
+	if _, err := e.svc.CreateStatusPage(ctx, e.scope, &domain.StatusPage{Slug: "homelab", Title: "Homelab status", MatchTags: []string{"backup"}, Public: true}, ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.svc.CreateStatusPage(ctx, e.scope, &domain.StatusPage{Slug: "office", Title: "Office", Public: false}, "s3cret"); err != nil {
+		t.Fatal(err)
+	}
+	ag, _, err := e.svc.CreateAgent(ctx, domain.Scope{OrgID: e.org.ID, UserID: e.scope.UserID, Role: domain.RoleAdmin, Actor: "test"}, "dc2-probe", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = ag
+	attr := regexp.MustCompile(`(?:href|action|src|hx-get|hx-post|hx-delete|hx-push-url)="(/[^"]*)"`)
+	check := func(name, body string, hdr http.Header) {
+		t.Helper()
+		for _, m := range attr.FindAllStringSubmatch(body, -1) {
+			v := html.UnescapeString(m[1])
+			if v != "/vink" && !strings.HasPrefix(v, "/vink/") {
+				t.Errorf("%s writes an unprefixed path %q", name, v)
+			}
+		}
+		for _, h := range []string{"Location", "HX-Redirect"} {
+			if v := hdr.Get(h); v != "" && strings.HasPrefix(v, "/") && !strings.HasPrefix(v, "/vink") {
+				t.Errorf("%s: %s %q lacks the prefix", name, h, v)
+			}
+		}
+		for _, c := range hdr.Values("Set-Cookie") {
+			if !strings.Contains(c, "Path=/vink") {
+				t.Errorf("%s: cookie without the prefix path: %s", name, c)
+			}
+		}
+	}
+	pages := []string{
+		"/o/homelab/p/prod", "/o/homelab/p/prod/m/nightly", "/o/homelab/p/prod/m/new", "/o/homelab/p/prod/m/new?kind=http", "/o/homelab/p/prod/m/nightly/edit",
+		"/o/homelab/p/prod/m/nightly/history", "/o/homelab/p/prod/incidents",
+		"/o/homelab/p/prod/settings/channels", "/o/homelab/p/prod/settings/channels?add=1", "/o/homelab/p/prod/settings/routes", "/o/homelab/p/prod/settings/maintenance", "/o/homelab/p/prod/settings/pages", "/o/homelab/p/prod/settings/keys",
+		"/o/homelab/admin/members", "/o/homelab/admin/projects", "/o/homelab/admin/agents", "/o/homelab/admin/agents/dc2-probe", "/o/homelab/admin/audit",
+		"/admin/orgs", "/admin/orgs?add=1", "/admin/users", "/admin/server", "/admin/audit", "/account", "/account?setup=1", "/account?off=1", "/projects", "/s/homelab", "/s/office", "/nope",
+	}
+	for _, p := range pages {
+		full := e.get("/vink"+p, false)
+		want := 200
+		if p == "/nope" {
+			want = 404
+		}
+		if full.code != want {
+			t.Errorf("GET /vink%s: %d", p, full.code)
+			continue
+		}
+		check("GET /vink"+p, full.body, full.hdr)
+		if p != "/nope" && (strings.Contains(full.body, `href="/static/`) || !strings.Contains(full.body, `href="/vink/static/`)) {
+			t.Errorf("GET /vink%s: the stylesheet is not under the prefix", p)
+		}
+		if bare := e.get(p, false); bare.code != 404 {
+			t.Errorf("GET %s outside the prefix: %d, want 404", p, bare.code)
+		}
+	}
+	// the home page and the sign-in round trip
+	if home := e.get("/vink/", false); home.code != 303 || home.hdr.Get("Location") != "/vink/o/homelab/p/prod" {
+		t.Fatalf("home: %d %q", home.code, home.hdr.Get("Location"))
+	}
+	if anon := e.do("GET", "/vink/o/homelab/p/prod/incidents", nil, false, false); anon.code != 303 || anon.hdr.Get("Location") != "/vink/login?next=%2Fvink%2Fo%2Fhomelab%2Fp%2Fprod%2Fincidents" {
+		t.Fatalf("anonymous: %d %q", anon.code, anon.hdr.Get("Location"))
+	}
+	login := e.do("GET", "/vink/login?next=/vink/o/homelab/p/prod/incidents", nil, false, false)
+	login.has(t, `action="/vink/login"`, `name="next" value="/vink/o/homelab/p/prod/incidents"`)
+	check("login", login.body, login.hdr)
+	// four sign-ins: the per-user limit is five and the harness used one
+	for next, want := range map[string]string{"/vink/o/homelab/p/prod/incidents": "/vink/o/homelab/p/prod/incidents", "/o/homelab/p/prod": "/vink/o/homelab/p/prod", "//evil.example/": "/vink/", "/vink//evil": "/vink/"} {
+		r := e.do("POST", "/vink/login", url.Values{"username": {"j"}, "password": {"correct horse"}, "next": {next}}, false, false)
+		if r.code != 303 || r.hdr.Get("Location") != want {
+			t.Errorf("login next=%q: %d %q, want %q", next, r.code, r.hdr.Get("Location"), want)
+		}
+	}
+	// redirects after actions, by form and by htmx
+	paused := e.post("/vink/o/homelab/p/prod/m/nightly/pause", nil, false)
+	if paused.code != 303 || paused.hdr.Get("Location") != "/vink/o/homelab/p/prod/m/nightly" {
+		t.Fatalf("pause: %d %q", paused.code, paused.hdr.Get("Location"))
+	}
+	resumed := e.post("/vink/o/homelab/p/prod/m/nightly/resume", nil, true)
+	check("resume (htmx)", resumed.body, resumed.hdr)
+	created := e.post("/vink/o/homelab/p/prod/m/new", url.Values{"name": {"Photo sync"}, "schedule_type": {"period"}, "schedule": {"1h"}, "grace": {"5m"}}, true)
+	if created.code != 204 || created.hdr.Get("HX-Redirect") != "/vink/o/homelab/p/prod/m/photo-sync" {
+		t.Fatalf("create: %d %q", created.code, created.hdr.Get("HX-Redirect"))
+	}
+	// the status page unlock sets a cookie scoped to the prefix and returns under it
+	unlock := e.do("POST", "/vink/s/office", url.Values{"password": {"s3cret"}}, false, false)
+	if unlock.code != 303 || unlock.hdr.Get("Location") != "/vink/s/office" {
+		t.Fatalf("unlock: %d %q", unlock.code, unlock.hdr.Get("Location"))
+	}
+	check("unlock", unlock.body, unlock.hdr)
+	// a status page on its own domain is served at that host's root, with no prefix in its links
+	if _, err := e.svc.UpdateStatusPage(ctx, e.scope, "homelab", &domain.StatusPage{Slug: "homelab", Title: "Homelab status", MatchTags: []string{"backup"}, Public: true, CustomDomain: "status.example.test"}, ""); err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest("GET", "http://status.example.test/", nil)
+	rec := httptest.NewRecorder()
+	e.srv.ServeHTTP(rec, req)
+	if rec.Code != 200 || !strings.Contains(rec.Body.String(), `href="/static/`) || strings.Contains(rec.Body.String(), "/vink/") {
+		t.Fatalf("custom domain: %d, prefix in the body: %v", rec.Code, strings.Contains(rec.Body.String(), "/vink/"))
+	}
+	// the ping URL and the alert links come from base_url and carry the path
+	drawer := e.get("/vink/o/homelab/p/prod/m/nightly", true)
+	drawer.has(t, "http://vink.test/vink/ping/"+e.project.PingKey+"/<b>nightly</b>")
 }

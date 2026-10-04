@@ -699,7 +699,7 @@ func (h *Web) instanceAudit(c *reqCtx) error {
 		}
 		return projects[i].Slug < projects[j].Slug
 	})
-	v, err := h.auditView(c, auditOpts{path: "/admin/audit", scope: c.scope, orgs: orgs, projects: projects, instance: true})
+	v, err := h.auditView(c, auditOpts{path: c.href("/admin/audit"), scope: c.scope, orgs: orgs, projects: projects, instance: true})
 	if err != nil {
 		return err
 	}

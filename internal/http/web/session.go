@@ -24,22 +24,22 @@ func (h *Web) home(c *reqCtx) error {
 			return h.noAccess(c)
 		}
 		// an org, but no project in it yet: the chooser says what to do
-		http.Redirect(c.w, c.r, "/projects", http.StatusSeeOther)
+		http.Redirect(c.w, c.r, c.href("/projects"), http.StatusSeeOther)
 		return nil
 	}
 	if c.principal.Session != nil && c.principal.Session.LastProjectID != "" {
 		for _, p := range list {
 			if p.ID == c.principal.Session.LastProjectID {
-				http.Redirect(c.w, c.r, "/o/"+p.OrgSlug+"/p/"+p.Slug, http.StatusSeeOther)
+				http.Redirect(c.w, c.r, c.href("/o/"+p.OrgSlug+"/p/"+p.Slug), http.StatusSeeOther)
 				return nil
 			}
 		}
 	}
 	if len(list) == 1 {
-		http.Redirect(c.w, c.r, "/o/"+list[0].OrgSlug+"/p/"+list[0].Slug, http.StatusSeeOther)
+		http.Redirect(c.w, c.r, c.href("/o/"+list[0].OrgSlug+"/p/"+list[0].Slug), http.StatusSeeOther)
 		return nil
 	}
-	http.Redirect(c.w, c.r, "/projects", http.StatusSeeOther)
+	http.Redirect(c.w, c.r, c.href("/projects"), http.StatusSeeOther)
 	return nil
 }
 
@@ -75,7 +75,7 @@ func (h *Web) projects(c *reqCtx) error {
 	seen := map[string]bool{}
 	for _, p := range list {
 		seen[p.OrgSlug] = true
-		data.Projects = append(data.Projects, projectRow{Name: p.Name, Slug: p.Slug, OrgSlug: p.OrgSlug, Path: "/o/" + p.OrgSlug + "/p/" + p.Slug, Role: p.Role, Cells: []ui.Cell{{Text: string(p.Role), Size: "s"}}})
+		data.Projects = append(data.Projects, projectRow{Name: p.Name, Slug: p.Slug, OrgSlug: p.OrgSlug, Path: c.href("/o/" + p.OrgSlug + "/p/" + p.Slug), Role: p.Role, Cells: []ui.Cell{{Text: string(p.Role), Size: "s"}}})
 	}
 	for _, o := range orgs {
 		if seen[o.Slug] {
@@ -83,7 +83,7 @@ func (h *Web) projects(c *reqCtx) error {
 		}
 		e := emptyOrg{Slug: o.Slug, Cells: []ui.Cell{{Text: "no projects yet", Size: "m"}}}
 		if c.principal.InstanceAdmin || o.Role.AtLeast(domain.RoleAdmin) {
-			e.AddPath = "/o/" + o.Slug + "/admin/projects?add=1"
+			e.AddPath = c.href("/o/" + o.Slug + "/admin/projects?add=1")
 		}
 		data.Empty = append(data.Empty, e)
 	}
@@ -109,7 +109,7 @@ func (h *Web) loginData(c *reqCtx, next string) loginData {
 	data := loginData{base: h.baseFor(c, "Sign in", ""), Next: next, Local: h.authn.LocalEnabled()}
 	data.Fill = true
 	if h.authn.OIDCEnabled() {
-		o := &oidcLogin{Name: h.authn.OIDCDisplayName(), StartPath: auth.OIDCStartURL(next)}
+		o := &oidcLogin{Name: h.authn.OIDCDisplayName(), StartPath: c.href(auth.OIDCStartURL(next))}
 		if u, err := url.Parse(h.authn.OIDCIssuer()); err == nil {
 			o.Host = u.Host
 		}
@@ -122,14 +122,14 @@ func (h *Web) loginForm(c *reqCtx) error {
 	if !h.authn.LocalEnabled() && !h.authn.OIDCEnabled() {
 		return domain.NotFound("sign-in")
 	}
-	next := safeNext(c.r.URL.Query().Get("next"))
+	next := c.safeNext(c.r.URL.Query().Get("next"))
 	if c.principal != nil {
 		http.Redirect(c.w, c.r, next, http.StatusSeeOther)
 		return nil
 	}
 	q := c.r.URL.Query()
 	if h.authn.OIDCAutoRedirect() && q.Get("oidc_error") == "" && q.Get("code") == "" {
-		http.Redirect(c.w, c.r, auth.OIDCStartURL(next), http.StatusSeeOther)
+		http.Redirect(c.w, c.r, c.href(auth.OIDCStartURL(next)), http.StatusSeeOther)
 		return nil
 	}
 	data := h.loginData(c, next)
@@ -149,13 +149,13 @@ func (h *Web) oidcStart(c *reqCtx) error {
 		return domain.NotFound("sign-in")
 	}
 	if c.principal != nil {
-		http.Redirect(c.w, c.r, safeNext(c.r.URL.Query().Get("next")), http.StatusSeeOther)
+		http.Redirect(c.w, c.r, c.safeNext(c.r.URL.Query().Get("next")), http.StatusSeeOther)
 		return nil
 	}
-	to, err := h.authn.OIDCStart(c.w, c.r, safeNext(c.r.URL.Query().Get("next")))
+	to, err := h.authn.OIDCStart(c.w, c.r, c.safeNext(c.r.URL.Query().Get("next")))
 	if err != nil {
 		h.log.Error("oidc start", "err", err)
-		http.Redirect(c.w, c.r, "/login?oidc_error=provider_unreachable", http.StatusSeeOther)
+		http.Redirect(c.w, c.r, c.href("/login?oidc_error=provider_unreachable"), http.StatusSeeOther)
 		return nil
 	}
 	http.Redirect(c.w, c.r, to, http.StatusSeeOther)
@@ -180,14 +180,14 @@ func (h *Web) oidcCallback(c *reqCtx) error {
 		default:
 			h.log.Error("oidc callback", "err", err)
 		}
-		http.Redirect(c.w, c.r, "/login?oidc_error="+url.QueryEscape(code), http.StatusSeeOther)
+		http.Redirect(c.w, c.r, c.href("/login?oidc_error="+url.QueryEscape(code)), http.StatusSeeOther)
 		return nil
 	}
 	if h.authn.TOTPRequired() {
 		// never for provider accounts; their second factor is the provider's
-		next = safeNext(next)
+		next = c.safeNext(next)
 	}
-	http.Redirect(c.w, c.r, safeNext(next), http.StatusSeeOther)
+	http.Redirect(c.w, c.r, c.safeNext(next), http.StatusSeeOther)
 	return nil
 }
 
@@ -199,10 +199,10 @@ func (h *Web) login(c *reqCtx) error {
 		return err
 	}
 	user := strings.TrimSpace(c.r.PostFormValue("username"))
-	next := safeNext(c.r.PostFormValue("next"))
+	next := c.safeNext(c.r.PostFormValue("next"))
 	_, err := h.authn.LoginNext(c.w, c.r, user, c.r.PostFormValue("password"), next)
 	if errors.Is(err, auth.ErrNeedsCode) {
-		http.Redirect(c.w, c.r, "/login/code", http.StatusSeeOther)
+		http.Redirect(c.w, c.r, c.href("/login/code"), http.StatusSeeOther)
 		return nil
 	}
 	if err != nil {
@@ -237,7 +237,7 @@ func (h *Web) codeForm(c *reqCtx) error {
 	ch, err := h.authn.Challenge(c.r)
 	if err != nil {
 		if errors.Is(err, domain.ErrNotFound) {
-			http.Redirect(c.w, c.r, "/login?code=expired", http.StatusSeeOther)
+			http.Redirect(c.w, c.r, c.href("/login?code=expired"), http.StatusSeeOther)
 			return nil
 		}
 		return err
@@ -260,15 +260,15 @@ func (h *Web) code(c *reqCtx) error {
 	if err != nil {
 		switch {
 		case errors.Is(err, service.ErrCodeLocked):
-			http.Redirect(c.w, c.r, "/login?code=locked", http.StatusSeeOther)
+			http.Redirect(c.w, c.r, c.href("/login?code=locked"), http.StatusSeeOther)
 			return nil
 		case errors.Is(err, domain.ErrNotFound):
-			http.Redirect(c.w, c.r, "/login?code=expired", http.StatusSeeOther)
+			http.Redirect(c.w, c.r, c.href("/login?code=expired"), http.StatusSeeOther)
 			return nil
 		case errors.Is(err, domain.ErrUnauthorized):
 			ch, cerr := h.authn.Challenge(c.r)
 			if cerr != nil {
-				http.Redirect(c.w, c.r, "/login?code=expired", http.StatusSeeOther)
+				http.Redirect(c.w, c.r, c.href("/login?code=expired"), http.StatusSeeOther)
 				return nil
 			}
 			data := codeData{base: h.baseFor(c, "Two-factor sign-in", ""), Subject: ch.Subject, Recovery: recovery}
@@ -281,7 +281,7 @@ func (h *Web) code(c *reqCtx) error {
 		}
 		return err
 	}
-	http.Redirect(c.w, c.r, safeNext(next), http.StatusSeeOther)
+	http.Redirect(c.w, c.r, c.safeNext(next), http.StatusSeeOther)
 	return nil
 }
 
@@ -300,9 +300,9 @@ func (h *Web) logout(c *reqCtx) error {
 		return nil
 	}
 	if h.authn.LocalEnabled() || h.authn.OIDCEnabled() {
-		http.Redirect(c.w, c.r, "/login", http.StatusSeeOther)
+		http.Redirect(c.w, c.r, c.href("/login"), http.StatusSeeOther)
 		return nil
 	}
-	http.Redirect(c.w, c.r, "/", http.StatusSeeOther)
+	http.Redirect(c.w, c.r, c.href("/"), http.StatusSeeOther)
 	return nil
 }

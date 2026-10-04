@@ -1177,7 +1177,7 @@ func (h *Web) statusPageRow(c *reqCtx, p *domain.StatusPage, root string) pageRo
 		domainText = p.CustomDomain
 	}
 	row.Cells = []ui.Cell{{Text: access, Size: "s"}, {HTML: ui.HTML(tags.String())}, {Text: domainText, Size: "l", Mono: true}}
-	row.Actions = ui.Button(ui.ButtonProps{Label: "Open", Href: "/s/" + p.Slug}) + ui.Button(ui.ButtonProps{Label: "Edit", Href: root + "?edit=" + url.QueryEscape(p.Slug)})
+	row.Actions = ui.Button(ui.ButtonProps{Label: "Open", Href: c.href("/s/" + p.Slug)}) + ui.Button(ui.ButtonProps{Label: "Edit", Href: root + "?edit=" + url.QueryEscape(p.Slug)})
 	return row
 }
 

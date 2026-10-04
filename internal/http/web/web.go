@@ -160,8 +160,12 @@ type reqCtx struct {
 func (c *reqCtx) htmx() bool { return c.r.Header.Get("HX-Request") == "true" }
 
 func (c *reqCtx) projectPath() string {
-	return "/o/" + c.org.Slug + "/p/" + c.project.Slug
+	return c.href("/o/" + c.org.Slug + "/p/" + c.project.Slug)
 }
+
+// href puts the deployment's path prefix in front of a path the server
+// writes: every link, redirect and htmx attribute goes through it.
+func (c *reqCtx) href(p string) string { return middleware.Href(c.r, p) }
 
 func (c *reqCtx) csrf() string {
 	if c.principal == nil {
@@ -206,7 +210,7 @@ func (h *Web) user(fn handlerFn) http.Handler {
 		// sets it up before anything else
 		if h.authn.TOTPRequired() && c.principal.Session != nil && c.principal.User.Source == "local" && !c.principal.User.TOTPOn() &&
 			!strings.HasPrefix(c.r.URL.Path, "/account") && c.r.URL.Path != "/logout" {
-			http.Redirect(c.w, c.r, "/account?setup=1", http.StatusSeeOther)
+			http.Redirect(c.w, c.r, c.href("/account?setup=1"), http.StatusSeeOther)
 			return nil
 		}
 		return fn(c)
@@ -249,8 +253,8 @@ func (h *Web) anonymous(c *reqCtx) error {
 		if c.r.Method != http.MethodGet {
 			return domain.ErrUnauthorized
 		}
-		next := c.r.URL.RequestURI()
-		http.Redirect(c.w, c.r, "/login?next="+url.QueryEscape(next), http.StatusSeeOther)
+		next := c.href(c.r.URL.RequestURI())
+		http.Redirect(c.w, c.r, c.href("/login?next="+url.QueryEscape(next)), http.StatusSeeOther)
 		return nil
 	}
 	return h.proxyDenied(c)
@@ -260,13 +264,13 @@ func (h *Web) anonymous(c *reqCtx) error {
 func (h *Web) fail(c *reqCtx, err error) {
 	switch {
 	case errors.Is(err, errCSRF):
-		_ = h.authPage(c, http.StatusForbidden, authPage{Heading: "The form expired", Lead: err.Error(), Actions: []ui.ButtonProps{{Label: "Reload", Variant: "primary", Href: c.r.URL.RequestURI()}}})
+		_ = h.authPage(c, http.StatusForbidden, authPage{Heading: "The form expired", Lead: err.Error(), Actions: []ui.ButtonProps{{Label: "Reload", Variant: "primary", Href: c.href(c.r.URL.RequestURI())}}})
 	case errors.Is(err, domain.ErrNotFound):
-		_ = h.authPage(c, http.StatusNotFound, authPage{Heading: "Not found", Lead: "There is nothing at this address, or you cannot see it.", Actions: []ui.ButtonProps{{Label: "Back to vink", Variant: "primary", Href: "/"}}})
+		_ = h.authPage(c, http.StatusNotFound, authPage{Heading: "Not found", Lead: "There is nothing at this address, or you cannot see it.", Actions: []ui.ButtonProps{{Label: "Back to vink", Variant: "primary", Href: c.href("/")}}})
 	case errors.Is(err, domain.ErrForbidden):
-		_ = h.authPage(c, http.StatusForbidden, authPage{Heading: "Not allowed", Lead: "Your role does not allow this.", Actions: []ui.ButtonProps{{Label: "Back", Variant: "primary", Href: "/"}}})
+		_ = h.authPage(c, http.StatusForbidden, authPage{Heading: "Not allowed", Lead: "Your role does not allow this.", Actions: []ui.ButtonProps{{Label: "Back", Variant: "primary", Href: c.href("/")}}})
 	case errors.Is(err, domain.ErrUnauthorized):
-		_ = h.authPage(c, http.StatusUnauthorized, authPage{Heading: "Sign in", Lead: "Sign in to continue.", Actions: []ui.ButtonProps{{Label: "Sign in", Variant: "primary", Href: "/login"}}})
+		_ = h.authPage(c, http.StatusUnauthorized, authPage{Heading: "Sign in", Lead: "Sign in to continue.", Actions: []ui.ButtonProps{{Label: "Sign in", Variant: "primary", Href: c.href("/login")}}})
 	default:
 		reqID := middleware.GetRequestID(c.r.Context())
 		h.log.Error("ui error", "err", err, "path", c.r.URL.Path, "req_id", reqID)
@@ -274,7 +278,7 @@ func (h *Web) fail(c *reqCtx, err error) {
 			Heading: "Something broke", Lead: "The request failed inside vink. The server log has the reason.",
 			KV:      []kv{{"status", "500"}, {"request", reqID}, {"time", c.now.Format("2006-01-02 15:04:05 MST")}},
 			Note:    "Give your admin the request id.",
-			Actions: []ui.ButtonProps{{Label: "Try again", Variant: "primary", Href: c.r.URL.RequestURI()}, {Label: "Copy details", Attrs: ui.Attr("data-copy", "500 "+reqID+" "+c.now.Format(time.RFC3339))}},
+			Actions: []ui.ButtonProps{{Label: "Try again", Variant: "primary", Href: c.href(c.r.URL.RequestURI())}, {Label: "Copy details", Attrs: ui.Attr("data-copy", "500 "+reqID+" "+c.now.Format(time.RFC3339))}},
 		})
 	}
 }
@@ -298,10 +302,12 @@ type base struct {
 	// Menu and UserMenu are the top bar's popover panels.
 	Menu     ui.HTML
 	UserMenu ui.HTML
+	// Root is the deployment's path prefix, for the paths templates write.
+	Root string
 }
 
 func (h *Web) baseFor(c *reqCtx, title, section string) base {
-	b := base{Title: title, CSRF: c.csrf(), Section: section, Version: version.Version}
+	b := base{Title: title, CSRF: c.csrf(), Section: section, Version: version.Version, Root: middleware.Prefix(c.r)}
 	if c.principal != nil {
 		b.UserName = c.principal.User.DisplayName
 		if b.UserName == "" {
@@ -348,15 +354,15 @@ func (h *Web) menus(c *reqCtx, b *base) {
 		}
 		switch {
 		case pick != nil:
-			b.OrgSlug, b.ProjectSlug, b.ProjectPath = pick.OrgSlug, pick.Slug, "/o/"+pick.OrgSlug+"/p/"+pick.Slug
+			b.OrgSlug, b.ProjectSlug, b.ProjectPath = pick.OrgSlug, pick.Slug, c.href("/o/"+pick.OrgSlug+"/p/"+pick.Slug)
 		case c.org != nil:
-			b.OrgSlug, b.ProjectSlug, b.ProjectPath = c.org.Slug, "projects", "/projects"
+			b.OrgSlug, b.ProjectSlug, b.ProjectPath = c.org.Slug, "projects", c.href("/projects")
 		default:
 			orgs := h.orgsFor(c)
 			if len(orgs) == 0 {
 				return
 			}
-			b.OrgSlug, b.ProjectSlug, b.ProjectPath = orgs[0].Slug, "projects", "/projects"
+			b.OrgSlug, b.ProjectSlug, b.ProjectPath = orgs[0].Slug, "projects", c.href("/projects")
 		}
 	}
 	// every org the viewer has a role in comes first, so an org without
@@ -380,7 +386,7 @@ func (h *Web) menus(c *reqCtx, b *base) {
 		}
 		cnt := counts[pr.OrgSlug+"/"+pr.Slug]
 		g.group.Items = append(g.group.Items, ui.MenuItem{
-			Label: pr.Slug, Href: "/o/" + pr.OrgSlug + "/p/" + pr.Slug, Current: pr.OrgSlug == b.OrgSlug && pr.Slug == b.ProjectSlug,
+			Label: pr.Slug, Href: c.href("/o/" + pr.OrgSlug + "/p/" + pr.Slug), Current: pr.OrgSlug == b.OrgSlug && pr.Slug == b.ProjectSlug,
 			Meta: ui.StateCounts(ui.StateCountsProps{Down: cnt.Down, Late: cnt.Late, Up: cnt.Up, Paused: cnt.Paused, New: cnt.New, Problems: true}),
 		})
 	}
@@ -390,8 +396,8 @@ func (h *Web) menus(c *reqCtx, b *base) {
 		groups = append(groups, g.group)
 		if p.InstanceAdmin || g.role.AtLeast(domain.RoleAdmin) {
 			groups = append(groups, ui.MenuGroup{Items: []ui.MenuItem{
-				{Label: "New project", Href: "/o/" + slug + "/admin/projects?add=1", Quiet: true},
-				{Label: "Org settings", Href: "/o/" + slug + "/admin/projects", Quiet: true},
+				{Label: "New project", Href: c.href("/o/" + slug + "/admin/projects?add=1"), Quiet: true},
+				{Label: "Org settings", Href: c.href("/o/" + slug + "/admin/projects"), Quiet: true},
 			}})
 		}
 	}
@@ -400,14 +406,14 @@ func (h *Web) menus(c *reqCtx, b *base) {
 	if p.InstanceAdmin {
 		role = "instance admin"
 	}
-	items := []ui.MenuItem{{Label: "Account", Href: "/account"}}
+	items := []ui.MenuItem{{Label: "Account", Href: c.href("/account")}}
 	if p.InstanceAdmin {
-		items = append(items, ui.MenuItem{Label: "Instance admin", Href: "/admin/orgs"})
+		items = append(items, ui.MenuItem{Label: "Instance admin", Href: c.href("/admin/orgs")})
 	}
-	items = append(items, ui.MenuItem{Label: "API reference", Href: "/api/v1/openapi.yaml", Meta: ui.HTML(`<span class="vk-counts__none">openapi.yaml</span>`)})
+	items = append(items, ui.MenuItem{Label: "API reference", Href: c.href("/api/v1/openapi.yaml"), Meta: ui.HTML(`<span class="vk-counts__none">openapi.yaml</span>`)})
 	b.UserMenu = ui.Menu([]ui.MenuGroup{
 		{Label: b.UserName, Role: role, Items: items},
-		{Items: []ui.MenuItem{{Label: "Sign out", Href: "/logout", Quiet: true}}},
+		{Items: []ui.MenuItem{{Label: "Sign out", Href: c.href("/logout"), Quiet: true}}},
 	})
 }
 
@@ -447,7 +453,7 @@ func (h *Web) proxyDenied(c *reqCtx) error {
 		Lead:    "This vink signs people in through an authenticating proxy, and this request arrived without a user. Open vink through the proxy’s address. If you did, ask your admin to check the proxy settings.",
 		KV:      []kv{{"status", "403"}, {"request", reqID}, {"time", c.now.Format("2006-01-02 15:04:05 MST")}},
 		Note:    "Give your admin the request id; the server log has the reason.",
-		Actions: []ui.ButtonProps{{Label: "Try again", Variant: "primary", Href: c.r.URL.RequestURI()}, {Label: "Copy details", Attrs: ui.Attr("data-copy", "403 "+reqID+" "+c.now.Format(time.RFC3339))}},
+		Actions: []ui.ButtonProps{{Label: "Try again", Variant: "primary", Href: c.href(c.r.URL.RequestURI())}, {Label: "Copy details", Attrs: ui.Attr("data-copy", "403 "+reqID+" "+c.now.Format(time.RFC3339))}},
 	})
 }
 
@@ -459,7 +465,7 @@ func (h *Web) noAccess(c *reqCtx) error {
 		page.Lead = "The proxy signed you in as " + p.User.Subject + ", but none of your groups gives access to an org in vink."
 		page.KV = []kv{{"user", p.User.Subject}, {"groups", strings.Join(p.Groups, ", ")}, {"needs", "vink:<org>:<role>, for example vink:homelab:viewer"}}
 		page.Note = "Ask an admin to add you to one of those groups. vink reads your groups again on the next page load."
-		page.Actions = []ui.ButtonProps{{Label: "Reload", Variant: "primary", Href: "/"}}
+		page.Actions = []ui.ButtonProps{{Label: "Reload", Variant: "primary", Href: c.href("/")}}
 		if h.authn.LogoutURL() != "" {
 			page.Actions = append(page.Actions, ui.ButtonProps{Label: "Sign out", Href: h.authn.LogoutURL()})
 		}
@@ -467,7 +473,7 @@ func (h *Web) noAccess(c *reqCtx) error {
 		page.Lead = "You are signed in as " + p.User.Subject + ", but no org lists you as a member."
 		page.KV = []kv{{"user", p.User.Subject}}
 		page.Note = "Ask an admin to add you with vink admin user create --org <slug>, or to an org through the API."
-		page.Actions = []ui.ButtonProps{{Label: "Reload", Variant: "primary", Href: "/"}, {Label: "Sign out", Type: "submit", Attrs: ui.Attr("form", "logout-form")}}
+		page.Actions = []ui.ButtonProps{{Label: "Reload", Variant: "primary", Href: c.href("/")}, {Label: "Sign out", Type: "submit", Attrs: ui.Attr("form", "logout-form")}}
 	}
 	if len(page.KV) > 0 && page.KV[len(page.KV)-1].Key == "groups" && len(p.Groups) == 0 {
 		page.KV[len(page.KV)-1].Value = "none"
@@ -481,7 +487,7 @@ func (h *Web) noAccess(c *reqCtx) error {
 	c.w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	c.w.WriteHeader(http.StatusForbidden)
 	_, _ = c.w.Write(out)
-	_, _ = c.w.Write([]byte(`<form id="logout-form" class="vk-sr" method="post" action="/logout"><input type="hidden" name="_csrf" value="` + c.csrf() + `"></form>`))
+	_, _ = c.w.Write([]byte(`<form id="logout-form" class="vk-sr" method="post" action="` + c.href("/logout") + `"><input type="hidden" name="_csrf" value="` + c.csrf() + `"></form>`))
 	return nil
 }
 
@@ -507,8 +513,9 @@ func (h *Web) render(c *reqCtx, status int, page, name string, data any) error {
 	return nil
 }
 
-// redirect sends a browser or an htmx client to path.
+// redirect sends a browser or an htmx client to path, under the prefix.
 func (h *Web) redirect(c *reqCtx, path string) error {
+	path = c.href(path)
 	if c.htmx() {
 		c.w.Header().Set("HX-Redirect", path)
 		c.w.WriteHeader(http.StatusNoContent)
@@ -518,12 +525,22 @@ func (h *Web) redirect(c *reqCtx, path string) error {
 	return nil
 }
 
-// safeNext keeps redirects on this site.
-func safeNext(s string) string {
-	if s == "" || !strings.HasPrefix(s, "/") || strings.HasPrefix(s, "//") || strings.Contains(s, "\\") {
-		return "/"
+// safeNext keeps redirects on this site and under its prefix: it takes
+// the prefixed value the pages wrote or a root-relative one, and returns
+// a prefixed path, or the home page for anything else.
+func (c *reqCtx) safeNext(s string) string {
+	if prefix := middleware.Prefix(c.r); prefix != "" {
+		switch {
+		case s == prefix:
+			s = "/"
+		case strings.HasPrefix(s, prefix+"/"):
+			s = strings.TrimPrefix(s, prefix)
+		}
 	}
-	return s
+	if s == "" || !strings.HasPrefix(s, "/") || strings.HasPrefix(s, "//") || strings.Contains(s, "\\") {
+		return c.href("/")
+	}
+	return c.href(s)
 }
 
 // orgRef is one org the viewer can see, with the role there.

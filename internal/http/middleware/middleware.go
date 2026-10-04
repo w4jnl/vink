@@ -171,9 +171,15 @@ func Prefix(r *http.Request) string {
 }
 
 // Href puts the request's prefix in front of a root-relative path. Every
-// path the server writes goes through it.
+// path the server writes goes through it. A path that already carries
+// the prefix is left alone (the prefix never starts with a vink route,
+// so the two cannot be confused), which lets helpers nest freely.
 func Href(r *http.Request, p string) string {
-	return Prefix(r) + p
+	prefix := Prefix(r)
+	if prefix == "" || p == prefix || strings.HasPrefix(p, prefix+"/") {
+		return p
+	}
+	return prefix + p
 }
 
 // WithPrefix records the prefix on a context.

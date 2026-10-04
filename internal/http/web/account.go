@@ -82,11 +82,11 @@ func (h *Web) accountData(c *reqCtx) (accountData, error) {
 		d.TOTPSub = "on since " + timefmt.Ago(*u.TOTPEnabledAt, c.now) + " · " + strconv.Itoa(left) + " of " + strconv.Itoa(total) + " recovery codes left"
 		d.TOTPCells = []ui.Cell{{HTML: ui.StateBadge(ui.StateBadgeProps{State: "up", Label: "on"}), Size: "m"}}
 		d.TOTPActions = ui.Button(ui.ButtonProps{Label: "New codes", Type: "submit", Confirm: "Really replace the codes?", Attrs: ui.Attr("form", "codes-form")}) +
-			ui.Button(ui.ButtonProps{Label: "Turn off", Variant: "danger", Href: "/account?off=1"})
+			ui.Button(ui.ButtonProps{Label: "Turn off", Variant: "danger", Href: c.href("/account?off=1")})
 	} else {
 		d.TOTPSub = "off · a code from your phone after the password"
 		d.TOTPCells = []ui.Cell{{HTML: ui.StateBadge(ui.StateBadgeProps{State: "paused", Label: "off"}), Size: "m"}}
-		d.TOTPActions = ui.Button(ui.ButtonProps{Label: "Turn on", Variant: "primary", Href: "/account?setup=1"})
+		d.TOTPActions = ui.Button(ui.ButtonProps{Label: "Turn on", Variant: "primary", Href: c.href("/account?setup=1")})
 	}
 	if c.principal.Session != nil {
 		d.HasSessions = true
@@ -102,7 +102,7 @@ func (h *Web) accountData(c *reqCtx) (accountData, error) {
 				row.TitleHTML += " " + ui.Tag("this session")
 			} else {
 				d.Others++
-				row.Actions = postForm(c, "/account/sessions/"+s.ID+"/delete", false, ui.Button(ui.ButtonProps{Label: "Sign out", Type: "submit"}))
+				row.Actions = postForm(c, c.href("/account/sessions/"+s.ID+"/delete"), false, ui.Button(ui.ButtonProps{Label: "Sign out", Type: "submit"}))
 			}
 			d.Sessions = append(d.Sessions, row)
 		}

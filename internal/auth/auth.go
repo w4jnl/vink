@@ -77,16 +77,17 @@ func (p *Principal) CSRF() string {
 
 // Authenticator resolves identities.
 type Authenticator struct {
-	svc       *service.Service
-	cfg       config.Auth
-	log       *slog.Logger
-	secure    bool
-	trusted   []*net.IPNet
-	groupRe   *regexp.Regexp
-	loginIP   *ratelimit.Limiter
-	loginUser *ratelimit.Limiter
-	now       func() time.Time
-	baseURL   string
+	svc        *service.Service
+	cfg        config.Auth
+	log        *slog.Logger
+	secure     bool
+	cookiePath string
+	trusted    []*net.IPNet
+	groupRe    *regexp.Regexp
+	loginIP    *ratelimit.Limiter
+	loginUser  *ratelimit.Limiter
+	now        func() time.Time
+	baseURL    string
 	// proxyRules and oidcRules map each provider's groups to roles.
 	proxyRules groupRules
 	oidcRules  groupRules
@@ -103,8 +104,15 @@ func New(svc *service.Service, cfg config.Auth, baseURL string, log *slog.Logger
 		loginIP: ratelimit.New(10, 10), loginUser: ratelimit.New(5, 5),
 		now: func() time.Time { return time.Now().UTC() },
 	}
-	if u, err := url.Parse(baseURL); err == nil && u.Scheme == "https" {
-		a.secure = true
+	if u, err := url.Parse(baseURL); err == nil {
+		a.secure = u.Scheme == "https"
+		// cookies are scoped to the path vink is served under
+		if p := strings.TrimRight(u.Path, "/"); p != "" {
+			a.cookiePath = p
+		}
+	}
+	if a.cookiePath == "" {
+		a.cookiePath = "/"
 	}
 	for _, c := range cfg.Proxy.TrustedCIDRs {
 		_, n, err := net.ParseCIDR(c)
@@ -422,7 +430,7 @@ func (a *Authenticator) setCookie(w http.ResponseWriter, value string, exp time.
 
 func (a *Authenticator) setNamedCookie(w http.ResponseWriter, name, value string, exp time.Time) {
 	c := &http.Cookie{ //nolint:gosec // G124: Secure follows server.base_url's scheme; plain http is legitimate on a LAN install
-		Name: name, Value: value, Path: "/", HttpOnly: true, Secure: a.secure, SameSite: http.SameSiteLaxMode, Expires: exp,
+		Name: name, Value: value, Path: a.cookiePath, HttpOnly: true, Secure: a.secure, SameSite: http.SameSiteLaxMode, Expires: exp,
 	}
 	if value == "" {
 		c.MaxAge = -1

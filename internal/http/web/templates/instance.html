@@ -1,7 +1,7 @@
 {{define "content"}}<div class="vk-page vk-page--full" id="page"><main class="vk-main" id="instance">
 <div class="vk-main__head"><h1>Instance</h1><span class="vk-muted vk-mono">vink {{.Version}} · {{.Host}}</span></div>
 {{tabs .Tabs .Tab "Instance"}}
-<div id="tab"><div class="vk-tabhead"><p class="vk-lede">{{.Lede}}</p>{{if and (eq .Tab "orgs") (not .OrgPanel)}}{{button (dict "Label" "Add org" "Href" "/admin/orgs?add=1")}}{{end}}</div>
+<div id="tab"><div class="vk-tabhead"><p class="vk-lede">{{.Lede}}</p>{{if and (eq .Tab "orgs") (not .OrgPanel)}}{{button (dict "Label" "Add org" "Href" (print .Root "/admin/orgs?add=1"))}}{{end}}</div>
 {{if .Flash}}{{notice .Tone "" .Flash ""}}{{end}}
 {{if eq .Tab "orgs"}}{{template "instance-orgs" .}}{{else if eq .Tab "users"}}{{template "instance-users" .}}{{else if eq .Tab "audit"}}{{template "instance-audit" .}}{{else}}{{template "instance-server" .}}{{end}}</div>
 </main></div>{{end}}
@@ -19,7 +19,7 @@
 
 {{define "org-actions"}}{{if .EditID}}{{button (dict "Label" "Save" "Variant" "primary" "Type" "submit" "Attrs" (attrs "form" "org-form"))}}{{else}}{{button (dict "Label" "Create org" "Variant" "primary" "Type" "submit" "Attrs" (attrs "form" "org-form"))}}{{end}}{{button (dict "Label" "Cancel" "Href" .CancelPath)}}{{end}}
 
-{{define "instance-users"}}<form class="vk-chips" method="get" action="/admin/users">{{.Chips}}</form>
+{{define "instance-users"}}<form class="vk-chips" method="get" action="{{.Root}}/admin/users">{{.Chips}}</form>
 <div class="vk-srows">{{range .UserRows}}{{if and $.UserPanel (eq $.UserPanel.ID .ID)}}{{template "user-panel" $.UserPanel}}{{else}}{{settingsrow (dict "Lead" .Lead "HasLead" true "TitleHTML" .TitleHTML "Sub" .Sub "Muted" .Muted "Cells" .Cells "Actions" .Actions)}}{{end}}{{end}}</div>{{end}}
 
 {{define "user-panel"}}<form id="user-form" class="vk-sr" method="post" action="{{.Action}}"><input type="hidden" name="_csrf" value="{{.CSRF}}"></form>

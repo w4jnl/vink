@@ -428,7 +428,7 @@ func (h *Web) inviteForm(c *reqCtx, inv *domain.Invite, values map[string]string
 		values = map[string]string{}
 	}
 	d := inviteFormData{
-		base: h.baseFor(c, "Join "+inv.OrgSlug, ""), Action: c.r.URL.Path, Org: inv.OrgSlug, Role: string(inv.Role), Inviter: inv.CreatedBy,
+		base: h.baseFor(c, "Join "+inv.OrgSlug, ""), Action: c.href(c.r.URL.Path), Org: inv.OrgSlug, Role: string(inv.Role), Inviter: inv.CreatedBy,
 		Expires: inv.ExpiresAt.In(time.UTC).Format("Mon 2 Jan"), Values: values, Errors: map[string]string{},
 	}
 	d.Fill = true
@@ -448,7 +448,7 @@ func (h *Web) expiredInvite(c *reqCtx, inv *domain.Invite) error {
 		Lead:    "The link to join " + inv.OrgSlug + " was valid for 7 days and ran out on " + ran.UTC().Format("Mon 2 Jan") + ".",
 		KV:      []kv{{"org", inv.OrgSlug}, {"invited by", inv.CreatedBy}, {"role", string(inv.Role)}, {"expired", ran.UTC().Format("Mon 2 Jan 15:04 MST")}},
 		Note:    "Ask " + inv.CreatedBy + " or another admin of " + inv.OrgSlug + " for a new link. A link that was already used shows this page too.",
-		Actions: []ui.ButtonProps{{Label: "Go to sign in", Variant: "primary", Href: "/login"}},
+		Actions: []ui.ButtonProps{{Label: "Go to sign in", Variant: "primary", Href: c.href("/login")}},
 	}
 	return h.authPage(c, http.StatusGone, page)
 }
@@ -493,9 +493,9 @@ func (h *Web) acceptInvite(c *reqCtx) error {
 		return err
 	}
 	if h.authn.TOTPRequired() {
-		http.Redirect(c.w, c.r, "/account?setup=1", http.StatusSeeOther)
+		http.Redirect(c.w, c.r, c.href("/account?setup=1"), http.StatusSeeOther)
 		return nil
 	}
-	http.Redirect(c.w, c.r, "/", http.StatusSeeOther)
+	http.Redirect(c.w, c.r, c.href("/"), http.StatusSeeOther)
 	return nil
 }

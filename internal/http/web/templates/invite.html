@@ -9,7 +9,7 @@
 {{field (dict "ID" "display_name" "Label" "Name" "Value" .Values.display_name "Autocomplete" "name")}}
 {{field (dict "ID" "password" "Label" "Password" "Type" "password" "Hint" "12 characters or more." "Error" .Errors.password "Autocomplete" "new-password" "Attrs" (attrs "required" ""))}}
 {{button (dict "Label" "Create account" "Variant" "primary" "Type" "submit" "Block" true)}}
-<p>Already have an account here? <a class="vk-link" href="/login">Sign in</a>, then open the link again.</p>
+<p>Already have an account here? <a class="vk-link" href="{{.Root}}/login">Sign in</a>, then open the link again.</p>
 </form>
 <p class="vk-auth__foot">vink {{.Version}} · w4j.nl</p>
 </main>{{end}}
