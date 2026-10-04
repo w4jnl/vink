@@ -224,6 +224,21 @@ func TestBodyCaptureTruncationAndMsg(t *testing.T) {
 	}
 }
 
+// TestMonitorBodyLimit: a monitor's own lower limit is the one refused
+// and the one Ping-Body-Limit reports.
+func TestMonitorBodyLimit(t *testing.T) {
+	e := newEnv(t)
+	e.monitor(t, "small", &domain.HeartbeatSpec{Schedule: domain.Schedule{Period: domain.MustDuration("1h")}, BodyLimit: 8})
+	base := "/ping/" + e.project.PingKey + "/small"
+	rec := e.do("POST", base, strings.Repeat("x", 9), nil)
+	if rec.Code != 413 || rec.Header().Get("Ping-Body-Limit") != "8" {
+		t.Fatalf("over the monitor's limit: %d, Ping-Body-Limit %q", rec.Code, rec.Header().Get("Ping-Body-Limit"))
+	}
+	if rec := e.do("POST", base, strings.Repeat("x", 8), nil); rec.Code != 200 {
+		t.Fatalf("at the monitor's limit: %d", rec.Code)
+	}
+}
+
 func TestMethodRestriction(t *testing.T) {
 	e := newEnv(t)
 	e.monitor(t, "postonly", &domain.HeartbeatSpec{Schedule: domain.Schedule{Period: domain.MustDuration("1h")}, Methods: []string{"POST"}})

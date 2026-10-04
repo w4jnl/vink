@@ -129,6 +129,9 @@ func (h *Handler) handle(w http.ResponseWriter, r *http.Request, key, slug, id s
 	limit := h.opts.BodyLimit
 	if m.Heartbeat.BodyLimit > 0 && m.Heartbeat.BodyLimit < limit {
 		limit = m.Heartbeat.BodyLimit
+		// the monitor's own limit is the one that applies, so a client
+		// that cuts its body to this header after a 413 gets through
+		w.Header().Set("Ping-Body-Limit", strconv.FormatInt(limit, 10))
 	}
 	if r.ContentLength > limit {
 		http.Error(w, "body too large", http.StatusRequestEntityTooLarge)
