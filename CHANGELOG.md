@@ -6,6 +6,15 @@ updates this file first. Dates are the tag dates.
 
 ## Unreleased
 
+- `vink ping` and `vink run` send their pings through the Go ping module, so they gain what it
+  does. A ping is tried up to three times when vink cannot be reached, answers 5xx or
+  rate-limits it. A 413 is sent once more with the body cut to the monitor's limit, and messages
+  are cut on a whole character. `--body -` now keeps the last 64 kB of stdin instead of the
+  first. The start ping of `vink run` gets one try of at most five seconds, so an outage holds a
+  job up no longer than that. `-d` shows every attempt.
+- `vink run` passes Ctrl-C and `SIGTERM` to the command and lets it stop in its own way, then
+  reports how it ended. Before, the cancelled context killed the command outright and the finish
+  ping failed with it, so the run stayed open until `max_runtime` caught it.
 - `vink ping` and `vink run` no longer print the ping key. When vink could not be reached, the
   error and the warnings quoted the whole ping URL, key included, and a job's output often ends
   up in cron mail or a pasted log. The key now reads `<ping key>` there and in `-d` debug lines.

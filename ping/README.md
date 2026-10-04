@@ -4,8 +4,9 @@
 server from Go code. A job tells vink when it starts, how it ended and how far it got, and vink
 alerts when a ping does not arrive or reports a failure.
 
-It is the library form of `vink ping` and `vink run`. It depends on the standard library only,
-works with Go 1.22 and later, and needs the project's ping key, never an API key.
+It is the library form of `vink ping` and `vink run`, and those two send their pings through it.
+It depends on the standard library only, works with Go 1.22 and later, and needs the project's
+ping key, never an API key.
 
 ```sh
 go get github.com/w4jnl/vink/ping@latest

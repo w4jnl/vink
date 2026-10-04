@@ -2,22 +2,22 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io"
-	"net/url"
 	"os"
 	"os/exec"
 	"os/signal"
-	"strconv"
 	"strings"
 	"sync"
 	"syscall"
+	"time"
 
 	"github.com/spf13/cobra"
 
 	"github.com/w4jnl/vink/internal/cli"
-	"github.com/w4jnl/vink/internal/domain"
+	"github.com/w4jnl/vink/ping"
 )
 
 // pingFlags are the client flags plus a ping key and a ping address. With
@@ -35,41 +35,30 @@ func (f *pingFlags) add(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&f.url, "ping-url", "", "where pings go: a ping URL up to the key, ending in /ping/ (env VINK_PING_URL; default: the server's)")
 }
 
-// pingTarget resolves the client, the ping base (ending in /ping/) and the
-// ping key. A ping key from --ping-key or VINK_PING_KEY is used as it is;
-// otherwise the API key fetches it from /me once and the context caches it.
+// pingTarget resolves the ping base (ending in /ping/) and the ping key.
+// A ping key from --ping-key or VINK_PING_KEY is used as it is; otherwise
+// the API key fetches it from /me once and the context caches it.
 // --ping-url or VINK_PING_URL, when set, is where the pings go either way.
-func pingTarget(cmd *cobra.Command, f *pingFlags) (*cli.Client, string, string, error) {
+// The ping module checks both when the client is made.
+func pingTarget(cmd *cobra.Command, f *pingFlags) (string, string, error) {
 	base := firstSet(f.url, os.Getenv("VINK_PING_URL"))
-	if base != "" {
-		b, err := pingBaseURL(base)
-		if err != nil {
-			return nil, "", "", err
-		}
-		base = b
-	}
 	if key := firstSet(f.key, os.Getenv("VINK_PING_KEY")); key != "" {
-		if strings.ContainsAny(key, "/?#%& \t\r\n") {
-			return nil, "", "", cli.UserError("the ping key is the key alone: the part after /ping/ in a ping URL")
-		}
 		if base == "" {
 			b, err := f.serverPingBase()
 			if err != nil {
-				return nil, "", "", err
+				return "", "", err
 			}
 			base = b
 		}
-		c := cli.NewClient("", "")
-		c.Debug, c.Log = f.g.debug, cmd.ErrOrStderr()
-		return c, base, key, nil
+		return base, key, nil
 	}
 	c, cfg, res, _, err := f.connect(cmd)
 	if err != nil {
-		return nil, "", "", err
+		return "", "", err
 	}
 	if !res.FromEnv {
 		if ctx := cfg.Contexts[res.Name]; ctx.PingBase != "" && ctx.PingKey != "" {
-			return c, firstSet(base, ctx.PingBase), ctx.PingKey, nil
+			return firstSet(base, ctx.PingBase), ctx.PingKey, nil
 		}
 	}
 	var me struct {
@@ -79,10 +68,10 @@ func pingTarget(cmd *cobra.Command, f *pingFlags) (*cli.Client, string, string, 
 		} `json:"project"`
 	}
 	if err := c.Do(cmd.Context(), "GET", "/me", nil, &me); err != nil {
-		return nil, "", "", err
+		return "", "", err
 	}
 	if me.Project == nil || me.Project.PingKey == "" {
-		return nil, "", "", cli.UserError("this API key cannot see the ping key; a read-only key cannot ping. Set VINK_PING_KEY to ping with the ping key alone")
+		return "", "", cli.UserError("this API key cannot see the ping key; a read-only key cannot ping. Set VINK_PING_KEY to ping with the ping key alone")
 	}
 	if !res.FromEnv {
 		ctx := cfg.Contexts[res.Name]
@@ -92,7 +81,13 @@ func pingTarget(cmd *cobra.Command, f *pingFlags) (*cli.Client, string, string, 
 			fmt.Fprintln(cmd.ErrOrStderr(), "warning: could not cache the ping key:", err)
 		}
 	}
-	return c, firstSet(base, me.Project.PingBase), me.Project.PingKey, nil
+	return firstSet(base, me.Project.PingBase), me.Project.PingKey, nil
+}
+
+// client makes the ping module's client for these flags; opts tune it
+// for one use.
+func (f *pingFlags) client(cmd *cobra.Command, base, key string, opts ...ping.Option) (*ping.Client, error) {
+	return cli.PingClient(base, key, f.g.debug, cmd.ErrOrStderr(), opts...)
 }
 
 // serverPingBase is where pings go when only a ping key is given: the
@@ -127,20 +122,6 @@ func (f *pingFlags) serverPingBase() (string, error) {
 	return fromContext("")
 }
 
-// pingBaseURL checks a ping address and gives it its trailing slash. It is
-// a ping URL cut before the key, so its path ends in /ping; anything else
-// would send every ping to a 404.
-func pingBaseURL(raw string) (string, error) {
-	u, err := url.Parse(raw)
-	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.RawQuery != "" || u.Fragment != "" ||
-		!strings.HasSuffix(strings.TrimRight(u.Path, "/"), "/ping") {
-		return "", cli.UserError("the ping URL is a ping URL up to the key, ending in /ping/, like https://vink.example.com/ping/; got %q", raw)
-	}
-	u.Path = strings.TrimRight(u.Path, "/") + "/"
-	u.RawPath = ""
-	return u.String(), nil
-}
-
 func firstSet(values ...string) string {
 	for _, v := range values {
 		if v != "" {
@@ -173,43 +154,47 @@ once; that needs a read-write key.`,
 			if logNote && msg == "" && bodyFrom != "-" {
 				return cli.UserError("--log sends a note: add --msg or --body -")
 			}
-			c, base, key, err := pingTarget(cmd, f)
+			base, key, err := pingTarget(cmd, f)
 			if err != nil {
 				return err
 			}
-			target := base + key + "/" + url.PathEscape(args[0])
-			switch {
-			case start:
-				target += "/start"
-			case fail:
-				target += "/fail"
-			case logNote:
-				target += "/log"
-			case cmd.Flags().Changed("exit"):
-				target += "/" + strconv.Itoa(exitCode)
+			pc, err := f.client(cmd, base, key)
+			if err != nil {
+				return err
 			}
-			q := url.Values{}
+			var opts []ping.PingOption
 			if msg != "" {
-				q.Set("msg", msg)
+				opts = append(opts, ping.Msg(msg))
 			}
 			if rid != "" {
-				q.Set("rid", rid)
+				opts = append(opts, ping.RunID(rid))
 			}
 			if create {
-				q.Set("create", "1")
+				opts = append(opts, ping.Create())
 			}
-			if len(q) > 0 {
-				target += "?" + q.Encode()
-			}
-			var body []byte
 			if bodyFrom == "-" {
-				body, err = io.ReadAll(io.LimitReader(cmd.InOrStdin(), 64*1024))
-				if err != nil {
+				// the end of a log says why it failed: keep the last bytes
+				tw := &tailWriter{n: ping.DefaultBodyLimit}
+				if _, err := io.Copy(tw, cmd.InOrStdin()); err != nil {
 					return err
 				}
+				opts = append(opts, ping.Body(tw.Bytes()))
 			}
-			if err := c.Ping(cmd.Context(), target, key, body, ""); err != nil {
-				return err
+			m, ctx := pc.Monitor(args[0]), cmd.Context()
+			switch {
+			case start:
+				err = m.Start(ctx, opts...)
+			case fail:
+				err = m.Fail(ctx, opts...)
+			case logNote:
+				err = m.Log(ctx, "", opts...)
+			case cmd.Flags().Changed("exit"):
+				err = m.Exit(ctx, exitCode, opts...)
+			default:
+				err = m.Success(ctx, opts...)
+			}
+			if err != nil {
+				return cli.PingError(err)
 			}
 			if !f.quiet {
 				fmt.Fprintln(cmd.OutOrStdout(), "ok")
@@ -225,7 +210,7 @@ once; that needs a read-write key.`,
 	cmd.Flags().StringVar(&msg, "msg", "", "a short message stored with the ping")
 	cmd.Flags().StringVar(&rid, "rid", "", "run id pairing a start with its finish")
 	cmd.Flags().BoolVar(&create, "create", false, "create the monitor on first ping")
-	cmd.Flags().StringVar(&bodyFrom, "body", "", "read the body from stdin with --body -")
+	cmd.Flags().StringVar(&bodyFrom, "body", "", "read the body from stdin with --body -, keeping its last 64 kB")
 	cmd.MarkFlagsMutuallyExclusive("start", "fail", "exit", "log")
 	return cmd
 }
@@ -270,35 +255,61 @@ and the address as vink ping does: --ping-key or VINK_PING_KEY with
 --ping-url or VINK_PING_URL needs no API key.`,
 		Args: cobra.MinimumNArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			c, base, key, err := pingTarget(cmd, f)
+			base, key, err := pingTarget(cmd, f)
 			if err != nil {
 				return err
 			}
-			target := base + key + "/" + url.PathEscape(args[0])
-			rid := domain.NewID()
-			if err := c.Ping(cmd.Context(), target+"/start?rid="+rid, key, nil, ""); err != nil {
-				fmt.Fprintln(cmd.ErrOrStderr(), "warning: start ping failed:", err)
+			// the start must not hold the job up while vink is away: one
+			// short try; the finish gets the module's retries
+			starter, err := f.client(cmd, base, key, ping.WithAttempts(1), ping.WithTimeout(5*time.Second))
+			if err != nil {
+				return err
 			}
+			pc, err := f.client(cmd, base, key, ping.WithBodyLimit(max(tail, 0)))
+			if err != nil {
+				return err
+			}
+			run := pc.Monitor(args[0]).NewRun()
+			ctx := cmd.Context()
+			// Ctrl-C and SIGTERM cancel ctx; how the command ended is
+			// reported all the same
+			after := context.WithoutCancel(ctx)
+			warn := func(what string, err error) {
+				if err != nil {
+					fmt.Fprintf(cmd.ErrOrStderr(), "warning: %s ping failed: %v\n", what, cli.PingError(err))
+				}
+			}
+			warn("start", starter.Monitor(args[0]).Start(ctx, ping.RunID(run.ID())))
 			tw := &tailWriter{n: tail}
-			child := exec.CommandContext(cmd.Context(), args[1], args[2:]...) //nolint:gosec // running the caller's command is the point
+			// a context that cancellation does not reach: a cancelled ctx
+			// would kill the command outright, while the signal passed on
+			// below lets it stop in its own way
+			child := exec.CommandContext(after, args[1], args[2:]...) //nolint:gosec // running the caller's command is the point
 			child.Stdin = cmd.InOrStdin()
 			child.Stdout = io.MultiWriter(cmd.OutOrStdout(), tw)
 			child.Stderr = io.MultiWriter(cmd.ErrOrStderr(), tw)
 			sigs := make(chan os.Signal, 1)
 			signal.Notify(sigs, os.Interrupt, syscall.SIGTERM)
 			defer signal.Stop(sigs)
+			if ctx.Err() != nil {
+				warn("finish", run.Fail(after, ping.Msg("stopped before "+args[1]+" started")))
+				return cli.UserError("stopped before %s started", args[1])
+			}
 			if err := child.Start(); err != nil {
-				_ = c.Ping(cmd.Context(), target+"/fail?rid="+rid+"&msg="+url.QueryEscape("could not start: "+err.Error()), key, nil, "")
+				warn("finish", run.Fail(after, ping.Msg("could not start: "+err.Error())))
 				return cli.UserError("start %s: %v", args[1], err)
 			}
 			done := make(chan error, 1)
 			go func() { done <- child.Wait() }()
 			var waitErr error
-			select {
-			case s := <-sigs:
-				_ = child.Process.Signal(s)
-				waitErr = <-done
-			case waitErr = <-done:
+		wait:
+			for {
+				select {
+				case s := <-sigs:
+					_ = child.Process.Signal(s)
+				case waitErr = <-done:
+					break wait
+				}
 			}
 			code := 0
 			var exitErr *exec.ExitError
@@ -310,9 +321,7 @@ and the address as vink ping does: --ping-key or VINK_PING_KEY with
 			} else if waitErr != nil {
 				code = 1
 			}
-			if err := c.Ping(cmd.Context(), target+"/"+strconv.Itoa(code)+"?rid="+rid, key, tw.Bytes(), "text/plain; charset=utf-8"); err != nil {
-				fmt.Fprintln(cmd.ErrOrStderr(), "warning: finish ping failed:", err)
-			}
+			warn("finish", run.Exit(after, code, ping.Body(tw.Bytes())))
 			if code != 0 {
 				return &cli.ExitError{Code: code, Err: fmt.Errorf("%s exited with %d", args[1], code)}
 			}

@@ -404,25 +404,6 @@ func TestCLIPingLog(t *testing.T) {
 	}
 }
 
-func TestPingBaseURL(t *testing.T) {
-	for _, tc := range []struct{ in, want string }{
-		{"https://vink.example.com/ping/", "https://vink.example.com/ping/"},
-		{"https://vink.example.com/ping", "https://vink.example.com/ping/"},
-		{"https://www.example.com/vink/ping", "https://www.example.com/vink/ping/"},
-		{"http://127.0.0.1:8080/ping//", "http://127.0.0.1:8080/ping/"},
-		{"https://vink.example.com/", ""},
-		{"https://vink.example.com/pings/", ""},
-		{"https://vink.example.com/ping/abc", ""},
-		{"vink.example.com/ping/", ""},
-		{"https://vink.example.com/ping/#x", ""},
-	} {
-		got, err := pingBaseURL(tc.in)
-		if (err != nil) != (tc.want == "") || got != tc.want {
-			t.Errorf("pingBaseURL(%q) = %q, %v; want %q", tc.in, got, err, tc.want)
-		}
-	}
-}
-
 func TestCheckCommand(t *testing.T) {
 	e := newCLIEnv(t)
 	reg, err := checks.NewRegistry(checks.Options{Outbound: outbound.Options{AllowPrivateTargets: true}})

@@ -55,7 +55,7 @@ One process, four transports that never touch the database directly, a service l
 
 ![Package architecture: four transports, one service layer, one engine, one store](diagrams/architecture.png)
 
-The CLI is a client of the REST API and shares no code with the server except the domain types and the YAML apply schema. The ping ingress and agent gateway call the service layer's `Observe` path, which validates the key and hands an `Observation` to the state machine.
+The CLI is a client of the REST API and shares no code with the server except the domain types and the YAML apply schema. Its pings go through the ping module (`ping/`, `github.com/w4jnl/vink/ping`), which the main module requires at a tagged version, so the CLI and Go programs send pings the same way. The ping ingress and agent gateway call the service layer's `Observe` path, which validates the key and hands an `Observation` to the state machine.
 
 ```
 cmd/vink/                  cobra root; subcommands: serve, agent, migrate, admin, ctx, apply, get, ls, ping, status, export, import

@@ -26,6 +26,12 @@ release. `make lint` and `make test` cover it. It is released apart from vink, b
 git tag -a ping/v0.1.1 -m "ping v0.1.1" && git push origin ping/v0.1.1
 ```
 
+`vink ping` and `vink run` send through the module at the version vink's `go.mod` requires, not
+the copy in `ping/`. A module change the CLI needs therefore takes two steps: tag the module, then
+`go get github.com/w4jnl/vink/ping@v0.1.1` in the main module. Dependabot proposes these bumps
+too. Neither a `replace` directive (it breaks `go install …@version`) nor a committed `go.work`
+(release builds would use other code than `go.mod` says) is a shortcut.
+
 `docs/design.md` is the specification; ask before deviating from it. UI changes follow
 `docs/design-system/`: the markup is what `components/bundle.js` returns, styles come from
 `bundle.css` and `tokens.css`, and `make golden` checks the Go components against it. Every

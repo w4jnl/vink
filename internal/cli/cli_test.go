@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -11,6 +12,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/w4jnl/vink/ping"
 )
 
 func TestContextsRoundTrip(t *testing.T) {
@@ -94,10 +97,6 @@ func TestClientDoAndErrors(t *testing.T) {
 		case "/api/v1/down":
 			w.WriteHeader(502)
 			_, _ = w.Write([]byte("bad gateway"))
-		case "/ping/k/s":
-			w.WriteHeader(200)
-		case "/ping/k/missing":
-			w.WriteHeader(404)
 		}
 	}))
 	defer srv.Close()
@@ -130,38 +129,79 @@ func TestClientDoAndErrors(t *testing.T) {
 	if err := dead.Do(context.Background(), "GET", "/x", nil, nil); !errors.As(err, &ee) || ee.Code != ExitServer {
 		t.Fatalf("connection refused: %v", err)
 	}
-	if err := c.Ping(context.Background(), srv.URL+"/ping/k/s", "k", []byte("hi"), ""); err != nil {
-		t.Fatalf("ping: %v", err)
-	}
-	if err := c.Ping(context.Background(), srv.URL+"/ping/k/missing", "k", nil, ""); !errors.As(err, &ee) || ee.Code != ExitUser {
-		t.Fatalf("ping 404: %v", err)
-	}
 }
 
-// TestPingHidesTheKey: the ping key never reaches a debug line or an
-// error, which end up in cron mail and pasted logs.
-func TestPingHidesTheKey(t *testing.T) {
+// TestPingClient: pings go through the ping module with the CLI's
+// User-Agent; its errors get the CLI's exit codes; the ping key never
+// reaches a debug line or an error, which end up in cron mail and pasted
+// logs.
+func TestPingClient(t *testing.T) {
 	const key = "s3cretpingkey"
+	var gotUA string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotUA = r.UserAgent()
+		switch r.URL.Path {
+		case "/ping/" + key + "/ok":
+		case "/ping/" + key + "/busy":
+			w.Header().Set("Retry-After", "120")
+			w.WriteHeader(http.StatusTooManyRequests)
+		case "/ping/" + key + "/broken":
+			w.WriteHeader(http.StatusInternalServerError)
+		case "/ping/" + key + "/odd":
+			w.WriteHeader(http.StatusTeapot)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer srv.Close()
+	ctx := context.Background()
 	var log bytes.Buffer
-	dead := NewClient("", "")
-	dead.Debug, dead.Log = true, &log
-	err := dead.Ping(context.Background(), "http://127.0.0.1:1/vink/ping/"+key+"/job/start", key, nil, "")
+	pc, err := PingClient(srv.URL+"/ping/", key, true, &log, ping.WithAttempts(1))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := pc.Monitor("ok").Success(ctx); err != nil || !strings.HasPrefix(gotUA, "vink-cli/") {
+		t.Fatalf("ping: %v, User-Agent %q", err, gotUA)
+	}
+	if !strings.Contains(log.String(), "> POST "+srv.URL+"/ping/<ping key>/ok (0 bytes)\n< 200 OK") || strings.Contains(log.String(), key) {
+		t.Errorf("debug lines: %q", log.String())
+	}
+	for _, tc := range []struct {
+		slug string
+		code int
+		msg  string
+	}{
+		{"missing", ExitUser, "unknown ping key or monitor (404)"},
+		{"odd", ExitUser, "ping rejected: 418"},
+		{"busy", ExitServer, "rate limited (429)"},
+		{"broken", ExitServer, "ping failed: 500"},
+	} {
+		var ee *ExitError
+		err := PingError(pc.Monitor(tc.slug).Success(ctx))
+		if !errors.As(err, &ee) || ee.Code != tc.code || !strings.Contains(err.Error(), tc.msg) {
+			t.Errorf("%s: %v, want exit %d with %q", tc.slug, err, tc.code, tc.msg)
+		}
+	}
+	// vink away: exit 2, the URL shown without the key, the cause kept
+	dead, err := PingClient("http://127.0.0.1:1/vink/ping/", key, false, io.Discard, ping.WithAttempts(1))
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = PingError(dead.Monitor("job").Start(ctx))
 	var ee *ExitError
-	if err == nil || !errors.As(err, &ee) || ee.Code != ExitServer {
-		t.Fatalf("unreachable: %v", err)
-	}
-	if strings.Contains(err.Error(), key) || !strings.Contains(err.Error(), "/vink/ping/<ping key>/job/start") {
-		t.Errorf("error shows the key: %v", err)
-	}
-	if strings.Contains(log.String(), key) || !strings.Contains(log.String(), "> POST http://127.0.0.1:1/vink/ping/<ping key>/job/start") {
-		t.Errorf("debug line shows the key: %q", log.String())
-	}
 	var ue *url.Error
-	if !errors.As(err, &ue) {
-		t.Errorf("the transport error must stay in the chain: %#v", err)
+	if !errors.As(err, &ee) || ee.Code != ExitServer || !errors.As(err, &ue) {
+		t.Fatalf("unreachable: %#v", err)
 	}
-	if err := dead.Ping(context.Background(), "http://bad host/ping/"+key+"/job", key, nil, ""); err == nil || strings.Contains(err.Error(), key) {
-		t.Errorf("bad URL error shows the key: %v", err)
+	if strings.Contains(err.Error(), key) || !strings.HasPrefix(err.Error(), `Post "http://127.0.0.1:1/vink/ping/<ping key>/job/start"`) {
+		t.Errorf("unreachable error: %v", err)
+	}
+	// the module's own refusals are the caller's to fix
+	if err := PingError(pc.Monitor("ok").Exit(ctx, -1)); !errors.As(err, &ee) || ee.Code != ExitUser || strings.HasPrefix(err.Error(), "ping:") {
+		t.Errorf("bad exit code: %v", err)
+	}
+	if _, err := PingClient("https://vink.example.com/", key, false, io.Discard); !errors.As(err, &ee) || ee.Code != ExitUser || !strings.Contains(err.Error(), "ending in /ping/") {
+		t.Errorf("bad address: %v", err)
 	}
 }
 

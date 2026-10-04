@@ -195,9 +195,13 @@ vink run nightly-backup -- /usr/local/bin/backup.sh --full
 
 It sends `/start`, runs the command with its output passed through, then sends `/<exit code>`
 with the last 16 kB of the output as the body (`--tail` changes how much). It exits with the
-command's own code and passes Ctrl-C and `SIGTERM` on to the command. When vink cannot be
-reached it prints a warning and the command runs all the same. That makes it a drop-in for the
-command in a crontab line or a unit file:
+command's own code. Ctrl-C and `SIGTERM` are passed on to the command, which stops in its own way,
+and the finish ping still reports how it ended.
+
+When vink cannot be reached, `vink run` prints a warning and the command runs all the same. The
+start ping gets one try of at most five seconds, so an outage holds the command up no longer than
+that, and the finish ping is tried three times. That makes it a drop-in for the command in a
+crontab line or a unit file:
 
 ```cron
 0 3 * * * set -a && . /etc/vink/ping.env && vink run nightly-backup -- /usr/local/bin/backup.sh
@@ -223,13 +227,13 @@ ExecStart=/usr/local/bin/vink run nightly-backup -- /usr/local/bin/backup.sh
 One of `--start`, `--fail`, `--exit` and `--log` at a time. Each goes with these:
 
 - `--msg "…"` adds a line for the observation's row and the alert.
-- `--body -` reads the body from stdin and sends its first 64 kB. Pipe through `tail -c` to keep
-  the end instead.
+- `--body -` reads the body from stdin and sends its last 64 kB, where a log says why it failed.
 - `--rid ID` pairs a start with its finish.
 - `--create` makes the monitor from its first ping.
 - `--quiet` prints nothing on success.
 
-`vink ping` makes one attempt of at most ten seconds and exits with one of these codes:
+`vink ping` tries up to three times when vink cannot be reached, answers with a server error or
+rate-limits it, each try taking at most ten seconds. It exits with one of these codes:
 
 | Exit | Meaning |
 | --- | --- |
