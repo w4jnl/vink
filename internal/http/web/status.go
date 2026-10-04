@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/w4jnl/vink/internal/domain"
+	"github.com/w4jnl/vink/internal/http/middleware"
 	"github.com/w4jnl/vink/internal/http/web/ui"
 	"github.com/w4jnl/vink/internal/http/web/view"
 	"github.com/w4jnl/vink/internal/service"
@@ -71,8 +72,10 @@ func (h *Web) publicPage(fn func(w http.ResponseWriter, r *http.Request) error) 
 }
 
 // CustomDomains serves a page on its own host name: a request for / on
-// that host is the page, /badge/... its badges.
-func (h *Web) CustomDomains(next http.Handler) http.Handler {
+// that host is the page, /badge/... its badges. The page is served by
+// direct, at that host's root and with no path prefix, whatever prefix
+// the rest of vink lives under; every other request goes to mounted.
+func (h *Web) CustomDomains(mounted, direct http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/" || strings.HasPrefix(r.URL.Path, "/badge/") {
 			host := r.Host
@@ -80,14 +83,14 @@ func (h *Web) CustomDomains(next http.Handler) http.Handler {
 				host = hp
 			}
 			if page, err := h.svc.StatusPageByDomain(r.Context(), host); err == nil {
-				r2 := r.Clone(r.Context())
+				r2 := r.Clone(middleware.WithPrefix(r.Context(), ""))
 				r2.URL.Path = "/s/" + page.Slug + strings.TrimSuffix(r.URL.Path, "/")
 				r2.URL.RawPath = ""
-				next.ServeHTTP(w, r2)
+				direct.ServeHTTP(w, r2)
 				return
 			}
 		}
-		next.ServeHTTP(w, r)
+		mounted.ServeHTTP(w, r)
 	})
 }
 

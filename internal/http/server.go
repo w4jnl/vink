@@ -55,9 +55,9 @@ func pingMux(d Deps) *http.ServeMux {
 }
 
 // PingHandler is the ping ingress with its own chain, for a separate
-// listener.
+// listener, under the path of the ping base URL.
 func PingHandler(d Deps) http.Handler {
-	return chain(d, pingMux(d))
+	return chain(d, middleware.MountUnder(d.Cfg.PingPathPrefix(), pingMux(d)))
 }
 
 func chain(d Deps, h http.Handler) http.Handler {
@@ -92,7 +92,7 @@ func Handler(d Deps, withPing bool) http.Handler {
 	if d.Metrics != nil {
 		mux.Handle("GET /metrics", d.Metrics.Handler(d.Cfg.Metrics.Token))
 	}
-	var root http.Handler = mux
+	var root http.Handler
 	if d.Auth != nil {
 		api.New(d.Svc, d.Auth, logging.Sub(d.Log, "api")).Mount(mux)
 		ui, err := web.New(d.Svc, d.Auth, logging.Sub(d.Log, "web"))
@@ -102,7 +102,11 @@ func Handler(d Deps, withPing bool) http.Handler {
 		ui.SetSMTPFrom(d.Cfg.SMTP.From)
 		ui.SetServerFacts(d.serverFacts)
 		ui.Mount(mux)
-		root = ui.CustomDomains(mux)
+		// a status page on its own domain is served at that host's root,
+		// outside the prefix the rest of vink lives under
+		root = ui.CustomDomains(middleware.MountUnder(d.Cfg.PathPrefix(), mux), mux)
+	} else {
+		root = middleware.MountUnder(d.Cfg.PathPrefix(), mux)
 	}
 	mux.HandleFunc("GET /a/{token}", d.ackLink)
 	for _, m := range d.Mount {
@@ -139,7 +143,7 @@ func (d Deps) ackLink(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "acknowledged", http.StatusOK)
 		return
 	}
-	http.Redirect(w, r, "/o/"+org.Slug+"/p/"+project.Slug+"/incidents", http.StatusSeeOther) //nolint:gosec // G710: slugs are validated [a-z0-9-] values from our own database, and the path is relative
+	http.Redirect(w, r, middleware.Href(r, "/o/"+org.Slug+"/p/"+project.Slug+"/incidents"), http.StatusSeeOther) //nolint:gosec // G710: slugs are validated [a-z0-9-] values from our own database, and the path is our own
 }
 
 // Ready reports whether the writer can take a lock within two seconds

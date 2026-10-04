@@ -108,3 +108,50 @@ func TestMetricsEndpoint(t *testing.T) {
 		t.Fatalf("metrics: %d %s", rec.Code, rec.Body.String()[:200])
 	}
 }
+
+func TestMountedUnderAPath(t *testing.T) {
+	d := testDeps(t)
+	d.Cfg.Server.BaseURL = "http://vink.test/vink"
+	h := Handler(d, true)
+	get := func(path string) *httptest.ResponseRecorder {
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequest("GET", path, nil))
+		return rec
+	}
+	if rec := get("/vink/healthz"); rec.Code != 200 || !strings.HasPrefix(rec.Body.String(), "ok ") {
+		t.Fatalf("healthz under the prefix: %d %q", rec.Code, rec.Body.String())
+	}
+	// one deployment, one mount: the root is not served
+	for _, path := range []string{"/healthz", "/", "/vinkx/healthz", "/ping/nope/x"} {
+		if rec := get(path); rec.Code != 404 {
+			t.Fatalf("%s outside the prefix: %d", path, rec.Code)
+		}
+	}
+	if rec := get("/vink"); rec.Code != 301 || rec.Header().Get("Location") != "/vink/" {
+		t.Fatalf("bare prefix: %d %q", rec.Code, rec.Header().Get("Location"))
+	}
+	if rec := get("/vink?x=1"); rec.Header().Get("Location") != "/vink/?x=1" {
+		t.Fatalf("bare prefix keeps the query: %q", rec.Header().Get("Location"))
+	}
+	// Go's canonical-path redirect is built from the stripped path; the mount puts the prefix back
+	if rec := get("/vink/ping"); (rec.Code != 301 && rec.Code != 307) || rec.Header().Get("Location") != "/vink/ping/" {
+		t.Fatalf("canonical redirect: %d %q", rec.Code, rec.Header().Get("Location"))
+	}
+	if rec := get("/vink/ping/nope/x"); rec.Code != 404 || rec.Body.String() != "not found\n" {
+		t.Fatalf("ping under the prefix: %d %q", rec.Code, rec.Body.String())
+	}
+	// the separate ping listener follows the ping base URL's path
+	d.Cfg.Ping.Listen = ":0"
+	d.Cfg.Ping.BaseURL = "http://ping.test/hooks"
+	ph := PingHandler(d)
+	rec := httptest.NewRecorder()
+	ph.ServeHTTP(rec, httptest.NewRequest("GET", "/hooks/ping/nope/x", nil))
+	if rec.Code != 404 || rec.Body.String() != "not found\n" {
+		t.Fatalf("split ping under its path: %d %q", rec.Code, rec.Body.String())
+	}
+	rec = httptest.NewRecorder()
+	ph.ServeHTTP(rec, httptest.NewRequest("GET", "/ping/nope/x", nil))
+	if rec.Code != 404 || rec.Body.String() == "not found\n" {
+		t.Fatalf("split ping at the root must not be served: %d %q", rec.Code, rec.Body.String())
+	}
+}

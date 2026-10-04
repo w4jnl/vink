@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/url"
 	"runtime/debug"
 	"strings"
 	"sync"
@@ -21,6 +22,7 @@ type ctxKey int
 const (
 	keyRequestID ctxKey = iota
 	keyClientIP
+	keyPrefix
 	keyLogFields
 )
 
@@ -159,6 +161,86 @@ func (w *statusWriter) Write(b []byte) (int, error) {
 
 // Unwrap lets http.ResponseController reach the underlying writer.
 func (w *statusWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
+
+// Prefix is the path this request's deployment lives under: "" at the
+// root, "/vink" under https://host/vink. MountUnder sets it; a status page
+// on its own domain is served with "".
+func Prefix(r *http.Request) string {
+	p, _ := r.Context().Value(keyPrefix).(string)
+	return p
+}
+
+// Href puts the request's prefix in front of a root-relative path. Every
+// path the server writes goes through it.
+func Href(r *http.Request, p string) string {
+	return Prefix(r) + p
+}
+
+// WithPrefix records the prefix on a context.
+func WithPrefix(ctx context.Context, prefix string) context.Context {
+	return context.WithValue(ctx, keyPrefix, prefix)
+}
+
+// MountUnder serves next under prefix and nowhere else: prefix/… reaches
+// next with the prefix stripped and recorded on the context, the bare
+// prefix redirects to prefix/, anything else is 404. A root-relative
+// Location or HX-Redirect that next writes without the prefix gets it, so
+// Go's own canonical-path redirects and a missed literal still land under
+// the prefix. An empty prefix serves next as it is.
+func MountUnder(prefix string, next http.Handler) http.Handler {
+	if prefix == "" {
+		return next
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == prefix:
+			u := *r.URL
+			u.Path = prefix + "/"
+			http.Redirect(w, r, u.RequestURI(), http.StatusMovedPermanently) //nolint:gosec // G710: our own prefix plus the request's query; a relative path cannot leave the host
+		case strings.HasPrefix(r.URL.Path, prefix+"/"):
+			r2 := r.Clone(WithPrefix(r.Context(), prefix))
+			r2.URL = new(url.URL)
+			*r2.URL = *r.URL
+			r2.URL.Path = strings.TrimPrefix(r.URL.Path, prefix)
+			if r.URL.RawPath != "" {
+				r2.URL.RawPath = strings.TrimPrefix(r.URL.RawPath, prefix)
+			}
+			next.ServeHTTP(&prefixWriter{ResponseWriter: w, prefix: prefix}, r2)
+		default:
+			http.NotFound(w, r)
+		}
+	})
+}
+
+// prefixWriter adds the prefix to a redirect that lacks it.
+type prefixWriter struct {
+	http.ResponseWriter
+	prefix string
+	done   bool
+}
+
+func (w *prefixWriter) WriteHeader(status int) {
+	if !w.done {
+		w.done = true
+		for _, name := range []string{"Location", "HX-Redirect"} {
+			v := w.Header().Get(name)
+			if strings.HasPrefix(v, "/") && !strings.HasPrefix(v, "//") && v != w.prefix && !strings.HasPrefix(v, w.prefix+"/") {
+				w.Header().Set(name, w.prefix+v)
+			}
+		}
+	}
+	w.ResponseWriter.WriteHeader(status)
+}
+
+func (w *prefixWriter) Write(b []byte) (int, error) {
+	if !w.done {
+		w.WriteHeader(http.StatusOK)
+	}
+	return w.ResponseWriter.Write(b)
+}
+
+// Unwrap lets http.ResponseController reach the underlying writer.
+func (w *prefixWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
 
 // Logger writes one line per request.
 func Logger(log *slog.Logger) func(http.Handler) http.Handler {

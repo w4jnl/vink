@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/url"
 	"os"
+	"path"
 	"reflect"
 	"regexp"
 	"strconv"
@@ -268,6 +269,51 @@ func (c *Config) PingBaseURL() string {
 	return strings.TrimRight(c.Server.BaseURL, "/")
 }
 
+// PathPrefix is the path vink is served under, from server.base_url:
+// "" at the root, "/vink" for https://host/vink. A deployment lives at
+// one or the other, never both.
+func (c *Config) PathPrefix() string {
+	p, _ := pathPrefix(c.Server.BaseURL)
+	return p
+}
+
+// PingPathPrefix is the path the ping ingress is served under, from the
+// ping base URL.
+func (c *Config) PingPathPrefix() string {
+	p, _ := pathPrefix(c.PingBaseURL())
+	return p
+}
+
+// reservedPrefixes are vink's own top-level paths; a prefix starting with
+// one of them would shadow that route.
+var reservedPrefixes = []string{"o", "s", "a", "api", "ping", "static", "admin", "account", "login", "logout", "projects", "invite", "reset", "auth", "agent", "metrics", "healthz", "readyz"}
+
+// pathPrefix turns the path of an absolute URL into a mount prefix: "",
+// or a clean path with a leading and no trailing slash.
+func pathPrefix(raw string) (string, error) {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return "", err
+	}
+	if u.RawQuery != "" || u.Fragment != "" {
+		return "", fmt.Errorf("a base URL takes no query or fragment")
+	}
+	p := strings.TrimRight(u.Path, "/")
+	if p == "" {
+		return "", nil
+	}
+	if !strings.HasPrefix(p, "/") || path.Clean(p) != p || strings.Contains(p, "//") {
+		return "", fmt.Errorf("the path %q must be clean, such as /vink", u.Path)
+	}
+	first := strings.SplitN(strings.TrimPrefix(p, "/"), "/", 2)[0]
+	for _, r := range reservedPrefixes {
+		if first == r {
+			return "", fmt.Errorf("the path %q starts with /%s, which is a vink route", u.Path, r)
+		}
+	}
+	return p, nil
+}
+
 // Validate checks values that would otherwise fail later and less clearly.
 func (c *Config) Validate() error {
 	var errs []error
@@ -281,10 +327,16 @@ func (c *Config) Validate() error {
 	}
 	if u, err := url.Parse(c.Server.BaseURL); err != nil || u.Scheme == "" || u.Host == "" {
 		fail("server.base_url must be an absolute URL, got %q", c.Server.BaseURL)
+	} else if _, err := pathPrefix(c.Server.BaseURL); err != nil {
+		fail("server.base_url: %v", err)
 	}
 	if c.Ping.BaseURL != "" {
 		if u, err := url.Parse(c.Ping.BaseURL); err != nil || u.Scheme == "" || u.Host == "" {
 			fail("ping.base_url must be an absolute URL, got %q", c.Ping.BaseURL)
+		} else if p, err := pathPrefix(c.Ping.BaseURL); err != nil {
+			fail("ping.base_url: %v", err)
+		} else if c.Ping.Listen == "" && p != c.PathPrefix() {
+			fail("ping.base_url has the path %q but pings share the main listener, which serves %q; set ping.listen or use the same path", p, c.PathPrefix())
 		}
 	}
 	for _, cidr := range c.Server.TrustedProxies {

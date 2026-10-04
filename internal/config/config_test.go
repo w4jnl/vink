@@ -150,6 +150,43 @@ func TestValidation(t *testing.T) {
 	}
 }
 
+func TestPathPrefix(t *testing.T) {
+	ok := map[string]string{
+		"https://vink.example.com":       "",
+		"https://vink.example.com/":      "",
+		"https://www.example.com/vink":   "/vink",
+		"https://www.example.com/vink/":  "/vink",
+		"https://www.example.com/it/mon": "/it/mon",
+	}
+	for raw, want := range ok {
+		if got, err := pathPrefix(raw); err != nil || got != want {
+			t.Errorf("pathPrefix(%q) = %q, %v; want %q", raw, got, err, want)
+		}
+	}
+	for _, raw := range []string{"https://h/o", "https://h/api/x", "https://h/vink//x", "https://h/vink/..", "https://h/vink?x=1", "https://h/vink#f", "https://h/ping/"} {
+		if _, err := pathPrefix(raw); err == nil {
+			t.Errorf("pathPrefix(%q) must be refused", raw)
+		}
+	}
+	cfg, err := LoadWith("", envOf(map[string]string{"VINK_SERVER_BASE_URL": "https://www.example.com/vink/"}))
+	if err != nil || cfg.PathPrefix() != "/vink" || cfg.PingPathPrefix() != "/vink" {
+		t.Fatalf("prefix from the environment: %v %q %q", err, cfg.PathPrefix(), cfg.PingPathPrefix())
+	}
+	// pings on the main listener must live under the same path
+	if _, err := LoadWith("", envOf(map[string]string{"VINK_SERVER_BASE_URL": "https://www.example.com/vink", "VINK_PING_BASE_URL": "https://ping.example.com/other"})); err == nil {
+		t.Fatal("a different ping path on the shared listener must be refused")
+	}
+	cfg, err = LoadWith("", envOf(map[string]string{"VINK_SERVER_BASE_URL": "https://www.example.com/vink", "VINK_PING_BASE_URL": "https://ping.example.com/other", "VINK_PING_LISTEN": ":8081"}))
+	if err != nil || cfg.PingPathPrefix() != "/other" {
+		t.Fatalf("a separate ping listener takes its own path: %v %q", err, cfg.PingPathPrefix())
+	}
+	for _, raw := range []string{"https://h/o", "https://h/vink?x=1"} {
+		if _, err := LoadWith("", envOf(map[string]string{"VINK_SERVER_BASE_URL": raw})); err == nil {
+			t.Errorf("base_url %q must fail validation", raw)
+		}
+	}
+}
+
 func TestByteSize(t *testing.T) {
 	cases := map[string]int64{"64KB": 65536, "1MB": 1 << 20, "512": 512, "2k": 2048, "1 GB": 1 << 30, "0": 0}
 	for in, want := range cases {

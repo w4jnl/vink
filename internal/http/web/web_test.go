@@ -87,7 +87,7 @@ func newEnvAuth(t *testing.T, authCfg config.Auth) *env {
 	e.web.SetClock(func() time.Time { return e.now })
 	mux := http.NewServeMux()
 	e.web.Mount(mux)
-	e.srv = middleware.Chain(e.web.CustomDomains(mux), middleware.RequestID)
+	e.srv = middleware.Chain(e.web.CustomDomains(mux, mux), middleware.RequestID)
 
 	if !authCfg.Local.Enabled {
 		return e
