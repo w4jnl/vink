@@ -318,7 +318,7 @@ One binary, three personalities: `vink serve` runs the server, `vink agent` runs
 | `vink admin init --org homelab --user j --password-stdin` | bootstrap on an empty DB: instance admin, first org, first project, prints the ping key and an rw API key |
 | `vink admin org create` · `org ls` · `user ls` · `user create` · `user promote` · `user grant <user> --org <slug> --role <role>` · `user revoke <user> --org <slug>` · `user totp-reset <user>` · `user reset-link <user>` · `backup` | instance-admin operations, run on the server host against the DB file (no network); grant and revoke manage an existing user's role in an org, and the last owner of an org can be neither demoted nor removed; `totp-reset` and `reset-link` are the break-glass for a lost phone or password; `backup` also records `last_backup_at`, which the Server tab watches |
 | `vink agent --server wss://vink.example.com --token … [--labels site=dc1]` | phase 2; connects out, runs assigned checks |
-| `vink ctx add homelab --server https://vink.w4j.nl --key …` · `vink ctx use homelab` · `vink ctx ls` | contexts; `VINK_SERVER` / `VINK_KEY` env override for CI |
+| `vink ctx add homelab --server https://vink.w4j.nl --key …` · `vink ctx use homelab` · `vink ctx ls` | contexts; `VINK_SERVER` / `VINK_KEY` env override for CI; `--server` carries the path when vink lives under one (`https://www.example.com/vink`), for the agent too |
 | `vink ls [--tag prod] [--state down]` | monitor table: slug, kind, state, since, next due, last latency |
 | `vink get <slug>` | monitor detail + last 10 events |
 | `vink logs <slug> [-n 50] [--follow]` | observations newest first; `--follow` polls every 5 s |
@@ -345,7 +345,7 @@ The UI is one list and one drawer per entity, rendered by the server, with htmx 
 
 ![Web UI page map](diagrams/page-map.png)
 
-**Page inventory**
+**Page inventory** (routes at the root form; under a path prefix each is mounted below it, and `docs/deploy.md` maps every path vink serves with its caller, credentials and proxy rule)
 
 | Route | Content | Live behaviour |
 | --- | --- | --- |
@@ -378,6 +378,8 @@ The UI is one list and one drawer per entity, rendered by the server, with htmx 
 - Keyboard: `/` focuses search, `Esc` closes the drawer, `n` opens create. Nothing else.
 - Empty states teach: an empty project shows the ping URL pattern and a two-line crontab example; an empty channel list shows the SMTP snippet.
 - Responsive, by CSS alone: beside an open drawer the list drops its trend column under 1280 px; under 960 px the drawer is the page (the list hides while a drawer is open, Close or Escape brings it back; deep links render the drawer alone on first paint); under 640 px rows go two-line, the top bar two-row, forms one column and tabs scroll; coarse pointers get 40 px controls and 16 px inputs.
+
+**Path prefix**: a deployment lives at the root of a host or under one path, never both; the path of `server.base_url` decides (a separate ping listener follows `ping.base_url`). Routes are registered root-relative and mounted under the prefix by `middleware.MountUnder`, which strips it on the way in, records it on the request, answers the bare prefix with a redirect and anything outside it with 404, and puts the prefix back on a root-relative `Location` or `HX-Redirect` a handler wrote without it. Every path the server writes goes through `middleware.Href` (`reqCtx.href` in the UI, `.Root` in templates): links, redirects, htmx attributes, static assets, the API's `Location` and the OpenAPI `servers` entry. Cookies are scoped to the prefix. A status page on its own domain is routed by host outside the prefix and served with none. The proxy forwards the path unchanged; `docs/deploy.md` is the guide and `TestDeployedUnderAPath` walks every page under a prefix.
 
 **Simplicity budget**: the top bar has four things; a page has at most one filter bar, one list and one drawer; a form shows at most eight fields before `Advanced`. Anything that does not fit is an API/YAML feature, not a UI feature.
 
@@ -572,7 +574,7 @@ Specs are decoded and validated once, in `domain` (`PullSpec.Validate(kind)`), s
 ```toml
 [server]
 listen = ":8080"
-base_url = "https://vink.w4j.nl"          # used in ping URLs, links, cookies
+base_url = "https://vink.w4j.nl"          # used in ping URLs, links, cookies; a path (https://host/vink) mounts vink under it
 trusted_proxies = ["10.0.0.0/8"]         # for X-Forwarded-For / Proto
 [ping]
 listen = ""                              # optional second listener, e.g. ":8081"

@@ -44,7 +44,7 @@ what they gain. You will get an answer within a week; fixes ship as a patch rele
 
 ## Deployment advice
 
-- Terminate TLS at your proxy and set `server.base_url` to the public address, so cookies are
+- Terminate TLS at your proxy and set `server.base_url` to the public address, path included when vink lives under one, so cookies are
   `Secure` and links are right.
 - Keep `auth.proxy.trusted_cidrs` to the proxy's own address, and the proxy secret out of the
   config file (`secret = "env:VINK_PROXY_SECRET"`).

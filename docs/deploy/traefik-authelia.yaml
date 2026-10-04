@@ -70,3 +70,19 @@ http:
 #   trusted_cidrs = ["172.16.0.0/12"]
 #   secret = "env:VINK_PROXY_SECRET"
 #   logout_url = "https://auth.example.com/logout?rd=https://vink.example.com"   # rd: where Authelia sends the person afterwards; without it they stay on its page
+
+# Under a path on a shared host (base_url = "https://www.example.com/vink"): the same two
+# routers, every path prefixed, nothing stripped. vink mounts itself under /vink and writes
+# every link with it; health probes use /vink/readyz. Authelia's rule names the same host.
+#  routers:
+#    vink-open:
+#      rule: Host(`www.example.com`) && (PathPrefix(`/vink/ping/`) || PathPrefix(`/vink/api/`) || PathPrefix(`/vink/s/`) || PathPrefix(`/vink/static/`) || PathPrefix(`/vink/a/`) || PathPrefix(`/vink/agent/`) || Path(`/vink/metrics`) || Path(`/vink/healthz`) || Path(`/vink/readyz`))
+#      priority: 100
+#      entryPoints: [websecure]
+#      middlewares: [strip-identity, vink-secret]
+#      service: vink
+#    vink-ui:
+#      rule: Host(`www.example.com`) && PathPrefix(`/vink`)
+#      entryPoints: [websecure]
+#      middlewares: [authelia, vink-secret]
+#      service: vink

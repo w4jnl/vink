@@ -5,7 +5,7 @@
 
 [server]
 listen = ":8080"                       # address the web UI, API and ping ingress listen on
-base_url = "http://localhost:8080"     # public address: ping URLs, links, cookies (Secure when https)
+base_url = "http://localhost:8080"     # public address: ping URLs, links, cookies (Secure when https); a path (https://host/vink) mounts vink under it
 trusted_proxies = []                   # CIDRs whose X-Forwarded-For is believed, e.g. ["10.0.0.0/8"]
 
 [ping]

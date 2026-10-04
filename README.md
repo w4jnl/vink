@@ -326,9 +326,12 @@ command; `vink serve --print-config` shows the effective configuration with secr
 
 ## Deployment
 
-`docs/deploy/` holds the systemd units for the server and the agent, the compose file, the
-Traefik with Authelia and Apache with Kerberos snippets, and `vink.toml.example`. The image has no
-shell: `docker exec -i vink /vink admin …` runs admin commands, and health is checked from
+[`docs/deploy.md`](docs/deploy.md) is the deployment guide: the address (an own hostname, or a
+path on a shared host such as `https://www.example.com/vink`, set through `base_url`), the proxy
+rules and the paths that stay open, a verification checklist, a troubleshooting table and the map
+of every URL vink serves. `docs/deploy/` holds the systemd units for the server and the agent, the
+compose file, the Traefik with Authelia, Apache with Kerberos and nginx snippets, and
+`vink.toml.example`. The image has no shell: `docker exec -i vink /vink admin …` runs admin commands, and health is checked from
 outside at `/readyz`. ICMP monitors need `CAP_NET_RAW` in the container or
 `net.ipv4.ping_group_range` on the host. For an air-gapped install, set `[outbound] egress_log`
 to a file: it records every connection the server opens, and an idle install leaves it empty.

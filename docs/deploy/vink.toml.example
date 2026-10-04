@@ -6,7 +6,7 @@
 
 [server]
 listen = ":8080"
-base_url = "http://localhost:8080"     # used in ping URLs, links and cookies; set to your public URL
+base_url = "http://localhost:8080"     # the public address: ping URLs, links, cookies; a path here (https://host/vink) mounts vink under it, see docs/deploy.md
 trusted_proxies = []                   # CIDRs whose X-Forwarded-For is honoured, e.g. ["10.0.0.0/8"]
 
 [ping]

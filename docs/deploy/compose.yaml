@@ -16,7 +16,7 @@ services:
     volumes:
       - vink-data:/data
     environment:
-      VINK_SERVER_BASE_URL: "https://vink.example.com"
+      VINK_SERVER_BASE_URL: "https://vink.example.com"   # or https://www.example.com/vink: vink then lives under /vink, health at /vink/readyz
       VINK_SERVER_TRUSTED_PROXIES: "172.16.0.0/12"
       VINK_DB_PATH: /data/vink.db
       VINK_SECRETS_KEY_FILE: /data/secret.key
@@ -33,7 +33,7 @@ services:
   # here. Create the agent in Org settings → Agents and paste its token.
   # agent:
   #   image: ghcr.io/w4jnl/vink:latest
-  #   command: ["agent", "--server", "wss://vink.example.com", "--labels", "site=home"]
+  #   command: ["agent", "--server", "wss://vink.example.com", "--labels", "site=home"]   # under a path: wss://www.example.com/vink
   #   environment:
   #     VINK_AGENT_TOKEN: "vat_…"
   #   network_mode: host

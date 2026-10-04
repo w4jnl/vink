@@ -6,6 +6,14 @@ updates this file first. Dates are the tag dates.
 
 ## Unreleased
 
+- vink can be deployed under a path on a shared host, `https://www.example.com/vink`, as well as
+  at its own hostname: the path of `server.base_url` is the prefix, and a deployment lives at
+  one or the other, never both. Every link, redirect, htmx attribute, static asset, cookie, the
+  API's `Location` and the OpenAPI `servers` entry carry it; the proxy forwards the path
+  unchanged. `docs/deploy.md` is the new deployment guide, with the proxy rules, a verification
+  checklist, a troubleshooting table and the map of every URL vink serves; `docs/deploy/` gains
+  an nginx example and prefixed variants of the Traefik and Apache ones. A `base_url` that
+  already carried a path while vink served at the root now moves vink under that path.
 - A ping that came through a trusted proxy records the proxy as `via` next to the client it
   reported, so the observation panel shows which hop an address came from.
 
