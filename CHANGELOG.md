@@ -6,6 +6,13 @@ updates this file first. Dates are the tag dates.
 
 ## Unreleased
 
+- A Python client, `vink_ping`, in `ping-py/` with its own versions (`ping-py/vX.Y.Z`). It does
+  what the Go module does: every signal, notes, messages and bodies, runs paired by id, pings by
+  id, creating a monitor from its first ping, retries, the server's limits and errors without the
+  ping key. `with monitor.run():` and the `@monitor.job` decorator report a block or a function,
+  an exception as a failure with its traceback, `SystemExit` and `CalledProcessError` as their
+  exit code. It is one file on the standard library for Python 3.9 and later, installed from git
+  with pip, uv or Poetry, or copied into a project.
 - `vink ping` and `vink run` send their pings through the Go ping module, so they gain what it
   does. A ping is tried up to three times when vink cannot be reached, answers 5xx or
   rate-limits it. A 413 is sent once more with the body cut to the monitor's limit, and messages

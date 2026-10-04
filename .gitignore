@@ -9,3 +9,6 @@ secret.key
 *.db-shm
 build-errors.log
 coverage.out
+__pycache__/
+*.egg-info/
+/ping-py/build/

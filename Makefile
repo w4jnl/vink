@@ -51,9 +51,13 @@ lint: check-tenancy check-egress
 fmt:
 	$(GOLANGCI) fmt
 
+# ping-py/ is the Python client; its tests run against a fake endpoint and,
+# with VINK_TEST_BINARY, against a vink built from this tree.
 test:
 	go test -race ./...
 	cd ping && go test -race ./...
+	CGO_ENABLED=0 go build -o $(BIN)/vink ./cmd/vink
+	cd ping-py && VINK_TEST_BINARY=$(BIN)/vink python3 -m unittest discover -s tests
 
 e2e:
 	go test -race -count=1 -tags e2e -v ./e2e/...

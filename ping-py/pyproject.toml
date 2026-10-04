@@ -1,0 +1,49 @@
+# vink-ping is installed from git, not from PyPI:
+#   pip install "vink-ping @ git+https://github.com/w4jnl/vink.git@ping-py/v0.1.0#subdirectory=ping-py"
+# It has no dependencies; the build needs setuptools, which pip and uv fetch
+# for the build only. Where no package index is reachable, copy
+# vink_ping/__init__.py into the project as vink_ping.py instead.
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "vink-ping"
+version = "0.1.0"
+description = "Send heartbeat pings to a vink server: start, success, failure, exit codes, progress notes and runs."
+readme = "README.md"
+requires-python = ">=3.9"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Jaro Zajonc" }]
+keywords = ["vink", "heartbeat", "monitoring", "cron"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Operating System :: OS Independent",
+  "Topic :: System :: Monitoring",
+  "Typing :: Typed",
+]
+dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/w4jnl/vink"
+Documentation = "https://github.com/w4jnl/vink/tree/main/ping-py"
+
+[tool.setuptools]
+packages = ["vink_ping"]
+
+[tool.setuptools.package-data]
+vink_ping = ["py.typed"]
+
+[tool.ruff]
+line-length = 130
+target-version = "py39"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "B", "UP", "I", "SIM", "RUF"]
+ignore = ["UP007", "UP045"] # Optional[...] and Union[...] keep the annotations readable on 3.9
+
+[tool.mypy]
+python_version = "3.9"
+strict = true
+files = ["vink_ping"]

@@ -308,6 +308,30 @@ err = c.Monitor("nightly-backup").Run(ctx, backup)
 Its [README](../ping/README.md) and `go doc github.com/w4jnl/vink/ping` cover every signal,
 runs, notes, bodies, retries and errors.
 
+## From Python: `vink_ping`
+
+A Python program pings through `vink_ping`, one file with no dependencies beyond the standard
+library, for Python 3.9 and later. It is not on PyPI: pip, uv and Poetry install it from this
+repository, or the file is copied into the project.
+
+```sh
+pip install "vink-ping @ git+ssh://git@github.com/w4jnl/vink.git@ping-py/v0.1.0#subdirectory=ping-py"
+```
+
+```python
+import vink_ping
+
+client = vink_ping.Client.from_env()  # VINK_PING_URL and VINK_PING_KEY, as above
+with client.monitor("nightly-backup").run() as run:
+    backup()
+    run.log("backup done, pruning")
+    prune()
+```
+
+The `with` block sends the start, then a success, or a failure carrying the exception and its
+traceback. Its [README](../ping-py/README.md) and `help(vink_ping)` cover every signal, the
+`@job` decorator, runs, exit codes, retries and errors.
+
 ## Methods, answers and limits
 
 - `GET`, `POST`, `HEAD` and `PUT` are accepted. A monitor can restrict itself to `POST`
@@ -383,18 +407,19 @@ ExecStopPost=/usr/bin/curl -fsS -m 10 "https://vink.w4j.nl/ping/<key>/nightly-ba
         run: curl -fsS -m 10 "https://vink.w4j.nl/ping/${{ secrets.VINK_PING_KEY }}/deploy/${{ job.status == 'success' && 0 || 1 }}"
 ```
 
-**Python.**
+**Python.** With [`vink_ping`](#from-python-vink_ping), a decorator does it:
 
 ```python
-import requests, sys
-url = "https://vink.w4j.nl/ping/<key>/report"
-requests.get(f"{url}/start", timeout=10)
-try:
-    run_report()
-    requests.get(url, timeout=10)
-except Exception as e:
-    requests.post(f"{url}/fail", data=str(e)[:4000], timeout=10)
-    sys.exit(1)
+@vink_ping.Client.from_env().monitor("report").job
+def run_report():
+    ...
+```
+
+Without it, the standard library is enough for one ping:
+
+```python
+import urllib.request
+urllib.request.urlopen("https://vink.w4j.nl/ping/<key>/report", data=b"", timeout=10)
 ```
 
 **PowerShell.**

@@ -41,8 +41,8 @@ jobs:
           args: release --clean --release-notes /tmp/notes.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # the pushed tag is the version, also when a ping/vX.Y.Z tag for
-          # the Go module sits on the same commit (ignore_tags in
+          # the pushed tag is the version, also when a ping/ or ping-py/ tag
+          # for a client sits on the same commit (ignore_tags in
           # .goreleaser.yaml only covers tags before it)
           GORELEASER_CURRENT_TAG: ${{ github.ref_name }}
       # goreleaser has published with an empty body once; the notes are set here regardless

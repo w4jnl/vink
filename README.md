@@ -119,8 +119,9 @@ hosted synthetic monitor).
 - **Heartbeats**: a period or a 5-field cron schedule in the monitor's timezone, a tolerance
   and a grace, a maximum runtime, `start`, `fail`, `log` and exit-code signals, run ids that pair a start with
   its finish, the body of a ping stored up to 64 kB, `?create=1` to make a monitor from its first
-  ping, `vink run` to wrap a command and `vink ping` for scripts, with the ping key alone, and a
-  Go module, [`github.com/w4jnl/vink/ping`](ping/README.md), for programs.
+  ping, `vink run` to wrap a command and `vink ping` for scripts, with the ping key alone, and
+  clients for programs: a Go module, [`github.com/w4jnl/vink/ping`](ping/README.md), and a Python
+  package, [`vink_ping`](ping-py/README.md), both without dependencies.
 - **Checks**: HTTP with status, keyword and JSON path assertions, redirects and a private CA; TCP
   with a banner; DNS; TLS expiry; ICMP. Each on an interval from 10 s with a timeout, confirm
   retries, failure and recovery thresholds, latency sparklines, `check now`.
@@ -207,7 +208,7 @@ the same 404. Pings are limited to 10 a minute per monitor and 300 a minute per 
 ping key is an address, not a secret: rotate it from the project's keys tab when it leaks.
 [`docs/heartbeats.md`](docs/heartbeats.md) is the guide for the person writing the job: runs
 with start and finish, progress notes, bodies and messages, scripting with `vink run` and
-`vink ping`, the Go module, and recipes for cron, systemd, CI, Python and PowerShell.
+`vink ping`, the Go and Python clients, and recipes for cron, systemd, CI, Python and PowerShell.
 
 ### Check kinds
 
@@ -364,14 +365,14 @@ make dev         # live reload of vink serve -d on data/vink.db
 make generate    # sqlc
 make migrate     # apply migrations and dump db/schema.sql
 make lint        # gofmt, vet, golangci-lint, the tenancy gate and the egress gate, for both modules
-make test        # go test -race ./..., for both modules
+make test        # go test -race ./... for both Go modules, and the Python client's tests
 make e2e         # four smoke tests against the built binary, about six minutes
 make golden      # regenerate the UI golden files from the design system with node
 ```
 
 `cmd/vink` is the cobra root; `internal/` holds the service layer, the engine, the checkers, the
 notifiers, the HTTP transports and the sqlc store; `e2e/` the smoke tests; `ping/` the Go client
-module, a module of its own with no dependencies. `docs/design.md` is
+module, a module of its own with no dependencies; `ping-py/` the Python client. `docs/design.md` is
 the design vink is built from, `docs/design-system/` the brand and UI rules the templates follow
 (the markup is what `components/bundle.js` returns), and `CLAUDE.md` the conventions. Every
 project-scoped query filters by `project_id`; `internal/http/crosstenant_test.go` checks every

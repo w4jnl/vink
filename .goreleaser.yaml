@@ -74,11 +74,13 @@ dockers_v2:
 snapshot:
   version_template: "{{ incpatch .Version }}-next"
 
-# ping/vX.Y.Z tags version the Go ping module in ping/, not vink: never
-# take one for vink's version, nor as the previous release
+# ping/vX.Y.Z and ping-py/vX.Y.Z tags version the Go and Python ping
+# clients, not vink: never take one for vink's version, nor as the previous
+# release
 git:
   ignore_tags:
     - "ping/*"
+    - "ping-py/*"
 
 # release notes come from CHANGELOG.md: the release workflow passes them with
 # --release-notes and sets them again after the upload, so this changelog is never used

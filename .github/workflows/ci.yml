@@ -54,6 +54,53 @@ jobs:
       - name: test
         run: go test -race ./...
 
+  # ping-py/ is the Python client: standard library only, Python 3.9 and
+  # later. Its tests also run against a vink built from this commit.
+  ping-python:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python: ["3.9", "3.x"]
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: build vink for the tests
+        run: CGO_ENABLED=0 go build -o "$RUNNER_TEMP/vink" ./cmd/vink
+
+      - name: no dependencies
+        working-directory: ping-py
+        run: |
+          python - <<'EOF'
+          import re, sys
+          deps = re.search(r"^dependencies = \[(.*?)\]", open("pyproject.toml").read(), re.M | re.S)
+          sys.exit("the Python client must stay on the standard library" if deps is None or deps.group(1).strip() else 0)
+          EOF
+
+      - name: lint and types
+        if: matrix.python == '3.x'
+        working-directory: ping-py
+        run: |
+          pipx run ruff==0.14.0 check .
+          pipx run ruff==0.14.0 format --check .
+          pipx run mypy==1.18.2
+
+      - name: test
+        working-directory: ping-py
+        run: VINK_TEST_BINARY="$RUNNER_TEMP/vink" python -m unittest discover -s tests -v
+
+      - name: installs from its directory
+        run: |
+          python -m pip install --quiet ./ping-py
+          cd "$RUNNER_TEMP" && python -c "import vink_ping; print('vink_ping', vink_ping.__version__)"
+
   # ping/ is its own module with no dependencies and an older go line, so
   # projects on older Go can import it: lint it, and test it on the oldest
   # Go it declares as well as the current one.

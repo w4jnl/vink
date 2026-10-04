@@ -32,8 +32,14 @@ the copy in `ping/`. A module change the CLI needs therefore takes two steps: ta
 too. Neither a `replace` directive (it breaks `go install …@version`) nor a committed `go.work`
 (release builds would use other code than `go.mod` says) is a shortcut.
 
-The module's tags never become vink's version: `.goreleaser.yaml` ignores `ping/*` when it looks
-back for the last tag, and the release workflow hands goreleaser the tag it was started by, so a
+`ping-py/` is the Python client, `vink_ping`, installed from this repository rather than PyPI.
+It stays on the standard library and Python 3.9. `make test` runs its tests against a fake
+endpoint and against a vink built from the tree, and CI does the same on Python 3.9 and the
+current release, with ruff and mypy. Bump `version` in `pyproject.toml` and `__version__`
+together (a test checks they match), then tag `ping-py/vX.Y.Z` on main.
+
+The clients' tags never become vink's version: `.goreleaser.yaml` ignores `ping/*` and `ping-py/*` when it
+looks back for the last tag, and the release workflow hands goreleaser the tag it was started by, so a
 ping tag may share a commit with a vink release.
 
 `docs/design.md` is the specification; ask before deviating from it. UI changes follow
