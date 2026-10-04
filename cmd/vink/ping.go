@@ -152,20 +152,27 @@ func firstSet(values ...string) string {
 
 func newPingCmd(g *globals) *cobra.Command {
 	f := &pingFlags{clientFlags: clientFlags{g: g}}
-	var start, fail, create bool
+	var start, fail, logNote, create bool
 	var exitCode int
 	var msg, rid string
 	var bodyFrom string
 	cmd := &cobra.Command{
 		Use:   "ping <slug>",
 		Short: "Send a heartbeat ping with the project's ping key",
-		Long: `vink ping sends one heartbeat ping. With --ping-key or VINK_PING_KEY it
+		Long: `vink ping sends one heartbeat ping: a success, or with --start, --fail,
+--exit or --log one of those signals. --log adds a progress note to the
+monitor's history and changes nothing else; give it --msg, --body - or both.
+
+With --ping-key or VINK_PING_KEY it
 needs no API key: the ping goes to --ping-url or VINK_PING_URL (a ping URL
 up to the key, ending in /ping/), else to VINK_SERVER or the context's
 server. Without a ping key, the context's API key looks the ping key up
 once; that needs a read-write key.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if logNote && msg == "" && bodyFrom != "-" {
+				return cli.UserError("--log sends a note: add --msg or --body -")
+			}
 			c, base, key, err := pingTarget(cmd, f)
 			if err != nil {
 				return err
@@ -176,6 +183,8 @@ once; that needs a read-write key.`,
 				target += "/start"
 			case fail:
 				target += "/fail"
+			case logNote:
+				target += "/log"
 			case cmd.Flags().Changed("exit"):
 				target += "/" + strconv.Itoa(exitCode)
 			}
@@ -212,10 +221,12 @@ once; that needs a read-write key.`,
 	cmd.Flags().BoolVar(&start, "start", false, "send a start signal")
 	cmd.Flags().BoolVar(&fail, "fail", false, "send a fail signal")
 	cmd.Flags().IntVar(&exitCode, "exit", 0, "send an exit code (0 is ok)")
+	cmd.Flags().BoolVar(&logNote, "log", false, "send a progress note (--msg or --body -) that changes no state")
 	cmd.Flags().StringVar(&msg, "msg", "", "a short message stored with the ping")
 	cmd.Flags().StringVar(&rid, "rid", "", "run id pairing a start with its finish")
 	cmd.Flags().BoolVar(&create, "create", false, "create the monitor on first ping")
 	cmd.Flags().StringVar(&bodyFrom, "body", "", "read the body from stdin with --body -")
+	cmd.MarkFlagsMutuallyExclusive("start", "fail", "exit", "log")
 	return cmd
 }
 

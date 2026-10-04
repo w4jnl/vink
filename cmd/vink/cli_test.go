@@ -336,6 +336,62 @@ func TestCLIPingWithPingKey(t *testing.T) {
 	}
 }
 
+// TestCLIPingLog: --log stores a note, msg or body, and changes no state;
+// it needs a note, and the signal flags exclude each other.
+func TestCLIPingLog(t *testing.T) {
+	e := newCLIEnv(t)
+	ctx := context.Background()
+	e.monitor("job")
+	state := func() domain.State {
+		t.Helper()
+		m, err := e.svc.MonitorBySlug(ctx, e.scope, "job")
+		if err != nil {
+			t.Fatal(err)
+		}
+		return m.State
+	}
+	if _, errs, code := e.run("", "ping", "job", "--fail"); code != 0 || state() != domain.StateDown {
+		t.Fatalf("ping fail: %d %s %s", code, errs, state())
+	}
+	if out, errs, code := e.run("", "ping", "job", "--log", "--msg", "step 2 of 5"); code != 0 || out != "ok\n" {
+		t.Fatalf("ping --log --msg: %d %q %s", code, out, errs)
+	}
+	if _, errs, code := e.run("1203 files so far\n", "ping", "job", "--log", "--body", "-", "--quiet"); code != 0 {
+		t.Fatalf("ping --log --body: %d %s", code, errs)
+	}
+	if got := state(); got != domain.StateDown {
+		t.Errorf("a note changed the state to %s", got)
+	}
+	obs, _ := e.svc.ListObservations(ctx, e.scope, "job", service.HistoryPage{Limit: 10})
+	if len(obs) != 3 || obs[0].Signal != domain.SignalLog || !obs[0].HasBody || obs[1].Signal != domain.SignalLog || obs[1].Detail["msg"] != "step 2 of 5" {
+		t.Fatalf("observations: %+v", obs)
+	}
+	body, _, _ := e.svc.ObservationBody(ctx, e.scope, obs[0].ID)
+	if string(body) != "1203 files so far\n" {
+		t.Errorf("note body: %q", body)
+	}
+
+	for _, tc := range []struct {
+		name string
+		args []string
+		want string
+	}{
+		{"a note without text", []string{"--log"}, "--log sends a note"},
+		{"two signals", []string{"--start", "--fail"}, "none of the others can be"},
+		{"a note and an exit code", []string{"--log", "--msg", "x", "--exit", "0"}, "none of the others can be"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, errs, code := e.run("", append([]string{"ping", "job"}, tc.args...)...)
+			if code != 1 || !strings.Contains(errs, tc.want) {
+				t.Fatalf("want exit 1 with %q, got %d %q", tc.want, code, errs)
+			}
+		})
+	}
+	if obs, _ := e.svc.ListObservations(ctx, e.scope, "job", service.HistoryPage{Limit: 10}); len(obs) != 3 {
+		t.Errorf("a refused command sent a ping: %d observations", len(obs))
+	}
+}
+
 func TestPingBaseURL(t *testing.T) {
 	for _, tc := range []struct{ in, want string }{
 		{"https://vink.example.com/ping/", "https://vink.example.com/ping/"},

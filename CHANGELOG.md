@@ -10,6 +10,9 @@ updates this file first. Dates are the tag dates.
   key: `VINK_PING_KEY` (or `--ping-key`) and `VINK_PING_URL` (or `--ping-url`, a ping URL up to
   the key), or `VINK_SERVER` and the context's server for the address. With a ping key the CLI
   never calls the API. A read-only API key without a ping key now says how to get one.
+- `vink ping --log` sends a progress note, with `--msg`, `--body -` or both, which shows in the
+  monitor's history and changes nothing else. `--start`, `--fail`, `--exit` and `--log` now
+  refuse to be combined; before, a second one was silently dropped.
 - vink can be deployed under a path on a shared host, `https://www.example.com/vink`, as well as
   at its own hostname: the path of `server.base_url` is the prefix, and a deployment lives at
   one or the other, never both. Every link, redirect, htmx attribute, static asset, cookie, the

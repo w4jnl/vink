@@ -112,7 +112,9 @@ travels:
   curl -fsS -X POST --data-binary "step 2 of 5 done, 1203 files so far" "$URL/log"
   ```
 
-The two can go together on one request, the msg for the row and the body for the detail.
+The two can go together on one request, the msg for the row and the body for the detail. With
+the CLI, `vink ping <slug> --log --msg "step 2 of 5 done"` sends the first and
+`… | vink ping <slug> --log --body -` the second.
 
 **Overlapping runs** are told apart with a run id. Pass the same `?rid=` on the start and the
 finishing ping, and vink pairs those two whatever else arrives in between:
@@ -162,7 +164,7 @@ vink run nightly-backup -- /usr/local/bin/backup.sh
 sends `/start`, runs the command, and sends `/<exit code>` with the last 16 kB of the command's
 output as the body (`--tail` changes how much). It exits with the command's own code, so it
 drops into any crontab or unit file in place of the command. `vink ping <slug> [--start]
-[--fail] [--exit N] [--msg …]` sends a single signal by hand.
+[--fail] [--exit N] [--log] [--msg …]` sends a single signal by hand.
 
 A job host needs no API key. Give the CLI the project's ping key instead, the same key every
 ping URL of the project contains (Settings › Keys shows it), and the address in front of it:
