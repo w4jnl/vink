@@ -153,34 +153,156 @@ carried goes into the alert: the `?msg=` as it is, or, without one, the last 20 
 body (at most 2,000 bytes), plus the exit code. A deadline that passes has nothing to say beyond
 its reason.
 
-## `vink run`: one command for all of it
+## From a script: the vink CLI
 
-Where the vink CLI is installed, with a context pointing at the server:
+The vink binary sends pings itself, so a script needs no curl line to build. `vink run` wraps a
+command, and `vink ping` sends one signal. Both work on any host with vink installed, from the
+release archive, Homebrew or the container image, and need only the project's ping key.
 
-```sh
-vink run nightly-backup -- /usr/local/bin/backup.sh
-```
+### Setting up a job host
 
-sends `/start`, runs the command, and sends `/<exit code>` with the last 16 kB of the command's
-output as the body (`--tail` changes how much). It exits with the command's own code, so it
-drops into any crontab or unit file in place of the command. `vink ping <slug> [--start]
-[--fail] [--exit N] [--log] [--msg …]` sends a single signal by hand.
-
-A job host needs no API key. Give the CLI the project's ping key instead, the same key every
-ping URL of the project contains (Settings › Keys shows it), and the address in front of it:
+Give the CLI the address in front of the key and the key itself. The key is the same one every
+ping URL of the project contains, and Settings › Keys shows it.
 
 ```sh
-export VINK_PING_URL=https://vink.example.com/ping/    # a ping URL up to the key
-export VINK_PING_KEY=7jnmu7j5wjxovaewk4lee5
-vink run nightly-backup -- /usr/local/bin/backup.sh
+# /etc/vink/ping.env, owned by root, mode 600
+# the ping URL up to the key, and the project's ping key
+VINK_PING_URL=https://vink.example.com/ping/
+VINK_PING_KEY=7jnmu7j5wjxovaewk4lee5
 ```
+
+Plain assignments without `export` and without trailing comments suit both readers. A systemd
+unit loads the file with `EnvironmentFile=/etc/vink/ping.env`. A shell loads it with
+`set -a; . /etc/vink/ping.env; set +a`, where `set -a` exports what the file assigns, so vink
+sees it.
 
 With a ping key the CLI only sends pings and never calls the API, so the host holds nothing a
-curl line would not. `--ping-key` and `--ping-url` do the same per command. Without
-`VINK_PING_URL`, pings go to `VINK_SERVER` or the context's server with `/ping/` added; set it
-when pings have their own address (`ping.base_url`). Without a ping key, the context's API key
-looks the ping key up once and the context keeps it; that takes a read-write key, since a
+curl line would not. The address is found in this order:
+
+1. `--ping-url` or `VINK_PING_URL`, a ping URL up to the key. Set it when pings have their own
+   address (`ping.base_url`).
+2. `VINK_SERVER` or the context's server, with `/ping/` added.
+
+`--ping-key` and `--ping-url` set the same per command. Without a ping key, the context's API key
+looks the ping key up once and the context keeps it. That takes a read-write key, since a
 read-only key cannot see the ping key.
+
+### Wrapping a command: `vink run`
+
+```sh
+vink run nightly-backup -- /usr/local/bin/backup.sh --full
+```
+
+It sends `/start`, runs the command with its output passed through, then sends `/<exit code>`
+with the last 16 kB of the output as the body (`--tail` changes how much). It exits with the
+command's own code and passes Ctrl-C and `SIGTERM` on to the command. When vink cannot be
+reached it prints a warning and the command runs all the same. That makes it a drop-in for the
+command in a crontab line or a unit file:
+
+```cron
+0 3 * * * set -a && . /etc/vink/ping.env && vink run nightly-backup -- /usr/local/bin/backup.sh
+```
+
+```ini
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/vink/ping.env
+ExecStart=/usr/local/bin/vink run nightly-backup -- /usr/local/bin/backup.sh
+```
+
+### One signal: `vink ping`
+
+| Command | Sends |
+| --- | --- |
+| `vink ping <slug>` | a success |
+| `vink ping <slug> --start` | the job began; a run opens |
+| `vink ping <slug> --fail` | a failure |
+| `vink ping <slug> --exit N` | an exit code, 0 is a success |
+| `vink ping <slug> --log --msg "…"` | a progress note; it changes nothing else |
+
+One of `--start`, `--fail`, `--exit` and `--log` at a time. Each goes with these:
+
+- `--msg "…"` adds a line for the observation's row and the alert.
+- `--body -` reads the body from stdin and sends its first 64 kB. Pipe through `tail -c` to keep
+  the end instead.
+- `--rid ID` pairs a start with its finish.
+- `--create` makes the monitor from its first ping.
+- `--quiet` prints nothing on success.
+
+`vink ping` makes one attempt of at most ten seconds and exits with one of these codes:
+
+| Exit | Meaning |
+| --- | --- |
+| 0 | the ping was recorded |
+| 1 | it was refused: a wrong key, slug or address, or flags that do not go together |
+| 2 | vink could not be reached, answered with a server error, or rate-limited the ping |
+
+### In a bash script
+
+A script that reports its own start, its outcome and the end of its log:
+
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+set -a; . /etc/vink/ping.env; set +a
+
+SLUG=nightly-backup
+RID="$(date +%s)-$$"          # pairs the start with its finish
+LOG=$(mktemp)
+
+# monitoring must never stop the job: a failed ping is ignored
+hb() { vink ping "$SLUG" --rid "$RID" --quiet "$@" || true; }
+
+hb --start
+trap 'code=$?; tail -c 16000 "$LOG" | hb --exit "$code" --body -; rm -f "$LOG"' EXIT
+
+{
+  restic backup /home
+  hb --log --msg "backup done, pruning"
+  restic forget --keep-daily 7 --prune
+} >>"$LOG" 2>&1
+```
+
+- **On success**, vink gets `/start`, the note, and `/0` with the log as the body, and the run's
+  duration.
+- **On a failure**, `set -e` ends the script and the trap sends the failing command's exit code
+  with the end of the log, which the alert quotes.
+- **When vink is down**, every `hb` fails quietly and the job finishes as it would without it.
+
+`|| true` matters because `vink ping` exits non-zero when it cannot deliver. Under `set -e`
+that would end the job. `vink run` needs no such guard.
+
+A note can carry more than a line. Pipe it in as the body:
+
+```bash
+restic stats --json | hb --log --body -
+```
+
+**One monitor per step.** When the steps of a script deserve their own alerts, wrap each:
+
+```bash
+vink run db-dump -- sh -c 'pg_dump app > /backup/app.sql'
+vink run offsite-copy -- rclone sync /backup remote:backup
+```
+
+The redirect sits inside `sh -c`, so the dump goes to its file, and only what the command prints
+on stderr ends up in the body.
+
+## From Go: the ping module
+
+A Go program pings through `github.com/w4jnl/vink/ping`, a module with no dependencies beyond
+the standard library that does what `vink ping` and `vink run` do:
+
+```go
+c, err := ping.FromEnv() // VINK_PING_URL and VINK_PING_KEY, as above
+if err != nil {
+	log.Fatal(err)
+}
+err = c.Monitor("nightly-backup").Run(ctx, backup)
+```
+
+Its [README](../ping/README.md) and `go doc github.com/w4jnl/vink/ping` cover every signal,
+runs, notes, bodies, retries and errors.
 
 ## Methods, answers and limits
 

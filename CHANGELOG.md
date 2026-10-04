@@ -12,6 +12,9 @@ updates this file first. Dates are the tag dates.
   monitor from its first ping, with retries, the server's limits respected, and errors that
   never contain the ping key. It needs Go 1.22 or later and nothing beyond the standard
   library; its README and `go doc` are written for people and coding agents alike.
+- `docs/heartbeats.md` has a section on scripting with the vink CLI: setting up a job host with
+  the ping key, `vink run` in cron and systemd, every `vink ping` flag and its exit codes, and a
+  bash script that reports its start, progress, outcome and log.
 - A monitor's own body limit, when lower than the server's, is now the one the
   `Ping-Body-Limit` header reports on a 413, so a client can cut its body to it and try again.
 - `vink ping` and `vink run` work with the project's ping key alone, so a job host needs no API
