@@ -137,6 +137,26 @@ func TestClientDoAndErrors(t *testing.T) {
 	}
 }
 
+func TestClientUnderAPath(t *testing.T) {
+	// a context whose server URL carries the deployment's path: the client keeps it in front of /api/v1
+	var got string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = r.URL.Path
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"items":[]}`))
+	}))
+	defer srv.Close()
+	for _, server := range []string{srv.URL + "/vink", srv.URL + "/vink/"} {
+		c := NewClient(server, "vk_test")
+		if _, err := c.DoRaw(context.Background(), "GET", "/monitors", nil, nil); err != nil {
+			t.Fatalf("%s: %v", server, err)
+		}
+		if got != "/vink/api/v1/monitors" {
+			t.Fatalf("%s: request path %q", server, got)
+		}
+	}
+}
+
 func TestPrinter(t *testing.T) {
 	var buf bytes.Buffer
 	p := &Printer{Out: &buf}

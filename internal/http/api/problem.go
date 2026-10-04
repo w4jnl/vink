@@ -36,7 +36,7 @@ func badRequest(format string, a ...any) error { return errBadRequest{msg: fmt.S
 
 // writeError maps an error to a problem response.
 func writeError(w http.ResponseWriter, r *http.Request, log *slog.Logger, err error) {
-	p := Problem{Instance: r.URL.Path}
+	p := Problem{Instance: middleware.Href(r, r.URL.Path)}
 	var br errBadRequest
 	switch {
 	case errors.As(err, &br):

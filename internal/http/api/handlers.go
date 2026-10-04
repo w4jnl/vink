@@ -12,6 +12,7 @@ import (
 	"github.com/w4jnl/vink/internal/apply"
 	"github.com/w4jnl/vink/internal/auth"
 	"github.com/w4jnl/vink/internal/domain"
+	"github.com/w4jnl/vink/internal/http/middleware"
 	"github.com/w4jnl/vink/internal/service"
 )
 
@@ -165,12 +166,12 @@ func (a *API) createMonitor(w http.ResponseWriter, r *http.Request) error {
 }
 
 // locationFor builds a Location header under the same prefix form the
-// request used.
+// request used, and under the deployment's path.
 func locationFor(r *http.Request, path string) string {
 	if org, project := r.PathValue("org"), r.PathValue("project"); org != "" && project != "" {
-		return Prefix + "/orgs/" + org + "/projects/" + project + path
+		return middleware.Href(r, Prefix+"/orgs/"+org+"/projects/"+project+path)
 	}
-	return Prefix + path
+	return middleware.Href(r, Prefix+path)
 }
 
 func (a *API) getMonitor(w http.ResponseWriter, r *http.Request) error {

@@ -907,3 +907,44 @@ func TestChannelsRoutesKeysPingKey(t *testing.T) {
 		t.Fatalf("rotate: %d %v", r.code, rot)
 	}
 }
+
+func TestAPIUnderAPath(t *testing.T) {
+	e := newEnv(t)
+	quiet := slog.New(slog.NewTextHandler(io.Discard, nil))
+	mux := http.NewServeMux()
+	New(e.svc, e.authn, quiet).Mount(mux)
+	srv := middleware.Chain(middleware.MountUnder("/vink", mux), middleware.RequestID)
+	do := func(method, path string, body string) *httptest.ResponseRecorder {
+		var rd io.Reader
+		if body != "" {
+			rd = strings.NewReader(body)
+		}
+		req := httptest.NewRequest(method, path, rd)
+		req.Header.Set("Authorization", "Bearer "+e.rw)
+		if body != "" {
+			req.Header.Set("Content-Type", "application/json")
+		}
+		rec := httptest.NewRecorder()
+		srv.ServeHTTP(rec, req)
+		return rec
+	}
+	if rec := do("POST", "/vink/api/v1/monitors", `{"slug":"nightly","kind":"heartbeat","schedule":{"period":"1h"}}`); rec.Code != 201 || rec.Header().Get("Location") != "/vink/api/v1/monitors/nightly" {
+		t.Fatalf("create under a path: %d Location %q", rec.Code, rec.Header().Get("Location"))
+	}
+	if rec := do("POST", "/vink/api/v1/orgs/homelab/projects/prod/monitors", `{"slug":"weekly","kind":"heartbeat","schedule":{"period":"1h"}}`); rec.Code != 403 && rec.Header().Get("Location") != "" && !strings.HasPrefix(rec.Header().Get("Location"), "/vink/api/v1/orgs/homelab/projects/prod/monitors/") {
+		t.Fatalf("org form Location: %d %q", rec.Code, rec.Header().Get("Location"))
+	}
+	if rec := do("GET", "/vink/api/v1/openapi.yaml", ""); rec.Code != 200 || !strings.Contains(rec.Body.String(), "  - url: /vink/api/v1\n") || strings.Contains(rec.Body.String(), "  - url: /api/v1\n") {
+		t.Fatalf("openapi servers under a path: %d", rec.Code)
+	}
+	if rec := do("GET", "/vink/api/v1/nope", ""); rec.Code != 404 || !strings.Contains(rec.Body.String(), `"instance":"/vink/api/v1/nope"`) {
+		t.Fatalf("problem instance under a path: %d %s", rec.Code, rec.Body.String())
+	}
+	if rec := do("GET", "/api/v1/monitors", ""); rec.Code != 404 {
+		t.Fatalf("the root must not answer: %d", rec.Code)
+	}
+	// with no prefix the document is served untouched
+	if r := e.key(e.rw, "GET", "/openapi.yaml", nil); !strings.Contains(string(r.body), "  - url: /api/v1\n") {
+		t.Fatal("openapi servers at the root")
+	}
+}

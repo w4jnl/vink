@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -105,9 +106,10 @@ func (a *API) Mount(mux *http.ServeMux) {
 	a.registerOrg(mux, "DELETE", "/agents/{name}", a.deleteAgent, false)
 	a.registerOrg(mux, "PUT", "/apply", a.applyOrg, true)
 	a.registerOrg(mux, "GET", "/export", a.exportOrg, true)
-	mux.HandleFunc("GET "+Prefix+"/openapi.yaml", func(w http.ResponseWriter, _ *http.Request) {
+	mux.HandleFunc("GET "+Prefix+"/openapi.yaml", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/yaml")
-		_, _ = w.Write(openAPI)
+		// the document's servers entry names the API's base under the deployment's path
+		_, _ = w.Write(bytes.Replace(openAPI, []byte("  - url: "+Prefix+"\n"), []byte("  - url: "+middleware.Href(r, Prefix)+"\n"), 1)) //nolint:gosec // G705: the prefix is the configured mount path the router recorded, not client input
 	})
 	// Anything else under the prefix is a JSON 404, never HTML.
 	mux.HandleFunc(Prefix+"/", func(w http.ResponseWriter, r *http.Request) {
