@@ -32,6 +32,10 @@ the copy in `ping/`. A module change the CLI needs therefore takes two steps: ta
 too. Neither a `replace` directive (it breaks `go install …@version`) nor a committed `go.work`
 (release builds would use other code than `go.mod` says) is a shortcut.
 
+The module's tags never become vink's version: `.goreleaser.yaml` ignores `ping/*` when it looks
+back for the last tag, and the release workflow hands goreleaser the tag it was started by, so a
+ping tag may share a commit with a vink release.
+
 `docs/design.md` is the specification; ask before deviating from it. UI changes follow
 `docs/design-system/`: the markup is what `components/bundle.js` returns, styles come from
 `bundle.css` and `tokens.css`, and `make golden` checks the Go components against it. Every
