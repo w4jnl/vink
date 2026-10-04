@@ -40,16 +40,20 @@ migrate:
 	go run ./cmd/vink migrate up --db $(DB)
 	go run ./cmd/vink migrate dump --db $(DB) --out db/schema.sql
 
+# ping/ is its own module (github.com/w4jnl/vink/ping): ./... at the root
+# does not reach it, so vet, lint and test run there too.
 lint: check-tenancy check-egress
 	@unformatted="$$(gofmt -l .)"; if [ -n "$$unformatted" ]; then echo "gofmt:"; echo "$$unformatted"; exit 1; fi
 	go vet ./...
 	$(GOLANGCI) run
+	cd ping && go vet ./... && $(GOLANGCI) run
 
 fmt:
 	$(GOLANGCI) fmt
 
 test:
 	go test -race ./...
+	cd ping && go test -race ./...
 
 e2e:
 	go test -race -count=1 -tags e2e -v ./e2e/...

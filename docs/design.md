@@ -78,6 +78,7 @@ internal/http/agentgw/    WebSocket gateway, assignment, result intake
 internal/agent/           agent runtime: connect, run checks, report, reconnect
 internal/cli/             REST client, contexts (~/.config/vink/config.toml), table/json printers
 internal/metrics/         Prometheus collectors
+ping/                     github.com/w4jnl/vink/ping, the Go client for the ping ingress: its own go.mod (go 1.22, standard library only), tagged ping/vX.Y.Z apart from vink's releases
 docs/                     apply-schema.json, deploy/ (systemd, compose, traefik-authelia, apache-kerberos)
 ```
 

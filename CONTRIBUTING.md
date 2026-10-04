@@ -17,6 +17,15 @@ What is welcome:
 
 Before a larger change, open an issue and ask; it saves both of us a rewrite.
 
+`ping/` is a separate Go module, `github.com/w4jnl/vink/ping`, which other projects import. It
+stays on the standard library and on `go 1.22`, and CI tests it on both Go 1.22 and the current
+release. `make lint` and `make test` cover it. It is released apart from vink, by tagging
+`ping/vX.Y.Z` on main when it changes:
+
+```sh
+git tag -a ping/v0.1.1 -m "ping v0.1.1" && git push origin ping/v0.1.1
+```
+
 `docs/design.md` is the specification; ask before deviating from it. UI changes follow
 `docs/design-system/`: the markup is what `components/bundle.js` returns, styles come from
 `bundle.css` and `tokens.css`, and `make golden` checks the Go components against it. Every

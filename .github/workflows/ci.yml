@@ -53,3 +53,41 @@ jobs:
 
       - name: test
         run: go test -race ./...
+
+  # ping/ is its own module with no dependencies and an older go line, so
+  # projects on older Go can import it: lint it, and test it on the oldest
+  # Go it declares as well as the current one.
+  ping-module:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        go: ["1.22", stable]
+    defaults:
+      run:
+        working-directory: ping
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version: ${{ matrix.go }}
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: golangci-lint
+        if: matrix.go == 'stable'
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.14.0
+          working-directory: ping
+
+      - name: no dependencies
+        run: |
+          if grep -q '^require' go.mod; then
+            echo "the ping module must stay on the standard library"
+            exit 1
+          fi
+
+      - name: test
+        run: go test -race ./...

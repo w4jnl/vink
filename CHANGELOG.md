@@ -6,6 +6,14 @@ updates this file first. Dates are the tag dates.
 
 ## Unreleased
 
+- A Go module for sending pings, `github.com/w4jnl/vink/ping`, in `ping/` with its own versions
+  (`ping/vX.Y.Z`). It does what `vink ping` and `vink run` do: every signal, progress notes,
+  messages and bodies, runs paired by id, `Run` to wrap a job, pings by id and creating a
+  monitor from its first ping, with retries, the server's limits respected, and errors that
+  never contain the ping key. It needs Go 1.22 or later and nothing beyond the standard
+  library; its README and `go doc` are written for people and coding agents alike.
+- A monitor's own body limit, when lower than the server's, is now the one the
+  `Ping-Body-Limit` header reports on a 413, so a client can cut its body to it and try again.
 - `vink ping` and `vink run` work with the project's ping key alone, so a job host needs no API
   key: `VINK_PING_KEY` (or `--ping-key`) and `VINK_PING_URL` (or `--ping-url`, a ping URL up to
   the key), or `VINK_SERVER` and the context's server for the address. With a ping key the CLI
