@@ -248,6 +248,113 @@ func TestCLIPingRunLogsStatusAck(t *testing.T) {
 	}
 }
 
+// TestCLIPingWithPingKey: with a ping key, ping and run need no API key
+// and never call the API; the address comes from --ping-url, VINK_PING_URL,
+// VINK_SERVER or the context, in that order.
+func TestCLIPingWithPingKey(t *testing.T) {
+	e := newCLIEnv(t)
+	ctx := context.Background()
+	key := e.project.PingKey
+	// a key the API would refuse: pings succeed only if /me is never asked
+	t.Setenv("VINK_KEY", "vk_not_a_key")
+	t.Setenv("VINK_PING_KEY", key)
+	if out, errs, code := e.run("", "ping", "job", "--create", "--msg", "from env"); code != 0 || out != "ok\n" {
+		t.Fatalf("ping with VINK_PING_KEY and VINK_SERVER: %d %q %s", code, out, errs)
+	}
+	if _, err := os.Stat(os.Getenv("VINK_CONFIG")); !os.IsNotExist(err) { //nolint:gosec // G703: the test's own temp file
+		t.Errorf("a ping key must not write the contexts file: %v", err)
+	}
+
+	// VINK_PING_URL alone gives the address, with or without the slash
+	t.Setenv("VINK_SERVER", "")
+	t.Setenv("VINK_KEY", "")
+	t.Setenv("VINK_PING_URL", e.srv.URL+"/ping")
+	out, errs, code := e.run("", "run", "job", "--", "sh", "-c", "echo from run; exit 2")
+	if code != 2 || !strings.Contains(out, "from run") || strings.Contains(errs, "warning") {
+		t.Fatalf("run with VINK_PING_URL: %d %q %q", code, out, errs)
+	}
+	obs, _ := e.svc.ListObservations(ctx, e.scope, "job", service.HistoryPage{Limit: 10})
+	if len(obs) != 3 || obs[0].ExitCode == nil || *obs[0].ExitCode != 2 || !obs[0].HasBody || obs[0].DurationMs == nil {
+		t.Fatalf("observations after run: %+v", obs)
+	}
+
+	// the flags, with nothing in the environment
+	t.Setenv("VINK_PING_KEY", "")
+	t.Setenv("VINK_PING_URL", "")
+	if _, errs, code := e.run("", "ping", "job", "--fail", "--ping-key", key, "--ping-url", e.srv.URL+"/ping/"); code != 0 {
+		t.Fatalf("ping with flags: %d %s", code, errs)
+	}
+
+	refused := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{"server url, not a ping url", []string{"--ping-key", key, "--ping-url", e.srv.URL}, "ending in /ping/"},
+		{"ping url with a query", []string{"--ping-key", key, "--ping-url", e.srv.URL + "/ping/?x=1"}, "ending in /ping/"},
+		{"not http", []string{"--ping-key", key, "--ping-url", "ftp://vink.example/ping/"}, "ending in /ping/"},
+		{"a whole ping url as the key", []string{"--ping-key", e.srv.URL + "/ping/" + key, "--ping-url", e.srv.URL + "/ping/"}, "the key alone"},
+		{"wrong key", []string{"--ping-key", "nokey", "--ping-url", e.srv.URL + "/ping/"}, "unknown ping key"},
+		{"no address", []string{"--ping-key", key}, "needs an address"},
+		{"unknown context", []string{"--ping-key", key, "--context", "nope"}, `no context named "nope"`},
+	}
+	for _, tc := range refused {
+		t.Run(tc.name, func(t *testing.T) {
+			_, errs, code := e.run("", append([]string{"ping", "job"}, tc.args...)...)
+			if code != 1 || !strings.Contains(errs, tc.want) {
+				t.Fatalf("want exit 1 with %q, got %d %q", tc.want, code, errs)
+			}
+		})
+	}
+
+	// the context's server is the fallback address
+	if _, errs, code := e.run("", "ctx", "add", "ro", "--server", e.srv.URL, "--key", e.roKey); code != 0 {
+		t.Fatalf("ctx add: %s", errs)
+	}
+	if _, errs, code := e.run("", "ping", "job", "--ping-key", key); code != 0 {
+		t.Fatalf("ping key with the context's server: %d %s", code, errs)
+	}
+	// a read-only API key without a ping key points at the way out
+	if _, errs, code := e.run("", "ping", "job"); code != 1 || !strings.Contains(errs, "VINK_PING_KEY") {
+		t.Fatalf("read-only key: %d %s", code, errs)
+	}
+
+	// VINK_PING_URL also redirects the pings of an API-key context
+	var got []string
+	rec := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = append(got, r.Method+" "+r.URL.Path)
+	}))
+	t.Cleanup(rec.Close)
+	t.Setenv("VINK_SERVER", e.srv.URL)
+	t.Setenv("VINK_KEY", e.rwKey)
+	t.Setenv("VINK_PING_URL", rec.URL+"/vink/ping/")
+	if _, errs, code := e.run("", "ping", "job"); code != 0 {
+		t.Fatalf("ping through VINK_PING_URL: %d %s", code, errs)
+	}
+	if len(got) != 1 || got[0] != "POST /vink/ping/"+key+"/job" {
+		t.Fatalf("the ping went to %v", got)
+	}
+}
+
+func TestPingBaseURL(t *testing.T) {
+	for _, tc := range []struct{ in, want string }{
+		{"https://vink.example.com/ping/", "https://vink.example.com/ping/"},
+		{"https://vink.example.com/ping", "https://vink.example.com/ping/"},
+		{"https://www.example.com/vink/ping", "https://www.example.com/vink/ping/"},
+		{"http://127.0.0.1:8080/ping//", "http://127.0.0.1:8080/ping/"},
+		{"https://vink.example.com/", ""},
+		{"https://vink.example.com/pings/", ""},
+		{"https://vink.example.com/ping/abc", ""},
+		{"vink.example.com/ping/", ""},
+		{"https://vink.example.com/ping/#x", ""},
+	} {
+		got, err := pingBaseURL(tc.in)
+		if (err != nil) != (tc.want == "") || got != tc.want {
+			t.Errorf("pingBaseURL(%q) = %q, %v; want %q", tc.in, got, err, tc.want)
+		}
+	}
+}
+
 func TestCheckCommand(t *testing.T) {
 	e := newCLIEnv(t)
 	reg, err := checks.NewRegistry(checks.Options{Outbound: outbound.Options{AllowPrivateTargets: true}})

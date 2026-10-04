@@ -164,6 +164,22 @@ output as the body (`--tail` changes how much). It exits with the command's own 
 drops into any crontab or unit file in place of the command. `vink ping <slug> [--start]
 [--fail] [--exit N] [--msg …]` sends a single signal by hand.
 
+A job host needs no API key. Give the CLI the project's ping key instead, the same key every
+ping URL of the project contains (Settings › Keys shows it), and the address in front of it:
+
+```sh
+export VINK_PING_URL=https://vink.example.com/ping/    # a ping URL up to the key
+export VINK_PING_KEY=7jnmu7j5wjxovaewk4lee5
+vink run nightly-backup -- /usr/local/bin/backup.sh
+```
+
+With a ping key the CLI only sends pings and never calls the API, so the host holds nothing a
+curl line would not. `--ping-key` and `--ping-url` do the same per command. Without
+`VINK_PING_URL`, pings go to `VINK_SERVER` or the context's server with `/ping/` added; set it
+when pings have their own address (`ping.base_url`). Without a ping key, the context's API key
+looks the ping key up once and the context keeps it; that takes a read-write key, since a
+read-only key cannot see the ping key.
+
 ## Methods, answers and limits
 
 - `GET`, `POST`, `HEAD` and `PUT` are accepted. A monitor can restrict itself to `POST`

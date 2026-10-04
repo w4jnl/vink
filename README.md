@@ -299,8 +299,8 @@ database file on the server host, and the rest talk to a server through a contex
 | `vink ctx add\|use\|rm\|ls` | contexts: a server URL plus an API key |
 | `vink ls [--tag] [--state]` · `get <slug>` · `logs <slug> [-n] [--follow]` | monitors, one monitor with its last ten events, observations |
 | `vink pause\|resume\|check <slug>` · `ack <incident id>` | actions |
-| `vink ping <slug> [--start] [--fail] [--exit N] [--msg …]` | a ping with the context's project ping key |
-| `vink run <slug> -- <command…>` | a start ping, the command, a finish ping with its exit code and output tail |
+| `vink ping <slug> [--start] [--fail] [--exit N] [--msg …]` | a ping with the project's ping key: `VINK_PING_KEY` and `VINK_PING_URL` on a job host, no API key needed, or looked up through the context's read-write key |
+| `vink run <slug> -- <command…>` | a start ping, the command, a finish ping with its exit code and output tail; finds the ping key as `vink ping` does |
 | `vink status` | counts per state and open incidents; exits 3 while anything is down |
 | `vink apply -f <file> [--dry-run] [--prune]` · `export [-o] [--org]` | declarative configuration, with the diff |
 | `vink import healthchecks\|kuma -f <file> [--apply]` | converts another monitor's export into an apply file |

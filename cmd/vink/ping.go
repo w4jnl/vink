@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"strconv"
+	"strings"
 	"sync"
 	"syscall"
 
@@ -19,16 +20,56 @@ import (
 	"github.com/w4jnl/vink/internal/domain"
 )
 
-// pingTarget resolves the ping base and key for the current context,
-// fetching /me once and caching the answer in the contexts file.
-func pingTarget(cmd *cobra.Command, f *clientFlags) (*cli.Client, string, string, error) {
+// pingFlags are the client flags plus a ping key and a ping address. With
+// a ping key, ping and run send their pings without an API key and never
+// call the API, so a job host needs only what a curl line would carry.
+type pingFlags struct {
+	clientFlags
+	key string
+	url string
+}
+
+func (f *pingFlags) add(cmd *cobra.Command) {
+	f.clientFlags.add(cmd, false)
+	cmd.Flags().StringVar(&f.key, "ping-key", "", "the project's ping key, to ping without an API key (env VINK_PING_KEY)")
+	cmd.Flags().StringVar(&f.url, "ping-url", "", "where pings go: a ping URL up to the key, ending in /ping/ (env VINK_PING_URL; default: the server's)")
+}
+
+// pingTarget resolves the client, the ping base (ending in /ping/) and the
+// ping key. A ping key from --ping-key or VINK_PING_KEY is used as it is;
+// otherwise the API key fetches it from /me once and the context caches it.
+// --ping-url or VINK_PING_URL, when set, is where the pings go either way.
+func pingTarget(cmd *cobra.Command, f *pingFlags) (*cli.Client, string, string, error) {
+	base := firstSet(f.url, os.Getenv("VINK_PING_URL"))
+	if base != "" {
+		b, err := pingBaseURL(base)
+		if err != nil {
+			return nil, "", "", err
+		}
+		base = b
+	}
+	if key := firstSet(f.key, os.Getenv("VINK_PING_KEY")); key != "" {
+		if strings.ContainsAny(key, "/?#%& \t\r\n") {
+			return nil, "", "", cli.UserError("the ping key is the key alone: the part after /ping/ in a ping URL")
+		}
+		if base == "" {
+			b, err := f.serverPingBase()
+			if err != nil {
+				return nil, "", "", err
+			}
+			base = b
+		}
+		c := cli.NewClient("", "")
+		c.Debug, c.Log = f.g.debug, cmd.ErrOrStderr()
+		return c, base, key, nil
+	}
 	c, cfg, res, _, err := f.connect(cmd)
 	if err != nil {
 		return nil, "", "", err
 	}
 	if !res.FromEnv {
 		if ctx := cfg.Contexts[res.Name]; ctx.PingBase != "" && ctx.PingKey != "" {
-			return c, ctx.PingBase, ctx.PingKey, nil
+			return c, firstSet(base, ctx.PingBase), ctx.PingKey, nil
 		}
 	}
 	var me struct {
@@ -41,7 +82,7 @@ func pingTarget(cmd *cobra.Command, f *clientFlags) (*cli.Client, string, string
 		return nil, "", "", err
 	}
 	if me.Project == nil || me.Project.PingKey == "" {
-		return nil, "", "", cli.UserError("this API key cannot see the ping key; a read-only key cannot ping")
+		return nil, "", "", cli.UserError("this API key cannot see the ping key; a read-only key cannot ping. Set VINK_PING_KEY to ping with the ping key alone")
 	}
 	if !res.FromEnv {
 		ctx := cfg.Contexts[res.Name]
@@ -51,19 +92,79 @@ func pingTarget(cmd *cobra.Command, f *clientFlags) (*cli.Client, string, string
 			fmt.Fprintln(cmd.ErrOrStderr(), "warning: could not cache the ping key:", err)
 		}
 	}
-	return c, me.Project.PingBase, me.Project.PingKey, nil
+	return c, firstSet(base, me.Project.PingBase), me.Project.PingKey, nil
+}
+
+// serverPingBase is where pings go when only a ping key is given: the
+// named context, else VINK_SERVER, else the current context; a context
+// that has pinged before knows the server's own ping address.
+func (f *pingFlags) serverPingBase() (string, error) {
+	fromContext := func(name string) (string, error) {
+		cfg, err := cli.LoadConfig(cli.ConfigPath())
+		if err != nil {
+			return "", err
+		}
+		if name == "" {
+			name = cfg.Current
+		}
+		ctx, ok := cfg.Contexts[name]
+		switch {
+		case ok && ctx.PingBase != "":
+			return ctx.PingBase, nil
+		case ok && ctx.Server != "":
+			return strings.TrimRight(ctx.Server, "/") + "/ping/", nil
+		case f.context != "":
+			return "", cli.UserError("no context named %q; run vink ctx ls", f.context)
+		}
+		return "", cli.UserError("a ping key needs an address: set VINK_PING_URL to a ping URL up to the key (https://vink.example.com/ping/), or VINK_SERVER")
+	}
+	if f.context != "" {
+		return fromContext(f.context)
+	}
+	if s := os.Getenv("VINK_SERVER"); s != "" {
+		return strings.TrimRight(s, "/") + "/ping/", nil
+	}
+	return fromContext("")
+}
+
+// pingBaseURL checks a ping address and gives it its trailing slash. It is
+// a ping URL cut before the key, so its path ends in /ping; anything else
+// would send every ping to a 404.
+func pingBaseURL(raw string) (string, error) {
+	u, err := url.Parse(raw)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.RawQuery != "" || u.Fragment != "" ||
+		!strings.HasSuffix(strings.TrimRight(u.Path, "/"), "/ping") {
+		return "", cli.UserError("the ping URL is a ping URL up to the key, ending in /ping/, like https://vink.example.com/ping/; got %q", raw)
+	}
+	u.Path = strings.TrimRight(u.Path, "/") + "/"
+	u.RawPath = ""
+	return u.String(), nil
+}
+
+func firstSet(values ...string) string {
+	for _, v := range values {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
 }
 
 func newPingCmd(g *globals) *cobra.Command {
-	f := &clientFlags{g: g}
+	f := &pingFlags{clientFlags: clientFlags{g: g}}
 	var start, fail, create bool
 	var exitCode int
 	var msg, rid string
 	var bodyFrom string
 	cmd := &cobra.Command{
 		Use:   "ping <slug>",
-		Short: "Send a heartbeat ping using the context's project ping key",
-		Args:  cobra.ExactArgs(1),
+		Short: "Send a heartbeat ping with the project's ping key",
+		Long: `vink ping sends one heartbeat ping. With --ping-key or VINK_PING_KEY it
+needs no API key: the ping goes to --ping-url or VINK_PING_URL (a ping URL
+up to the key, ending in /ping/), else to VINK_SERVER or the context's
+server. Without a ping key, the context's API key looks the ping key up
+once; that needs a read-write key.`,
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			c, base, key, err := pingTarget(cmd, f)
 			if err != nil {
@@ -107,7 +208,7 @@ func newPingCmd(g *globals) *cobra.Command {
 			return nil
 		},
 	}
-	f.add(cmd, false)
+	f.add(cmd)
 	cmd.Flags().BoolVar(&start, "start", false, "send a start signal")
 	cmd.Flags().BoolVar(&fail, "fail", false, "send a fail signal")
 	cmd.Flags().IntVar(&exitCode, "exit", 0, "send an exit code (0 is ok)")
@@ -145,7 +246,7 @@ func (t *tailWriter) Bytes() []byte {
 }
 
 func newRunCmd(g *globals) *cobra.Command {
-	f := &clientFlags{g: g}
+	f := &pingFlags{clientFlags: clientFlags{g: g}}
 	var tail int
 	cmd := &cobra.Command{
 		Use:   "run <slug> -- <command> [args…]",
@@ -153,7 +254,9 @@ func newRunCmd(g *globals) *cobra.Command {
 		Long: `vink run wraps a job: it sends /start, runs the command with stdout and
 stderr passed through, then sends /<exit code> with the last bytes of
 output as the body, and exits with the command's exit code. When the
-server cannot be reached the command still runs.`,
+server cannot be reached the command still runs. It finds the ping key
+and the address as vink ping does: --ping-key or VINK_PING_KEY with
+--ping-url or VINK_PING_URL needs no API key.`,
 		Args: cobra.MinimumNArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			c, base, key, err := pingTarget(cmd, f)
@@ -205,7 +308,7 @@ server cannot be reached the command still runs.`,
 			return nil
 		},
 	}
-	f.add(cmd, false)
+	f.add(cmd)
 	cmd.Flags().IntVar(&tail, "tail", 16*1024, "bytes of output to send as the body")
 	return cmd
 }
