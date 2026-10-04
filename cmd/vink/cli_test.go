@@ -319,6 +319,18 @@ func TestCLIPingWithPingKey(t *testing.T) {
 		t.Fatalf("read-only key: %d %s", code, errs)
 	}
 
+	// nothing the CLI prints carries the key: not the warnings of a run
+	// whose server is away, not an error, not a debug line
+	t.Setenv("VINK_PING_URL", "")
+	down := []string{"--ping-key", key, "--ping-url", "http://127.0.0.1:1/vink/ping/"}
+	out, errs, code = e.run("", append([]string{"run", "job"}, append(down, "--", "sh", "-c", "echo ran")...)...)
+	if code != 0 || !strings.Contains(out, "ran") || strings.Contains(errs, key) || strings.Count(errs, "<ping key>") != 2 {
+		t.Fatalf("run with vink away: %d %q %q", code, out, errs)
+	}
+	if _, errs, code := e.run("", append([]string{"-d", "ping", "job"}, down...)...); code != 2 || strings.Contains(errs, key) || !strings.Contains(errs, "> POST") {
+		t.Fatalf("ping -d with vink away: %d %q", code, errs)
+	}
+
 	// VINK_PING_URL also redirects the pings of an API-key context
 	var got []string
 	rec := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

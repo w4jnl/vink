@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -129,11 +130,38 @@ func TestClientDoAndErrors(t *testing.T) {
 	if err := dead.Do(context.Background(), "GET", "/x", nil, nil); !errors.As(err, &ee) || ee.Code != ExitServer {
 		t.Fatalf("connection refused: %v", err)
 	}
-	if err := c.Ping(context.Background(), srv.URL+"/ping/k/s", []byte("hi"), ""); err != nil {
+	if err := c.Ping(context.Background(), srv.URL+"/ping/k/s", "k", []byte("hi"), ""); err != nil {
 		t.Fatalf("ping: %v", err)
 	}
-	if err := c.Ping(context.Background(), srv.URL+"/ping/k/missing", nil, ""); !errors.As(err, &ee) || ee.Code != ExitUser {
+	if err := c.Ping(context.Background(), srv.URL+"/ping/k/missing", "k", nil, ""); !errors.As(err, &ee) || ee.Code != ExitUser {
 		t.Fatalf("ping 404: %v", err)
+	}
+}
+
+// TestPingHidesTheKey: the ping key never reaches a debug line or an
+// error, which end up in cron mail and pasted logs.
+func TestPingHidesTheKey(t *testing.T) {
+	const key = "s3cretpingkey"
+	var log bytes.Buffer
+	dead := NewClient("", "")
+	dead.Debug, dead.Log = true, &log
+	err := dead.Ping(context.Background(), "http://127.0.0.1:1/vink/ping/"+key+"/job/start", key, nil, "")
+	var ee *ExitError
+	if err == nil || !errors.As(err, &ee) || ee.Code != ExitServer {
+		t.Fatalf("unreachable: %v", err)
+	}
+	if strings.Contains(err.Error(), key) || !strings.Contains(err.Error(), "/vink/ping/<ping key>/job/start") {
+		t.Errorf("error shows the key: %v", err)
+	}
+	if strings.Contains(log.String(), key) || !strings.Contains(log.String(), "> POST http://127.0.0.1:1/vink/ping/<ping key>/job/start") {
+		t.Errorf("debug line shows the key: %q", log.String())
+	}
+	var ue *url.Error
+	if !errors.As(err, &ue) {
+		t.Errorf("the transport error must stay in the chain: %#v", err)
+	}
+	if err := dead.Ping(context.Background(), "http://bad host/ping/"+key+"/job", key, nil, ""); err == nil || strings.Contains(err.Error(), key) {
+		t.Errorf("bad URL error shows the key: %v", err)
 	}
 }
 

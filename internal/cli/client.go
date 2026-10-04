@@ -118,15 +118,25 @@ func (c *Client) DoRaw(ctx context.Context, method, path string, in, out any) ([
 	return raw, nil
 }
 
-// Ping sends a heartbeat ping outside the API, to the ping ingress.
-func (c *Client) Ping(ctx context.Context, url string, body []byte, contentType string) error {
+// Ping sends a heartbeat ping outside the API, to the ping ingress. key
+// is the ping key inside target: wherever the URL is printed, in a debug
+// line or an error, it reads <ping key> instead, since the output of a
+// job ends up in cron mail and pasted logs, and the key lets anyone who
+// reads it ping the project's monitors.
+func (c *Client) Ping(ctx context.Context, target, key string, body []byte, contentType string) error {
+	hide := func(s string) string {
+		if key == "" {
+			return s
+		}
+		return strings.ReplaceAll(s, key, "<ping key>")
+	}
 	var rdr io.Reader
 	if len(body) > 0 {
 		rdr = bytes.NewReader(body)
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, rdr)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, target, rdr)
 	if err != nil {
-		return UserError("bad ping url: %v", err)
+		return UserError("bad ping url: %s", hide(err.Error()))
 	}
 	req.Header.Set("User-Agent", "vink-cli/"+version.Version)
 	if len(body) > 0 {
@@ -136,11 +146,11 @@ func (c *Client) Ping(ctx context.Context, url string, body []byte, contentType 
 		req.Header.Set("Content-Type", contentType)
 	}
 	if c.Debug {
-		fmt.Fprintf(c.Log, "> POST %s (%d bytes)\n", url, len(body))
+		fmt.Fprintf(c.Log, "> POST %s (%d bytes)\n", hide(target), len(body))
 	}
 	resp, err := c.HTTP.Do(req)
 	if err != nil {
-		return ServerError(err)
+		return ServerError(hiddenError{err: err, hide: hide})
 	}
 	defer func() { _ = resp.Body.Close() }()
 	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
@@ -160,3 +170,13 @@ func (c *Client) Ping(ctx context.Context, url string, body []byte, contentType 
 		return UserError("ping rejected: %s", resp.Status)
 	}
 }
+
+// hiddenError is err with the ping key taken out of its message. The
+// error stays in the chain, so errors.Is and errors.As still see it.
+type hiddenError struct {
+	err  error
+	hide func(string) string
+}
+
+func (e hiddenError) Error() string { return e.hide(e.err.Error()) }
+func (e hiddenError) Unwrap() error { return e.err }

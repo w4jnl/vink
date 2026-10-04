@@ -6,6 +6,9 @@ updates this file first. Dates are the tag dates.
 
 ## Unreleased
 
+- `vink ping` and `vink run` no longer print the ping key. When vink could not be reached, the
+  error and the warnings quoted the whole ping URL, key included, and a job's output often ends
+  up in cron mail or a pasted log. The key now reads `<ping key>` there and in `-d` debug lines.
 - A Go module for sending pings, `github.com/w4jnl/vink/ping`, in `ping/` with its own versions
   (`ping/vX.Y.Z`). It does what `vink ping` and `vink run` do: every signal, progress notes,
   messages and bodies, runs paired by id, `Run` to wrap a job, pings by id and creating a

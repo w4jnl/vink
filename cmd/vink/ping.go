@@ -208,7 +208,7 @@ once; that needs a read-write key.`,
 					return err
 				}
 			}
-			if err := c.Ping(cmd.Context(), target, body, ""); err != nil {
+			if err := c.Ping(cmd.Context(), target, key, body, ""); err != nil {
 				return err
 			}
 			if !f.quiet {
@@ -276,7 +276,7 @@ and the address as vink ping does: --ping-key or VINK_PING_KEY with
 			}
 			target := base + key + "/" + url.PathEscape(args[0])
 			rid := domain.NewID()
-			if err := c.Ping(cmd.Context(), target+"/start?rid="+rid, nil, ""); err != nil {
+			if err := c.Ping(cmd.Context(), target+"/start?rid="+rid, key, nil, ""); err != nil {
 				fmt.Fprintln(cmd.ErrOrStderr(), "warning: start ping failed:", err)
 			}
 			tw := &tailWriter{n: tail}
@@ -288,7 +288,7 @@ and the address as vink ping does: --ping-key or VINK_PING_KEY with
 			signal.Notify(sigs, os.Interrupt, syscall.SIGTERM)
 			defer signal.Stop(sigs)
 			if err := child.Start(); err != nil {
-				_ = c.Ping(cmd.Context(), target+"/fail?rid="+rid+"&msg="+url.QueryEscape("could not start: "+err.Error()), nil, "")
+				_ = c.Ping(cmd.Context(), target+"/fail?rid="+rid+"&msg="+url.QueryEscape("could not start: "+err.Error()), key, nil, "")
 				return cli.UserError("start %s: %v", args[1], err)
 			}
 			done := make(chan error, 1)
@@ -310,7 +310,7 @@ and the address as vink ping does: --ping-key or VINK_PING_KEY with
 			} else if waitErr != nil {
 				code = 1
 			}
-			if err := c.Ping(cmd.Context(), target+"/"+strconv.Itoa(code)+"?rid="+rid, tw.Bytes(), "text/plain; charset=utf-8"); err != nil {
+			if err := c.Ping(cmd.Context(), target+"/"+strconv.Itoa(code)+"?rid="+rid, key, tw.Bytes(), "text/plain; charset=utf-8"); err != nil {
 				fmt.Fprintln(cmd.ErrOrStderr(), "warning: finish ping failed:", err)
 			}
 			if code != 0 {
