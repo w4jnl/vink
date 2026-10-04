@@ -99,6 +99,14 @@ func peerIP(remoteAddr string) net.IP {
 	return net.ParseIP(host)
 }
 
+// Peer returns the TCP peer's address: the proxy when there is one.
+func Peer(r *http.Request) string {
+	if ip := peerIP(r.RemoteAddr); ip != nil {
+		return ip.String()
+	}
+	return r.RemoteAddr
+}
+
 // ClientIP returns the address recorded by RealIP, falling back to the
 // peer address.
 func ClientIP(r *http.Request) string {

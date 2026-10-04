@@ -282,6 +282,12 @@ state flips, are below with their reason: `deadline passed`, `grace over`, `exit
   that runs every five minutes with a `5m` period is late by its own run time at every cycle;
   give it a `6m` period or a tolerance that covers the run. A cron monitor's deadline is the
   next occurrence; raise the tolerance to the job's start-up jitter.
+- **`from` shows the proxy, or the Docker host**: `from` is the client as the last trusted hop
+  reported it. With `[server] trusted_proxies` naming the proxy's network, vink takes the client
+  from `X-Forwarded-For` and the panel adds `via` with the proxy's own address; without it, the
+  proxy is all vink sees. An address ending in `.1` on a Docker network is the bridge gateway,
+  the host itself: a job on the Docker host that pings a published port arrives from there, and
+  no hop can recover more. Name such jobs in the ping instead (`curl -A nas-backup …`).
 - **A `/start` without a finish** stays open until the next ping; with `max_runtime` it turns
   into a failure at the limit.
 - **`429`**: the job pings faster than ten times a minute; batch the progress into fewer `/log`

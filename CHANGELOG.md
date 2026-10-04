@@ -4,6 +4,11 @@ User-facing changes per release, newest first. `scripts/release.sh` refuses to t
 that has no section here and uses the section as the GitHub release notes, so every release
 updates this file first. Dates are the tag dates.
 
+## Unreleased
+
+- A ping that came through a trusted proxy records the proxy as `via` next to the client it
+  reported, so the observation panel shows which hop an address came from.
+
 ## 0.1.3 (2026-10-03)
 
 - A history page per monitor at `…/m/{slug}/history`, reached by a History button in the

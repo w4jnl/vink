@@ -96,6 +96,9 @@ type PingObservation struct {
 	ContentType string
 	Msg         string
 	Truncated   bool
+	// Via is the proxy the ping came through, when RemoteAddr came from
+	// its forwarded header.
+	Via string
 }
 
 // RecordPing stores the observation and applies the state machine in one
@@ -128,6 +131,9 @@ func (s *Service) RecordPing(ctx context.Context, target *PingTarget, in PingObs
 	}
 	if in.Truncated {
 		obs.Detail["truncated"] = true
+	}
+	if in.Via != "" {
+		obs.Detail["via"] = in.Via
 	}
 	var decision engine.Decision
 	err := s.db.Tx(ctx, func(q *db.Queries) error {

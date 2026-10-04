@@ -125,7 +125,7 @@ func TestPingForms(t *testing.T) {
 			if c.signal == domain.SignalExit && (obs.ExitCode == nil || *obs.ExitCode != c.exit) {
 				t.Fatalf("exit code = %v", obs.ExitCode)
 			}
-			if obs.Detail["method"] != c.method || obs.RemoteAddr != "203.0.113.9" {
+			if obs.Detail["method"] != c.method || obs.RemoteAddr != "203.0.113.9" || obs.Detail["via"] != nil {
 				t.Errorf("detail %v addr %s", obs.Detail, obs.RemoteAddr)
 			}
 		})
@@ -289,7 +289,7 @@ func TestTrustedProxyAddress(t *testing.T) {
 	req.Header.Set("X-Forwarded-For", "198.51.100.42")
 	rr := httptest.NewRecorder()
 	e.srv.ServeHTTP(rr, req)
-	if obs := e.lastObs(t, "job"); obs.RemoteAddr != "198.51.100.42" {
+	if obs := e.lastObs(t, "job"); obs.RemoteAddr != "198.51.100.42" || obs.Detail["via"] != "10.1.2.3" {
 		t.Fatalf("remote addr = %s", obs.RemoteAddr)
 	}
 }

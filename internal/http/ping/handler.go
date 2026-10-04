@@ -147,6 +147,11 @@ func (h *Handler) handle(w http.ResponseWriter, r *http.Request, key, slug, id s
 		At: h.now(), Signal: signal, ExitCode: exitCode, RunID: q.Get("rid"), Method: r.Method,
 		RemoteAddr: ip, UserAgent: r.UserAgent(), Body: body, ContentType: r.Header.Get("Content-Type"), Msg: msg, Truncated: truncated,
 	}
+	// through a trusted proxy the client came from X-Forwarded-For; keep
+	// the proxy too, so the panel shows which hop the address came from
+	if peer := middleware.Peer(r); peer != ip {
+		obs.Via = peer
+	}
 	if obs.RunID != "" && !domain.IsID(obs.RunID) && len(obs.RunID) > 64 {
 		obs.RunID = obs.RunID[:64]
 	}
