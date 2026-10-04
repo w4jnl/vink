@@ -4,55 +4,57 @@ User-facing changes per release, newest first. `scripts/release.sh` refuses to t
 that has no section here and uses the section as the GitHub release notes, so every release
 updates this file first. Dates are the tag dates.
 
-## Unreleased
+## 0.1.4 (2026-10-04)
 
-- A Python client, `vink_ping`, in `ping-py/` with its own versions (`ping-py/vX.Y.Z`). It does
-  what the Go module does: every signal, notes, messages and bodies, runs paired by id, pings by
-  id, creating a monitor from its first ping, retries, the server's limits and errors without the
-  ping key. `with monitor.run():` and the `@monitor.job` decorator report a block or a function,
-  an exception as a failure with its traceback, `SystemExit` and `CalledProcessError` as their
-  exit code. It is one file on the standard library for Python 3.9 and later, installed from git
-  with pip, uv or Poetry, or copied into a project.
-- `vink ping` and `vink run` send their pings through the Go ping module, so they gain what it
-  does. A ping is tried up to three times when vink cannot be reached, answers 5xx or
-  rate-limits it. A 413 is sent once more with the body cut to the monitor's limit, and messages
-  are cut on a whole character. `--body -` now keeps the last 64 kB of stdin instead of the
-  first. The start ping of `vink run` gets one try of at most five seconds, so an outage holds a
-  job up no longer than that. `-d` shows every attempt.
-- `vink run` passes Ctrl-C and `SIGTERM` to the command and lets it stop in its own way, then
-  reports how it ended. Before, the cancelled context killed the command outright and the finish
-  ping failed with it, so the run stayed open until `max_runtime` caught it.
-- `vink ping` and `vink run` no longer print the ping key. When vink could not be reached, the
-  error and the warnings quoted the whole ping URL, key included, and a job's output often ends
-  up in cron mail or a pasted log. The key now reads `<ping key>` there and in `-d` debug lines.
-- A Go module for sending pings, `github.com/w4jnl/vink/ping`, in `ping/` with its own versions
-  (`ping/vX.Y.Z`). It does what `vink ping` and `vink run` do: every signal, progress notes,
-  messages and bodies, runs paired by id, `Run` to wrap a job, pings by id and creating a
-  monitor from its first ping, with retries, the server's limits respected, and errors that
-  never contain the ping key. It needs Go 1.22 or later and nothing beyond the standard
-  library; its README and `go doc` are written for people and coding agents alike.
-- `docs/heartbeats.md` has a section on scripting with the vink CLI: setting up a job host with
-  the ping key, `vink run` in cron and systemd, every `vink ping` flag and its exit codes, and a
-  bash script that reports its start, progress, outcome and log.
-- A monitor's own body limit, when lower than the server's, is now the one the
-  `Ping-Body-Limit` header reports on a 413, so a client can cut its body to it and try again.
-- `vink ping` and `vink run` work with the project's ping key alone, so a job host needs no API
-  key: `VINK_PING_KEY` (or `--ping-key`) and `VINK_PING_URL` (or `--ping-url`, a ping URL up to
-  the key), or `VINK_SERVER` and the context's server for the address. With a ping key the CLI
-  never calls the API. A read-only API key without a ping key now says how to get one.
-- `vink ping --log` sends a progress note, with `--msg`, `--body -` or both, which shows in the
-  monitor's history and changes nothing else. `--start`, `--fail`, `--exit` and `--log` now
-  refuse to be combined; before, a second one was silently dropped.
-- vink can be deployed under a path on a shared host, `https://www.example.com/vink`, as well as
-  at its own hostname: the path of `server.base_url` is the prefix, and a deployment lives at
-  one or the other, never both. Every link, redirect, htmx attribute, static asset, cookie, the
-  API's `Location` and the OpenAPI `servers` entry carry it; the proxy forwards the path
-  unchanged. `docs/deploy.md` is the new deployment guide, with the proxy rules, a verification
-  checklist, a troubleshooting table and the map of every URL vink serves; `docs/deploy/` gains
-  an nginx example and prefixed variants of the Traefik and Apache ones. A `base_url` that
-  already carried a path while vink served at the root now moves vink under that path.
-- A ping that came through a trusted proxy records the proxy as `via` next to the client it
-  reported, so the observation panel shows which hop an address came from.
+- **Deploying under a path.** vink can live on a shared host at `https://www.example.com/vink`
+  as well as at its own hostname. The path of `server.base_url` is the prefix, and a deployment
+  lives at one or the other, never both. Every link, redirect, htmx attribute, static asset,
+  cookie, the API's `Location` and the OpenAPI `servers` entry carry it, and the proxy forwards
+  the path unchanged. A `base_url` that already carried a path while vink served at the root now
+  moves vink under that path.
+- **A deployment guide.** `docs/deploy.md` covers choosing the address, the proxy rules and the
+  paths that must stay open, a verification checklist, a troubleshooting table and the map of
+  every URL vink serves. `docs/deploy/` gains an nginx example and variants of the Traefik and
+  Apache examples under a path.
+- **Pinging with the ping key alone.** `vink ping` and `vink run` need no API key on a job host:
+  `VINK_PING_KEY` (or `--ping-key`) and `VINK_PING_URL` (or `--ping-url`, a ping URL up to the
+  key), with `VINK_SERVER` or the context's server as the address otherwise. With a ping key the
+  CLI never calls the API. A read-only API key without a ping key now says how to get one.
+- **`vink run` stops a job cleanly.** Ctrl-C and `SIGTERM` reach the command, which stops in its
+  own way, and the finish ping reports how it ended. Before, the command was killed outright
+  and the finish ping failed with it, so the run stayed open until `max_runtime` caught it.
+- **Sturdier CLI pings.** `vink ping` and `vink run` send through the new Go ping module. A ping
+  is tried up to three times when vink cannot be reached, answers 5xx or rate-limits it. A 413
+  is sent once more with the body cut to the monitor's limit, and messages are cut on a whole
+  character. The start ping of `vink run` gets one try of at most five seconds, so an outage
+  holds a job up no longer than that. `-d` shows every attempt.
+- **`--body -` keeps the end.** `vink ping --body -` now sends the last 64 kB of stdin instead of
+  the first, the part of a log that says why a job failed.
+- **Progress notes from the CLI.** `vink ping --log` sends a note, with `--msg`, `--body -` or
+  both, which shows in the monitor's history and changes nothing else. `--start`, `--fail`,
+  `--exit` and `--log` refuse to be combined; before, a second one was silently dropped.
+- **The ping key stays out of logs.** When vink could not be reached, `vink ping` and `vink run`
+  quoted the whole ping URL, key included, in errors and warnings that end up in cron mail. The
+  key now reads `<ping key>` there and in `-d` debug lines.
+- **Scripting docs.** `docs/heartbeats.md` has a section on the CLI in scripts: setting up a job
+  host with the ping key, `vink run` in cron and systemd, every `vink ping` flag and its exit
+  codes, and a bash script that reports its start, progress, outcome and log.
+- **Clients for programs**, versioned apart from vink:
+  - `github.com/w4jnl/vink/ping` (`ping/v0.1.0`) for Go 1.22 and later: every signal, progress
+    notes, messages and bodies, runs paired by id, `Run` to wrap a job, pings by id, creating a
+    monitor from its first ping, retries, the server's limits, and errors without the ping key.
+  - `vink_ping` (`ping-py/v0.1.0`) for Python 3.9 and later, the same in one file, installed
+    from git with pip, uv or Poetry or copied into a project. `with monitor.run():` and
+    `@monitor.job` report a block or a function, an exception as a failure with its traceback,
+    and `SystemExit` and `CalledProcessError` as their exit code.
+
+  Both use the standard library only, and their READMEs are written for people and coding agents
+  alike.
+- **The body limit a monitor names.** When a monitor's own body limit is lower than the
+  server's, the `Ping-Body-Limit` header on a 413 now reports the monitor's, so a client can cut
+  its body to it and try again.
+- **Which proxy a ping came through.** A ping forwarded by a trusted proxy records the proxy as
+  `via` next to the client it reported, and the observation panel shows it.
 
 ## 0.1.3 (2026-10-03)
 
