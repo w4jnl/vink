@@ -343,6 +343,7 @@ components:
     id: {name: id, in: path, required: true, schema: {type: string}}
     org: {name: org, in: path, required: true, schema: {type: string}, description: org slug}
     name: {name: name, in: path, required: true, schema: {type: string}, description: agent name}
+    user: {name: user, in: path, required: true, schema: {type: string}, description: sign-in name (subject)}
     limit: {name: limit, in: query, schema: {type: integer, maximum: 200, default: 50}}
     cursor: {name: cursor, in: query, schema: {type: string}, description: Opaque; take next_cursor from the previous page.}
 paths:
@@ -480,6 +481,92 @@ paths:
       summary: Every project of the org as one apply YAML (org key or an org admin's session)
       parameters: [{name: secrets, in: query, schema: {type: string, enum: ["1"]}, description: include channel secrets; needs an rw key}]
       responses: {"200": {description: application/yaml.}, "403": {description: A project key, or secrets asked for without write access.}}
+  /admin/orgs:
+    get:
+      summary: Every org, with projects, monitors, agents, owners and quotas
+      responses: {"200": {description: "{items: [Org]}"}}
+    post:
+      summary: Create an org, with its first owner and quotas
+      requestBody: {required: true, content: {application/json: {schema: {type: object, required: [slug], properties: {slug: {type: string}, name: {type: string}, owner: {type: string, description: an existing user's sign-in name}, quota_monitors: {type: integer}, quota_agents: {type: integer}}}}}}
+      responses: {"201": {description: The org, with Location.}, "409": {description: Slug exists.}, "422": {description: Validation failed, or no such owner.}}
+  /admin/orgs/{org}:
+    parameters: [{$ref: "#/components/parameters/org"}]
+    get:
+      summary: One org
+      responses: {"200": {description: The org.}, "404": {description: No such org.}}
+    patch:
+      summary: Rename an org or set its quotas; a quota set to null is unlimited, a field left out stays
+      requestBody: {required: true, content: {application/json: {schema: {type: object, properties: {name: {type: string}, quota_monitors: {type: [integer, "null"]}, quota_agents: {type: [integer, "null"]}}}}}}
+      responses: {"200": {description: The org.}}
+    delete:
+      summary: Delete an org that has no projects left; memberships, invites, agents and keys go with it
+      responses: {"204": {description: Deleted.}, "422": {description: The org still has projects.}}
+  /admin/orgs/{org}/keys:
+    parameters: [{$ref: "#/components/parameters/org"}]
+    get:
+      summary: The org's org keys, which export and apply every project of the org
+      responses: {"200": {description: "{items: [OrgKey]}"}}
+    post:
+      summary: Issue an org key; the plaintext is in key, once
+      requestBody: {required: true, content: {application/json: {schema: {type: object, properties: {name: {type: string}, access: {type: string, enum: [ro, rw], default: ro}}}}}}
+      responses: {"201": {description: The key with its plaintext, with Location.}}
+  /admin/orgs/{org}/keys/{id}:
+    parameters: [{$ref: "#/components/parameters/org"}, {$ref: "#/components/parameters/id"}]
+    delete:
+      summary: Revoke an org key
+      responses: {"204": {description: Revoked.}, "404": {description: Unknown, or a project key.}}
+  /admin/orgs/{org}/agents:
+    parameters: [{$ref: "#/components/parameters/org"}]
+    get:
+      summary: The org's probe agents by name
+      responses: {"200": {description: "{items: [Agent]}"}}
+    post:
+      summary: Register an agent; its token and the command to run on its host come back once
+      requestBody: {required: true, content: {application/json: {schema: {type: object, required: [name], properties: {name: {type: string}, labels: {type: object, additionalProperties: {type: string}}}}}}}
+      responses: {"201": {description: The agent with token and command, with Location.}, "422": {description: Validation failed, or the org's agent quota is reached.}}
+  /admin/orgs/{org}/agents/{name}:
+    parameters: [{$ref: "#/components/parameters/org"}, {$ref: "#/components/parameters/name"}]
+    delete:
+      summary: Revoke an agent's token and forget it; its monitors turn late
+      responses: {"204": {description: Revoked.}}
+  /admin/users:
+    get:
+      summary: Every account with its roles and where each comes from
+      responses: {"200": {description: "{items: [User]}"}}
+    post:
+      summary: Create an account
+      description: A local account needs a password. A proxy or oidc account is made ahead of the person's first visit so roles can be given before; its name is normalised as that provider's settings normalise it.
+      requestBody: {required: true, content: {application/json: {schema: {type: object, required: [subject], properties: {subject: {type: string}, source: {type: string, enum: [local, proxy, oidc], default: local}, email: {type: string}, name: {type: string}, password: {type: string}, instance_admin: {type: boolean}}}}}}
+      responses: {"201": {description: The user, with Location.}, "409": {description: The name exists.}, "422": {description: Validation failed.}}
+  /admin/users/{user}:
+    parameters: [{$ref: "#/components/parameters/user"}]
+    get:
+      summary: One account
+      responses: {"200": {description: The user.}, "404": {description: No such user.}}
+    patch:
+      summary: Make an account instance admin or not, or disable or enable it
+      description: Disabling ends the account's sessions. An account that loses instance admin or is disabled takes the admin keys it made along. The last active instance admin stays.
+      requestBody: {required: true, content: {application/json: {schema: {type: object, properties: {instance_admin: {type: boolean}, disabled: {type: boolean}}}}}}
+      responses: {"200": {description: The user.}, "422": {description: Refused, with the reason (groups decide, listed in config, the last instance admin, yourself).}}
+  /admin/users/{user}/totp-reset:
+    parameters: [{$ref: "#/components/parameters/user"}]
+    post:
+      summary: Turn two-factor off; the person sets it up again at the next sign-in
+      responses: {"204": {description: Done.}, "403": {description: An admin key, for an instance admin's account.}}
+  /admin/users/{user}/reset-link:
+    parameters: [{$ref: "#/components/parameters/user"}]
+    post:
+      summary: A one-time password reset link for a local account, valid for a day
+      responses: {"200": {description: "{url, expires_at}"}, "403": {description: An admin key, for an instance admin's account.}, "422": {description: Not a local account.}}
+  /admin/users/{user}/orgs/{org}:
+    parameters: [{$ref: "#/components/parameters/user"}, {$ref: "#/components/parameters/org"}]
+    put:
+      summary: Give the account a role in the org, or change it
+      requestBody: {required: true, content: {application/json: {schema: {type: object, required: [role], properties: {role: {type: string, enum: [owner, admin, member, viewer]}}}}}}
+      responses: {"200": {description: The user.}, "422": {description: Refused, with the reason (the provider's groups decide this role, the last owner).}}
+    delete:
+      summary: Remove the account from the org; the last owner stays
+      responses: {"204": {description: Removed.}}
   /admin/keys:
     get:
       summary: Instance admin keys not revoked, newest first, expired ones included (instance admin key or session)

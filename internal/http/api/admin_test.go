@@ -15,6 +15,7 @@ import (
 	"github.com/w4jnl/vink/internal/config"
 	"github.com/w4jnl/vink/internal/domain"
 	"github.com/w4jnl/vink/internal/http/middleware"
+	"github.com/w4jnl/vink/internal/service"
 )
 
 // adminEnv adds an instance admin, root, with a session and an rw and an
@@ -215,5 +216,200 @@ func TestAdminKeyNetworks(t *testing.T) {
 	srv.ServeHTTP(rec, req)
 	if rec.Code != 200 {
 		t.Fatalf("project key from outside: %d", rec.Code)
+	}
+}
+
+// TestAdminRoutesWalk walks every admin route with an rw admin key, in
+// the order a person would: status, Location and body; the audit names
+// the key.
+func TestAdminRoutesWalk(t *testing.T) {
+	e := newAdminEnv(t)
+	ctx := context.Background()
+	if err := e.svc.ApplyAuthPolicy(ctx, service.AuthPolicy{
+		Proxy: service.ProviderPolicy{Enabled: true, Roles: service.RolesVink, StripRealm: true, Lowercase: true},
+		OIDC:  service.ProviderPolicy{Roles: service.RolesGroups},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	var keyID string
+	steps := []struct {
+		name     string
+		method   string
+		path     func() string
+		body     any
+		code     int
+		location string
+		check    func(t *testing.T, r resp)
+	}{
+		{"create org", "POST", fixed("/admin/orgs"), map[string]any{"slug": "acme2", "name": "Acme 2", "owner": "j", "quota_monitors": 10}, 201, "/api/v1/admin/orgs/acme2", func(t *testing.T, r resp) {
+			var o adminapi.Org
+			r.json(t, &o)
+			if o.Slug != "acme2" || len(o.Owners) != 1 || o.Owners[0] != "j" || o.QuotaMonitors == nil || *o.QuotaMonitors != 10 || o.QuotaAgents != nil {
+				t.Fatalf("%s", r.body)
+			}
+		}},
+		{"list orgs", "GET", fixed("/admin/orgs"), nil, 200, "", func(t *testing.T, r resp) {
+			var p page[adminapi.Org]
+			r.json(t, &p)
+			if len(p.Items) != 3 {
+				t.Fatalf("%s", r.body)
+			}
+		}},
+		{"get org", "GET", fixed("/admin/orgs/homelab"), nil, 200, "", func(t *testing.T, r resp) {
+			var o adminapi.Org
+			r.json(t, &o)
+			if o.Projects != 2 {
+				t.Fatalf("%s", r.body)
+			}
+		}},
+		{"unknown org", "GET", fixed("/admin/orgs/nope"), nil, 404, "", nil},
+		{"null clears a quota", "PATCH", fixed("/admin/orgs/acme2"), map[string]any{"quota_monitors": nil, "quota_agents": 2}, 200, "", func(t *testing.T, r resp) {
+			var o adminapi.Org
+			r.json(t, &o)
+			if o.QuotaMonitors != nil || o.QuotaAgents == nil || *o.QuotaAgents != 2 || o.Name != "Acme 2" {
+				t.Fatalf("%s", r.body)
+			}
+		}},
+		{"a field left out stays", "PATCH", fixed("/admin/orgs/acme2"), map[string]any{"name": "Acme Two"}, 200, "", func(t *testing.T, r resp) {
+			var o adminapi.Org
+			r.json(t, &o)
+			if o.Name != "Acme Two" || o.QuotaAgents == nil || *o.QuotaAgents != 2 {
+				t.Fatalf("%s", r.body)
+			}
+		}},
+		{"unknown field", "PATCH", fixed("/admin/orgs/acme2"), map[string]any{"slug": "x"}, 400, "", nil},
+		{"create org key", "POST", fixed("/admin/orgs/acme2/keys"), map[string]any{"name": "gitops", "access": "rw"}, 201, "/api/v1/admin/orgs/acme2/keys/", func(t *testing.T, r resp) {
+			var k adminapi.OrgKey
+			r.json(t, &k)
+			if !strings.HasPrefix(k.Key, "vk_"+k.Prefix+"_") || k.Access != domain.AccessRW {
+				t.Fatalf("%s", r.body)
+			}
+			keyID = k.ID
+		}},
+		{"list org keys", "GET", fixed("/admin/orgs/acme2/keys"), nil, 200, "", func(t *testing.T, r resp) {
+			var p page[adminapi.OrgKey]
+			r.json(t, &p)
+			if len(p.Items) != 1 || p.Items[0].Key != "" {
+				t.Fatalf("%s", r.body)
+			}
+		}},
+		{"revoke org key", "DELETE", func() string { return "/admin/orgs/acme2/keys/" + keyID }, nil, 204, "", nil},
+		{"create agent", "POST", fixed("/admin/orgs/acme2/agents"), map[string]any{"name": "edge", "labels": map[string]string{"site": "dc2"}}, 201, "/api/v1/admin/orgs/acme2/agents/edge", func(t *testing.T, r resp) {
+			var a adminapi.Agent
+			r.json(t, &a)
+			if !strings.HasPrefix(a.Token, "vat_") || !strings.Contains(a.Command, a.Token) || a.Labels["site"] != "dc2" {
+				t.Fatalf("%s", r.body)
+			}
+		}},
+		{"list agents", "GET", fixed("/admin/orgs/acme2/agents"), nil, 200, "", func(t *testing.T, r resp) {
+			var p page[adminapi.Agent]
+			r.json(t, &p)
+			if len(p.Items) != 1 || p.Items[0].Token != "" || p.Items[0].Name != "edge" {
+				t.Fatalf("%s", r.body)
+			}
+		}},
+		{"revoke agent", "DELETE", fixed("/admin/orgs/acme2/agents/edge"), nil, 204, "", nil},
+		{"create local user", "POST", fixed("/admin/users"), map[string]any{"subject": "bob", "password": "correct horse battery"}, 201, "/api/v1/admin/users/bob", func(t *testing.T, r resp) {
+			var u adminapi.User
+			r.json(t, &u)
+			if u.Source != "local" || u.InstanceAdmin || len(u.Roles) != 0 {
+				t.Fatalf("%s", r.body)
+			}
+		}},
+		{"create proxy user, normalised", "POST", fixed("/admin/users"), map[string]any{"subject": "JDoe@CORP.EXAMPLE", "source": "proxy"}, 201, "/api/v1/admin/users/jdoe", nil},
+		{"proxy user with a password", "POST", fixed("/admin/users"), map[string]any{"subject": "x", "source": "proxy", "password": "correct horse battery"}, 422, "", nil},
+		{"existing user", "POST", fixed("/admin/users"), map[string]any{"subject": "jdoe", "source": "proxy"}, 409, "", nil},
+		{"grant", "PUT", fixed("/admin/users/jdoe/orgs/acme2"), map[string]any{"role": "admin"}, 200, "", func(t *testing.T, r resp) {
+			var u adminapi.User
+			r.json(t, &u)
+			if len(u.Roles) != 1 || u.Roles[0] != (adminapi.Role{Org: "acme2", Role: domain.RoleAdmin, Source: "local"}) {
+				t.Fatalf("%s", r.body)
+			}
+		}},
+		{"get user", "GET", fixed("/admin/users/jdoe"), nil, 200, "", nil},
+		{"list users", "GET", fixed("/admin/users"), nil, 200, "", func(t *testing.T, r resp) {
+			var p page[adminapi.User]
+			r.json(t, &p)
+			if len(p.Items) != 4 {
+				t.Fatalf("%d users: %s", len(p.Items), r.body)
+			}
+		}},
+		{"promote", "PATCH", fixed("/admin/users/bob"), map[string]any{"instance_admin": true}, 200, "", nil},
+		{"no reset link for an instance admin by key", "POST", fixed("/admin/users/bob/reset-link"), nil, 403, "", nil},
+		{"disable and demote", "PATCH", fixed("/admin/users/bob"), map[string]any{"instance_admin": false, "disabled": true}, 200, "", func(t *testing.T, r resp) {
+			var u adminapi.User
+			r.json(t, &u)
+			if u.InstanceAdmin || !u.Disabled || u.DisabledBy != "ci" {
+				t.Fatalf("%s", r.body)
+			}
+		}},
+		{"reset link", "POST", fixed("/admin/users/bob/reset-link"), nil, 200, "", func(t *testing.T, r resp) {
+			var l adminapi.ResetLink
+			r.json(t, &l)
+			if !strings.HasPrefix(l.URL, "http://localhost:8080/reset/rs_") || l.ExpiresAt.IsZero() {
+				t.Fatalf("%s", r.body)
+			}
+		}},
+		{"two-factor reset", "POST", fixed("/admin/users/bob/totp-reset"), nil, 204, "", nil},
+		{"ungrant", "DELETE", fixed("/admin/users/jdoe/orgs/acme2"), nil, 204, "", nil},
+		{"delete an org with projects", "DELETE", fixed("/admin/orgs/homelab"), nil, 422, "", nil},
+		{"delete org", "DELETE", fixed("/admin/orgs/acme2"), nil, 204, "", nil},
+		{"deleted org", "GET", fixed("/admin/orgs/acme2"), nil, 404, "", nil},
+	}
+	for _, st := range steps {
+		r := e.key(e.rwTok, st.method, st.path(), st.body)
+		if r.code != st.code {
+			t.Fatalf("%s: %d %s, want %d", st.name, r.code, r.body, st.code)
+		}
+		if st.location != "" && !strings.HasPrefix(r.hdr.Get("Location"), st.location) {
+			t.Errorf("%s: Location %q, want %s…", st.name, r.hdr.Get("Location"), st.location)
+		}
+		if st.check != nil {
+			t.Run(st.name, func(t *testing.T) { st.check(t, r) })
+		}
+	}
+	var kind, via string
+	if err := e.svc.DB().Reader.QueryRowContext(ctx, `SELECT actor_kind, via FROM audit WHERE act = 'org.create' AND target = 'acme2'`).Scan(&kind, &via); err != nil || kind != "key" || via != "api vka_"+e.rwKey.Prefix {
+		t.Errorf("audit: %q %q %v", kind, via, err)
+	}
+}
+
+func fixed(p string) func() string { return func() string { return p } }
+
+// TestAdminGrantWhileGroupsDecide: through the API as anywhere, a role the
+// proxy's groups give cannot be changed in vink while they decide.
+func TestAdminGrantWhileGroupsDecide(t *testing.T) {
+	e := newAdminEnv(t)
+	ctx := context.Background()
+	if err := e.svc.ApplyAuthPolicy(ctx, service.AuthPolicy{
+		Proxy: service.ProviderPolicy{Enabled: true, Roles: service.RolesGroups},
+		OIDC:  service.ProviderPolicy{Roles: service.RolesGroups},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	carol, err := e.svc.EnsureProxyUser(ctx, "carol", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := e.svc.SyncHeaderMemberships(ctx, carol.ID, map[string]domain.Role{"homelab": domain.RoleMember}); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name, method, path string
+		body               any
+		detail             string
+	}{
+		{"grant", "PUT", "/admin/users/carol/orgs/homelab", map[string]any{"role": "admin"}, "groups"},
+		{"ungrant", "DELETE", "/admin/users/carol/orgs/homelab", nil, "groups"},
+		{"promote", "PATCH", "/admin/users/carol", map[string]any{"instance_admin": true}, "auth.proxy.roles is groups"},
+		{"create an admin", "POST", "/admin/users", map[string]any{"subject": "dave", "source": "proxy", "instance_admin": true}, "auth.proxy.roles is groups"},
+	} {
+		r := e.key(e.rwTok, tc.method, tc.path, tc.body)
+		if r.code != 422 || !strings.Contains(string(r.body), tc.detail) {
+			t.Errorf("%s: %d %s", tc.name, r.code, r.body)
+		}
+	}
+	if _, err := e.svc.UserBySubject(ctx, "dave"); err == nil {
+		t.Error("a refused create left an account")
 	}
 }
