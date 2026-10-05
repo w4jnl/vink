@@ -14,15 +14,16 @@ The people, hosts, keys and incidents in the screens are made up.
 | [settings-channels](settings-channels.html) | `…/settings/channels` | Add-channel panel (ntfy fields), rows with enabled switch, a passed and a failed test result under their rows. | Tabs, Panel, SettingsRow, Switch, Notice |
 | [settings-routes](settings-routes.html) | `…/settings/routes` | Ordered routes; route 2 in inline edit (tags, repeat, channels, send on). | SettingsRow, Panel, Checkbox, StateBadge |
 | [settings-maintenance](settings-maintenance.html) | `…/settings/maintenance` | Add-window panel (once/weekly, weekdays, from/to, timezone, next occurrence); an active window. | Panel, Segmented, SettingsRow |
-| [settings-pages](settings-pages.html) | `…/settings/pages` | Status page in inline edit (address prefix, tags order, public/password, custom domain). | Panel, Field (prefix), Segmented |
+| [settings-pages](settings-pages.html) | `…/settings/pages` | Status page in inline edit (address prefix, tags order, public/password, custom domain). The live panel adds an Incidents select after Tags, see [Status pages](#status-pages). | Panel, Field (prefix), Segmented |
 | [settings-keys](settings-keys.html) | `…/settings/keys` | Ping key with Copy and two-step Rotate; new API key shown once; create row; revoke. | Field, Notice, Segmented, SettingsRow |
 | [login](login.html) | `/login` | Local sign-in with the one error message (never which field was wrong). | Field, Notice, Button |
 | [proxy-denied](proxy-denied.html) | any UI route, proxy mode, no identity | 403 page: what happened, what to do, request id. The reason goes to the log only. | auth layout, `vk-kv` |
 | [no-access](no-access.html) | any UI route, identity but no membership | Who the proxy said you are, your groups, the group pattern that grants access. | auth layout, `vk-kv` |
-| [status](status.html) | `/s/{slug}` | Public status page (unchanged). | StatusBanner, UptimeBar |
+| [status](status.html) | `/s/{slug}` | Public status page: banner, groups, 90-day bars, open incidents. The live page adds groups by project on an org page and, when the page asks, the incidents resolved lately, see [Status pages](#status-pages). | StatusBanner, UptimeBar |
 | [switcher-menu](switcher-menu.html) | any signed-in page | The project switcher open: projects per org with their down and late counts, New project, Org settings, a second org where you are viewer. | TopBar, Menu, StateCounts |
 | [org-members](org-members.html) | `/o/{org}/admin/members` | Members with roles (editable for local accounts, locked for proxy groups), an invite just created with its one-time link. | Tabs, SettingsRow, Avatar, InlineSelect, Notice |
 | [org-projects](org-projects.html) | `/o/{org}/admin/projects` | Quota line, Add project panel, projects with their state counts. | Usage, Panel, SettingsRow, StateCounts |
+| org-pages (no picture yet; the markup is the live `settings.html` page templates) | `/o/{org}/admin/pages` | The org's status pages: rows like the project tab's, and the same panel with Projects and Group by added. | Tabs, Panel, Field, Checkbox, Segmented, SettingsRow |
 | [org-agents](org-agents.html) | `/o/{org}/admin/agents` | A new agent's token and `vink agent` command shown once; agents connected, offline, waiting. | Notice, Code, SettingsRow, StateBadge, Usage |
 | [org-agent-detail](org-agent-detail.html) | `/o/{org}/admin/agents/{name}` | The offline agent in the drawer: why its monitors are late, connection details, assigned monitors. | SettingsRow (current), drawer, Notice, MonitorRow |
 | [monitor-edit](monitor-edit.html) | `…/m/{slug}/edit` | The edit form: Kind locked, Run from an agent first in Advanced, Save changes and Delete monitor. | KindPicker (locked), Segmented, Field, Disclosure |
@@ -88,6 +89,33 @@ The people, hosts, keys and incidents in the screens are made up.
 - **Width**: the head is a `vk-section`, so the title row, badge, summary and both bars share the list's `--content-max` column; on a wide screen the page is one left-aligned column, as the audit log is.
 - **Live**: the head polls every 10 s while the tab is visible, with the stream's newest row on its URL; when the server has newer rows it renders a `Notice` with Reload. The stream is a snapshot until then, so loaded pages never shift under the reader.
 - **Actions** (Pause, Resume, Check now) post plain forms with a hidden `next` and come back to the page; Edit and Back are links, Back to the list with the drawer open.
+
+### Status pages
+
+- **Two owners.** A project's pages live under its settings, for members who can edit; an org's
+  pages under org settings, for its admins and owners, as a Status pages tab between Projects and
+  Agents. Both are served at `/s/{slug}`, and the address is unique across the instance.
+- **The org panel** is the project panel with two more fields after Address: Projects, a
+  `vk-checks` set with one Checkbox per project of the org (none ticked means every project, new
+  ones included, which the hint says), and Group by, a Segmented `Project · Tag`. Tags then
+  filters across the chosen projects. Its rows read the projects ("every project" or their names)
+  where the project tab reads the tags.
+- **Incidents** is a select on both panels: `Open incidents` (the default), `Open and the last
+  7 days`, `30 days`, `90 days`, or `None`. The row shows it in a cell.
+- **Groups.** A project page, and an org page grouped by tag, have one `vk-status__group` per tag
+  in `match_tags` order, as before. An org page grouped by project has one per project, named
+  after it, in the order the page lists them (by name when it lists none). On an org page grouped
+  by tag, a monitor's name is followed by its project's name in `vk-muted`, since two projects
+  may name a monitor alike.
+- **Past incidents** is a `vk-status__group` after Open incidents, headed "Past incidents", with
+  one `vk-status__item` per incident resolved in the window, newest first: the monitor (with its
+  project on an org page) and, in `vk-muted vk-mono`, the day and time it opened and how long it
+  lasted (`3 Oct 09:29 · 12 min`). Nothing says why: the reason stays inside vink. With no
+  incident in the window the group reads "No incidents in the last 30 days." in `vk-muted`.
+- **Time** is the project's timezone on a project page; on an org page, the timezone its projects
+  share, else UTC, and the footer names it.
+- **Badges** stay `/s/{slug}/badge/{monitor}.svg`; on an org page where two projects use the slug,
+  `/s/{slug}/badge/{project}/{monitor}.svg` names one.
 
 ### Phone
 
