@@ -336,15 +336,7 @@ func (a *Authenticator) trustedPeer(ip net.IP) bool {
 }
 
 func (a *Authenticator) normalizeSubject(s string) string {
-	if a.cfg.Proxy.StripRealm {
-		if i := strings.IndexByte(s, '@'); i > 0 {
-			s = s[:i]
-		}
-	}
-	if a.cfg.Proxy.Lowercase {
-		s = strings.ToLower(s)
-	}
-	return s
+	return domain.NormalizeSubject(s, a.cfg.Proxy.StripRealm, a.cfg.Proxy.Lowercase)
 }
 
 func splitGroups(raw, sep string) []string {

@@ -161,11 +161,21 @@ func (s *Service) SetInstanceAdmin(ctx context.Context, sc domain.Scope, subject
 	if !admin && u.ID == sc.UserID {
 		return validation("instance_admin", "you cannot take instance admin from yourself")
 	}
-	if u.Source != "local" {
-		return validation("instance_admin", "proxy and oidc users get instance admin from the "+"instance_admin_group")
+	pol := s.AuthPolicy(ctx).For(u.Source)
+	setting := SettingFor(u.Source)
+	if u.Source != "local" && pol.GroupsDecide() {
+		return validation("instance_admin", u.Subject+" gets instance admin from "+setting+".instance_admin_group while "+setting+".roles is groups")
+	}
+	if !admin && pol.Listed(u.Subject) {
+		return validation("instance_admin", u.Subject+" is listed in "+setting+".instance_admins in vink.toml; take the name out there first")
 	}
 	if u.InstanceAdmin == admin {
 		return nil
+	}
+	if !admin {
+		if err := s.keepLastInstanceAdmin(ctx, u); err != nil {
+			return err
+		}
 	}
 	return s.db.Tx(ctx, func(q *db.Queries) error {
 		if _, err := q.SetInstanceAdmin(ctx, db.SetInstanceAdminParams{IsInstanceAdmin: admin, ID: u.ID}); err != nil {
@@ -173,6 +183,145 @@ func (s *Service) SetInstanceAdmin(ctx context.Context, sc domain.Scope, subject
 		}
 		return s.record(ctx, q, sc, audit.Entry{Action: "user.instance_admin", Target: u.Subject, TargetID: u.ID, Detail: map[string]any{"admin": admin}})
 	})
+}
+
+// keepLastInstanceAdmin refuses to demote or disable the only active
+// instance admin, whoever asks: a person, a key or the CLI.
+func (s *Service) keepLastInstanceAdmin(ctx context.Context, u *domain.User) error {
+	if !u.InstanceAdmin || u.Disabled() {
+		return nil
+	}
+	n, err := s.db.Read().CountActiveInstanceAdmins(ctx)
+	if err != nil {
+		return err
+	}
+	if n <= 1 {
+		return validation("instance_admin", u.Subject+" is the last instance admin; make someone else instance admin first")
+	}
+	return nil
+}
+
+// CreateProviderUser creates an account for a person who signs in through
+// the proxy or OIDC (source proxy or oidc), before their first visit, so a
+// role can be given ahead. The name is normalised as that provider's
+// settings normalise it. Instance admins only.
+func (s *Service) CreateProviderUser(ctx context.Context, sc domain.Scope, subject, email, name, source string) (*domain.User, error) {
+	if err := requireInstanceAdmin(sc); err != nil {
+		return nil, err
+	}
+	if source != "proxy" && source != "oidc" {
+		return nil, validation("source", "must be proxy or oidc; local accounts get a password")
+	}
+	subject = s.AuthPolicy(ctx).For(source).Normalize(subject)
+	if err := validateSubject(subject); err != nil {
+		return nil, err
+	}
+	var out *domain.User
+	err := s.db.Tx(ctx, func(q *db.Queries) error {
+		u, err := s.createProviderUser(ctx, q, subject, email, name, source)
+		if err != nil {
+			return err
+		}
+		out = u
+		return s.record(ctx, q, sc, audit.Entry{Action: "user.create", Target: u.Subject, TargetID: u.ID, Detail: map[string]any{"source": source}})
+	})
+	return out, err
+}
+
+func (s *Service) createProviderUser(ctx context.Context, q *db.Queries, subject, email, name, source string) (*domain.User, error) {
+	if name == "" {
+		name = subject
+	}
+	row, err := q.CreateUser(ctx, db.CreateUserParams{
+		ID: domain.NewID(), Subject: subject, Email: strings.TrimSpace(email), DisplayName: strings.TrimSpace(name),
+		PasswordHash: nil, IsInstanceAdmin: false, Source: source, CreatedAt: domain.Millis(s.now()),
+	})
+	if err != nil {
+		return nil, conflictIfUnique(err, "a user named "+subject+" exists")
+	}
+	return userFromRow(row), nil
+}
+
+// AddMember gives a person who signs in through a provider in vink mode a
+// role in the scope's org, by the name the provider sends; a name vink has
+// not seen yet becomes an account, so the role is there at the first
+// visit. Org admins, and owners for an owner.
+func (s *Service) AddMember(ctx context.Context, sc domain.Scope, subject string, role domain.Role) (*domain.User, error) {
+	if sc.OrgID == "" || (!sc.InstanceAdmin && !sc.CanAdminOrg()) {
+		return nil, domain.ErrForbidden
+	}
+	if !role.Valid() {
+		return nil, validation("role", "must be owner, admin, member or viewer")
+	}
+	if role == domain.RoleOwner && !sc.InstanceAdmin && !sc.CanOwnOrg() {
+		return nil, validation("role", "only an owner can make someone an owner")
+	}
+	pol := s.AuthPolicy(ctx)
+	source := pol.AddSource()
+	if source == "" {
+		return nil, validation("subject", "adding people by name needs auth.proxy.roles or auth.oidc.roles set to vink; invite a local account instead")
+	}
+	subject = pol.For(source).Normalize(subject)
+	if err := validateSubject(subject); err != nil {
+		return nil, err
+	}
+	var out *domain.User
+	err := s.db.Tx(ctx, func(q *db.Queries) error {
+		var u *domain.User
+		row, err := q.GetUserBySubject(ctx, subject)
+		switch {
+		case db.IsNotFound(err):
+			if u, err = s.createProviderUser(ctx, q, subject, "", "", source); err != nil {
+				return err
+			}
+			if err := s.record(ctx, q, sc, audit.Entry{Action: "user.create", Target: u.Subject, TargetID: u.ID, Detail: map[string]any{"source": source}}); err != nil {
+				return err
+			}
+		case err != nil:
+			return err
+		default:
+			u = userFromRow(row)
+			if u.Source == "local" {
+				return validation("subject", subject+" is a local account here; invite them, or ask an instance admin")
+			}
+			if pol.For(u.Source).GroupsDecide() {
+				return validation("subject", subject+"’s roles come from the groups of "+SettingFor(u.Source)+"; change them there")
+			}
+			if _, err := q.GetMembership(ctx, db.GetMembershipParams{UserID: u.ID, OrgID: sc.OrgID}); err == nil {
+				return domain.Conflict(subject + " is a member already")
+			}
+		}
+		if err := q.UpsertLocalMembership(ctx, db.UpsertLocalMembershipParams{UserID: u.ID, OrgID: sc.OrgID, Role: string(role), CreatedAt: domain.Millis(s.now())}); err != nil {
+			return err
+		}
+		out = u
+		e := orgEntry(sc.OrgID, "member.role", u.Subject, u.ID)
+		e.Detail = map[string]any{"from": "", "to": string(role), "added": true}
+		return s.record(ctx, q, sc, e)
+	})
+	if err != nil {
+		return nil, err
+	}
+	s.log.Info("member added by name", "org_id", sc.OrgID, "user", out.Subject, "role", role, "actor", sc.Actor)
+	return out, nil
+}
+
+// derivedLocked refuses a change to a role that a provider's groups own:
+// the next sync would undo it.
+func (s *Service) derivedLocked(ctx context.Context, subject, orgID, source string) error {
+	if source == "local" || !s.AuthPolicy(ctx).For(source).GroupsDecide() {
+		return nil
+	}
+	org, err := s.db.Read().GetOrg(ctx, orgID)
+	if err != nil {
+		return notFoundIfNoRows(err, "org")
+	}
+	from := "the proxy’s groups"
+	if source == "oidc" {
+		from = "the identity provider’s groups"
+	}
+	setting := SettingFor(source)
+	return validation("role", subject+"’s role in "+org.Slug+" comes from "+from+"; change it there, or set "+setting+".roles = \"vink\"")
 }
 
 // EnsureProxyUser creates a proxy-authenticated user on first sight and
@@ -269,12 +418,20 @@ func (s *Service) SetMembership(ctx context.Context, sc domain.Scope, userID, or
 	if !role.Valid() {
 		return (&domain.ValidationError{Errors: []domain.FieldError{{Field: "role", Msg: "must be owner, admin, member or viewer"}}}).OrNil()
 	}
+	if role == domain.RoleOwner && !sc.InstanceAdmin && !sc.CanOwnOrg() {
+		return validation("role", "only an owner can make someone an owner")
+	}
 	user, err := s.db.Read().GetUser(ctx, userID)
 	if err != nil {
 		return notFoundIfNoRows(err, "user")
 	}
 	if _, err := s.db.Read().GetOrg(ctx, orgID); err != nil {
 		return notFoundIfNoRows(err, "org")
+	}
+	if cur, err := s.db.Read().GetMembership(ctx, db.GetMembershipParams{UserID: userID, OrgID: orgID}); err == nil {
+		if err := s.derivedLocked(ctx, user.Subject, orgID, cur.Source); err != nil {
+			return err
+		}
 	}
 	if role != domain.RoleOwner {
 		if err := s.keepLastOwner(ctx, userID, orgID); err != nil {
@@ -310,6 +467,9 @@ func (s *Service) RemoveMembership(ctx context.Context, sc domain.Scope, userID,
 	cur, err := s.db.Read().GetMembership(ctx, db.GetMembershipParams{UserID: userID, OrgID: orgID})
 	if err != nil {
 		return notFoundIfNoRows(err, "membership")
+	}
+	if err := s.derivedLocked(ctx, user.Subject, orgID, cur.Source); err != nil {
+		return err
 	}
 	err = s.db.Tx(ctx, func(q *db.Queries) error {
 		n, err := q.DeleteMembership(ctx, db.DeleteMembershipParams{UserID: userID, OrgID: orgID})

@@ -82,3 +82,19 @@ func ValidTimezone(name string) bool {
 	_, err := time.LoadLocation(name)
 	return err == nil
 }
+
+// NormalizeSubject turns a sign-in name into the subject an identity
+// provider's settings make of it: the realm cut off at "@" (j@CORP.EXAMPLE
+// becomes j) and lowercased, each when asked.
+func NormalizeSubject(name string, stripRealm, lowercase bool) string {
+	name = strings.TrimSpace(name)
+	if stripRealm {
+		if i := strings.IndexByte(name, '@'); i > 0 {
+			name = name[:i]
+		}
+	}
+	if lowercase {
+		name = strings.ToLower(name)
+	}
+	return name
+}

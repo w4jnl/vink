@@ -96,6 +96,9 @@ type Service struct {
 	// noAudit silences per-resource audit rows while an apply runs; the
 	// apply writes one row of its own.
 	noAudit bool
+	// policy is where proxy and OIDC people's roles come from, set by
+	// ApplyAuthPolicy at start; shared with transaction-bound copies.
+	policy *policyHolder
 }
 
 // New wires a service. The clock is time.Now unless SetClock is called.
@@ -106,7 +109,7 @@ func New(d *db.DB, bus *engine.Bus, log *slog.Logger, cfg Config) *Service {
 	if bus == nil {
 		bus = engine.NewBus()
 	}
-	s := &Service{db: d, sqlDB: d, bus: bus, log: log, cfg: cfg, now: func() time.Time { return time.Now().UTC() }, keyring: cfg.Keyring}
+	s := &Service{db: d, sqlDB: d, bus: bus, log: log, cfg: cfg, now: func() time.Time { return time.Now().UTC() }, keyring: cfg.Keyring, policy: &policyHolder{}}
 	if s.keyring == nil {
 		var key [32]byte
 		if _, err := rand.Read(key[:]); err != nil {
@@ -146,6 +149,7 @@ func (s *Service) inTx(q *db.Queries) *Service {
 	return &Service{
 		db: txStore{q}, sqlDB: s.sqlDB, bus: s.bus, log: s.log, cfg: s.cfg, now: s.now, keyring: s.keyring,
 		validateChannel: s.validateChannel, notifier: s.notifier, checker: s.checker, checkNow: s.checkNow, metrics: s.metrics,
+		policy: s.policy,
 	}
 }
 

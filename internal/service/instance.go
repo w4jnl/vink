@@ -205,6 +205,11 @@ func (s *Service) SetUserDisabled(ctx context.Context, sc domain.Scope, userID s
 	if u.Disabled() == disabled {
 		return nil
 	}
+	if disabled {
+		if err := s.keepLastInstanceAdmin(ctx, u); err != nil {
+			return err
+		}
+	}
 	now := s.now()
 	return s.db.Tx(ctx, func(q *db.Queries) error {
 		var at *int64
