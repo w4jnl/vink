@@ -48,9 +48,9 @@
 
 {{define "project-actions"}}{{if .EditSlug}}{{button (dict "Label" "Save changes" "Variant" "primary" "Type" "submit" "Attrs" (attrs "form" "project-form"))}}{{else}}{{button (dict "Label" "Create project" "Variant" "primary" "Type" "submit" "Attrs" (attrs "form" "project-form"))}}{{end}}{{button (dict "Label" "Cancel" "Href" .CancelPath)}}{{end}}
 
-{{define "admin-members"}}<div class="vk-tabhead"><p class="vk-lede">{{.Lede}}</p>{{if not .Panel}}{{button (dict "Label" "Invite" "Href" (print .TabPath "?invite=1"))}}{{end}}</div>
+{{define "admin-members"}}<div class="vk-tabhead"><p class="vk-lede">{{.Lede}}</p>{{if not (or .Panel .AddPanel)}}{{if .AddByName}}{{button (dict "Label" "Add member" "Href" (print .TabPath "?add=1"))}}{{else}}{{button (dict "Label" "Invite" "Href" (print .TabPath "?invite=1"))}}{{end}}{{end}}</div>
 {{if .Flash}}{{notice .FlashTone "" .Flash ""}}{{end}}
-{{if .Panel}}{{template "invite-panel" .Panel}}{{end}}
+{{if .Panel}}{{template "invite-panel" .Panel}}{{end}}{{if .AddPanel}}{{template "add-member-panel" .AddPanel}}{{end}}
 <div class="vk-srows">{{range .Members}}{{template "member-row" .}}{{end}}</div>
 {{range .GroupNotes}}{{notice .Tone .Title .Text ""}}{{end}}
 {{if .Invites}}<h2 class="vk-listhead">Invites <span>{{.InviteCounts}}</span></h2>
@@ -62,7 +62,14 @@
 {{define "invite-panel"}}<form id="invite-form" class="vk-sr" method="post" action="{{.Action}}"><input type="hidden" name="_csrf" value="{{.CSRF}}"></form>{{panel "Invite a local account" "" (partial "invite-fields" .) (partial "invite-actions" .) "invite-panel"}}{{end}}
 
 {{define "invite-fields"}}{{fieldrow (list (field (dict "ID" "inv_for" "Label" "For" "Value" .Values.inv_for "Hint" "A note for the invite list. They pick their own username." "Error" .Errors.inv_for "Attrs" (attrs "form" "invite-form" "required" ""))) (field (dict "ID" "inv_role" "Label" "Role" "Control" "select" "Value" .Values.inv_role "Options" .Roles "Error" .Errors.inv_role "Attrs" (attrs "form" "invite-form")))) false}}
-<p class="vk-field__hint">vink makes a one-time link that expires after 7 days. People who sign in through the proxy or OIDC need no invite; their groups decide.</p>{{end}}
+<p class="vk-field__hint">vink makes a one-time link that expires after 7 days. People who sign in through the proxy or OIDC need no invite; {{if .ByName}}add them by sign-in name instead.{{else}}their groups decide.{{end}}</p>{{end}}
+
+{{define "add-member-panel"}}<form id="add-member-form" class="vk-sr" method="post" action="{{.Action}}"><input type="hidden" name="_csrf" value="{{.CSRF}}"></form>{{panel "Add member" "" (partial "add-member-fields" .) (partial "add-member-actions" .) "add-member-panel"}}{{end}}
+
+{{define "add-member-fields"}}{{fieldrow (list (field (dict "ID" "add_name" "Label" "Sign-in name" "Value" .Values.add_name "Mono" true "Hint" .NameHint "Error" .Errors.add_name "Attrs" (attrs "form" "add-member-form" "required" "" "autocomplete" "off"))) (field (dict "ID" "add_role" "Label" "Role" "Control" "select" "Value" .Values.add_role "Options" .Roles "Error" .Errors.add_role "Attrs" (attrs "form" "add-member-form")))) false}}
+<p class="vk-field__hint">A name vink has not seen yet becomes an account, so the role is there at the first visit.</p>{{end}}
+
+{{define "add-member-actions"}}{{button (dict "Label" "Add member" "Variant" "primary" "Type" "submit" "Attrs" (attrs "form" "add-member-form"))}}{{button (dict "Label" "Cancel" "Href" .CancelPath)}}{{if .InvitePath}}<a class="vk-link" href="{{.InvitePath}}">Invite a local account</a>{{end}}{{end}}
 
 {{define "invite-actions"}}{{button (dict "Label" "Create link" "Variant" "primary" "Type" "submit" "Attrs" (attrs "form" "invite-form"))}}{{button (dict "Label" "Cancel" "Href" .CancelPath)}}{{end}}
 

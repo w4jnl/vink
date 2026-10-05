@@ -210,6 +210,24 @@ func (a *Authenticator) GroupHint(source, orgSlug string) string {
 	return text + ". Change them in your identity provider; " + when
 }
 
+// AccessHint says, for the no-access page, which groups of a provider
+// (source proxy or oidc) give access to an org: the configured pattern,
+// and the group map when there is one.
+func (a *Authenticator) AccessHint(source string) string {
+	pattern, groupMap, setting := a.cfg.Proxy.GroupPattern, a.cfg.Proxy.GroupMap, "auth.proxy"
+	if source == "oidc" {
+		pattern, groupMap, setting = a.cfg.OIDC.GroupPattern, a.cfg.OIDC.GroupMap, "auth.oidc"
+	}
+	hint := "a group matching " + pattern
+	if pattern == "" || pattern == config.DefaultGroupPattern {
+		hint = "vink:<org>:<role>, for example vink:homelab:viewer"
+	}
+	if len(groupMap) > 0 {
+		hint += ", or a group in " + setting + ".group_map"
+	}
+	return hint
+}
+
 // LogoutURL is where a proxy identity signs out, or "".
 func (a *Authenticator) LogoutURL() string { return a.cfg.Proxy.LogoutURL }
 

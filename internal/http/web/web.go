@@ -93,6 +93,7 @@ func (h *Web) Mount(mux *http.ServeMux) {
 	mux.Handle("GET /o/{org}/admin", h.orgAdmin(h.orgAdminHome))
 	mux.Handle("GET /o/{org}/admin/{tab}", h.orgAdmin(h.orgAdminTab))
 	mux.Handle("POST /o/{org}/admin/members/invites", h.orgAdmin(h.createInvite))
+	mux.Handle("POST /o/{org}/admin/members/add", h.orgAdmin(h.addMember))
 	mux.Handle("POST /o/{org}/admin/members/invites/{id}/revoke", h.orgAdmin(h.revokeInvite))
 	mux.Handle("POST /o/{org}/admin/members/invites/{id}/remove", h.orgAdmin(h.removeInvite))
 	mux.Handle("POST /o/{org}/admin/members/transfer", h.orgAdmin(h.transferOwnership))
@@ -487,19 +488,45 @@ func (h *Web) proxyDenied(c *reqCtx) error {
 func (h *Web) noAccess(c *reqCtx) error {
 	p := c.principal
 	page := authPage{Heading: "Signed in, but not in an org yet"}
-	if p.Source == "proxy" {
-		page.Lead = "The proxy signed you in as " + p.User.Subject + ", but none of your groups gives access to an org in vink."
-		page.KV = []kv{{"user", p.User.Subject}, {"groups", strings.Join(p.Groups, ", ")}, {"needs", "vink:<org>:<role>, for example vink:homelab:viewer"}}
+	source := p.User.Source
+	signOut := ui.ButtonProps{Label: "Sign out", Type: "submit", Attrs: ui.Attr("form", "logout-form")}
+	if source == "proxy" {
+		signOut = ui.ButtonProps{}
+		if h.authn.LogoutURL() != "" {
+			signOut = ui.ButtonProps{Label: "Sign out", Href: h.authn.LogoutURL()}
+		}
+	}
+	via := "The proxy signed you in as " + p.User.Subject
+	if source == "oidc" {
+		via = "You signed in with " + h.authn.OIDCDisplayName() + " as " + p.User.Subject
+	}
+	groupsDecide := h.svc.AuthPolicy(c.r.Context()).For(source).GroupsDecide()
+	switch {
+	case (source == "proxy" || source == "oidc") && !groupsDecide:
+		// roles are set in vink: an org admin adds them by name
+		page.Lead = via + ", but no org has added you yet."
+		page.KV = []kv{{"user", p.User.Subject}}
+		page.Note = "Roles are set in vink here. Ask an org admin to add " + p.User.Subject + " on its Members tab, then reload."
+		page.Actions = []ui.ButtonProps{{Label: "Reload", Variant: "primary", Href: c.href("/")}}
+	case source == "proxy":
+		page.Lead = via + ", but none of your groups gives access to an org in vink."
+		page.KV = []kv{{"user", p.User.Subject}, {"groups", strings.Join(p.Groups, ", ")}, {"needs", h.authn.AccessHint("proxy")}}
 		page.Note = "Ask an admin to add you to one of those groups. vink reads your groups again on the next page load."
 		page.Actions = []ui.ButtonProps{{Label: "Reload", Variant: "primary", Href: c.href("/")}}
-		if h.authn.LogoutURL() != "" {
-			page.Actions = append(page.Actions, ui.ButtonProps{Label: "Sign out", Href: h.authn.LogoutURL()})
-		}
-	} else {
+	case source == "oidc":
+		page.Lead = via + ", but none of your groups gives access to an org in vink."
+		page.KV = []kv{{"user", p.User.Subject}, {"needs", h.authn.AccessHint("oidc")}}
+		page.Note = "Ask an admin to add you to one of those groups. vink reads your groups when you sign in, so sign out and in again after the change."
+		page.Actions = []ui.ButtonProps{{Label: "Sign out", Variant: "primary", Type: "submit", Attrs: ui.Attr("form", "logout-form")}}
+		signOut = ui.ButtonProps{}
+	default:
 		page.Lead = "You are signed in as " + p.User.Subject + ", but no org lists you as a member."
 		page.KV = []kv{{"user", p.User.Subject}}
-		page.Note = "Ask an admin to add you with vink admin user create --org <slug>, or to an org through the API."
-		page.Actions = []ui.ButtonProps{{Label: "Reload", Variant: "primary", Href: c.href("/")}, {Label: "Sign out", Type: "submit", Attrs: ui.Attr("form", "logout-form")}}
+		page.Note = "Ask an org admin to add you on its Members tab, or an instance admin with vink admin user grant."
+		page.Actions = []ui.ButtonProps{{Label: "Reload", Variant: "primary", Href: c.href("/")}}
+	}
+	if signOut.Label != "" {
+		page.Actions = append(page.Actions, signOut)
 	}
 	if len(page.KV) > 0 && page.KV[len(page.KV)-1].Key == "groups" && len(p.Groups) == 0 {
 		page.KV[len(page.KV)-1].Value = "none"

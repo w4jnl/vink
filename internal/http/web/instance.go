@@ -572,8 +572,16 @@ func (h *Web) userPanelFor(c *reqCtx, id string, link *noteData) (*userPanel, er
 			AdminHint: "Can create orgs, set quotas, and see and change every org.",
 		}
 		if u.Source != "local" {
-			p.AdminLocked = true
-			p.AdminHint = "Comes from the instance_admin_group of the identity provider."
+			pol := h.svc.AuthPolicy(c.r.Context()).For(u.Source)
+			setting := service.SettingFor(u.Source)
+			switch {
+			case pol.GroupsDecide():
+				p.AdminLocked = true
+				p.AdminHint = "Follows " + setting + ".instance_admin_group, since " + setting + ".roles is groups."
+			case pol.Listed(u.Subject):
+				p.AdminLocked = true
+				p.AdminHint = "Listed in " + setting + ".instance_admins in vink.toml; config wins while the name is there."
+			}
 		}
 		if p.Self {
 			p.AdminLocked = true

@@ -43,6 +43,17 @@ type invitePanel struct {
 	Action, CancelPath, CSRF string
 	Values, Errors           map[string]string
 	Roles                    []ui.Option
+	// ByName is set when roles are set in vink, so the hint can say
+	// people from the provider are added by name instead.
+	ByName bool
+}
+
+// addPanel adds a person who signs in through the proxy or OIDC by the
+// name the provider sends, when that provider's roles are set in vink.
+type addPanel struct {
+	Action, CancelPath, CSRF, InvitePath, NameHint string
+	Values, Errors                                 map[string]string
+	Roles                                          []ui.Option
 }
 
 type ownerActions struct {
@@ -59,6 +70,9 @@ type ownerActions struct {
 
 type membersData struct {
 	adminData
+	// AddByName: the tab head offers Add member instead of Invite.
+	AddByName    bool
+	AddPanel     *addPanel
 	Panel        *invitePanel
 	Members      []memberRow
 	Invites      []inviteRow
@@ -72,6 +86,7 @@ type membersData struct {
 // membersOpts are what one render of the tab may carry.
 type membersOpts struct {
 	panel      *invitePanel
+	addPanel   *addPanel
 	createdID  string // the invite whose link shows once
 	createdURL string // the link itself
 	flash      string // a sentence under the lede
@@ -100,7 +115,23 @@ func (h *Web) newInvitePanel(c *reqCtx) *invitePanel {
 	return &invitePanel{
 		Action: c.orgPath() + "/members/invites", CancelPath: c.orgPath() + "/members", CSRF: c.csrf(),
 		Values: map[string]string{"inv_role": "member"}, Errors: map[string]string{}, Roles: roleOptions(c.principal.InstanceAdmin || c.scope.CanOwnOrg()),
+		ByName: h.svc.AuthPolicy(c.r.Context()).AddSource() != "",
 	}
+}
+
+func (h *Web) newAddPanel(c *reqCtx) *addPanel {
+	p := &addPanel{
+		Action: c.orgPath() + "/members/add", CancelPath: c.orgPath() + "/members", CSRF: c.csrf(),
+		Values: map[string]string{"add_role": "member"}, Errors: map[string]string{}, Roles: roleOptions(c.principal.InstanceAdmin || c.scope.CanOwnOrg()),
+		NameHint: "Exactly as the proxy sends it, like jdoe.",
+	}
+	if h.svc.AuthPolicy(c.r.Context()).AddSource() == "oidc" {
+		p.NameHint = "Exactly as " + h.authn.OIDCDisplayName() + " sends it, like jdoe."
+	}
+	if h.authn.LocalEnabled() {
+		p.InvitePath = c.orgPath() + "/members?invite=1"
+	}
+	return p
 }
 
 // memberSub is the row's second line: who they are and where the role comes from.
@@ -139,7 +170,8 @@ func (h *Web) membersData(c *reqCtx, o membersOpts) (membersData, error) {
 	if err != nil {
 		return membersData{}, err
 	}
-	d := membersData{adminData: ad, Panel: o.panel, Flash: o.flash, FlashTone: o.flashTone}
+	d := membersData{adminData: ad, Panel: o.panel, AddPanel: o.addPanel, Flash: o.flash, FlashTone: o.flashTone}
+	d.AddByName = h.svc.AuthPolicy(c.r.Context()).AddSource() != ""
 	if d.Flash == "" {
 		d.Flash = c.r.URL.Query().Get("flash")
 	}
@@ -271,13 +303,45 @@ func dayOrClock(t, now time.Time, loc *time.Location) string {
 	return t.In(loc).Format("Mon 2 Jan")
 }
 
-// membersList is the tab; ?invite=1 opens the panel.
+// membersList is the tab; ?invite=1 opens the invite panel, ?add=1 the
+// Add member panel when roles are set in vink.
 func (h *Web) membersList(c *reqCtx) error {
 	o := membersOpts{}
-	if c.r.URL.Query().Get("invite") == "1" {
+	switch {
+	case c.r.URL.Query().Get("invite") == "1":
 		o.panel = h.newInvitePanel(c)
+	case c.r.URL.Query().Get("add") == "1" && h.svc.AuthPolicy(c.r.Context()).AddSource() != "":
+		o.addPanel = h.newAddPanel(c)
 	}
 	return h.membersTab(c, http.StatusOK, o)
+}
+
+// addMember gives a person a role by the name their provider sends; a
+// name vink has not seen becomes an account.
+func (h *Web) addMember(c *reqCtx) error {
+	p := h.newAddPanel(c)
+	p.Values["add_name"] = strings.TrimSpace(c.r.PostFormValue("add_name"))
+	p.Values["add_role"] = strings.TrimSpace(c.r.PostFormValue("add_role"))
+	u, err := h.svc.AddMember(c.r.Context(), c.scope, p.Values["add_name"], domain.Role(p.Values["add_role"]))
+	if err != nil {
+		ve, isValidation := domain.AsValidation(err)
+		switch {
+		case isValidation:
+			for _, fe := range ve.Errors {
+				field := "add_name"
+				if fe.Field == "role" {
+					field = "add_role"
+				}
+				p.Errors[field] = capitalise(fe.Msg) + "."
+			}
+		case errors.Is(err, domain.ErrConflict):
+			p.Errors["add_name"] = "Already a member here; change the role on the row."
+		default:
+			return err
+		}
+		return h.membersTab(c, http.StatusUnprocessableEntity, membersOpts{addPanel: p})
+	}
+	return h.redirect(c, c.orgPath()+"/members?flash="+url.QueryEscape(u.Subject+" added as "+p.Values["add_role"]+"."))
 }
 
 // createInvite makes the link and shows it once under the new row.

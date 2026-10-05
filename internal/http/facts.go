@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/w4jnl/vink/internal/config"
 	"github.com/w4jnl/vink/internal/domain"
 	"github.com/w4jnl/vink/internal/http/web"
 	"github.com/w4jnl/vink/internal/service"
@@ -42,13 +43,23 @@ func (d Deps) serverFacts(ctx context.Context) web.ServerFacts {
 	if cfg.Auth.Local.Enabled {
 		local = "on"
 	}
+	roles := func(r string) string {
+		if r == config.RolesVink {
+			return "roles set in vink"
+		}
+		return "roles from its groups"
+	}
 	proxy := "off"
 	if cfg.Auth.Proxy.Enabled {
-		proxy = "on, from " + joinAnd(cfg.Auth.Proxy.TrustedCIDRs)
+		proxy = "on, from " + joinAnd(cfg.Auth.Proxy.TrustedCIDRs) + "; " + roles(cfg.Auth.Proxy.Roles)
 	}
 	oidcFact := "off"
 	if cfg.Auth.OIDC.Enabled {
-		oidcFact = "on, " + cfg.Auth.OIDC.Issuer
+		oidcFact = "on, " + cfg.Auth.OIDC.Issuer + "; " + roles(cfg.Auth.OIDC.Roles)
+	}
+	adminKeys := "from any address"
+	if len(cfg.Auth.AdminKeys.AllowedCIDRs) > 0 {
+		adminKeys = "from " + joinAnd(cfg.Auth.AdminKeys.AllowedCIDRs)
 	}
 	adminGroup := cfg.Auth.Proxy.InstanceAdminGroup
 	if !cfg.Auth.Proxy.Enabled && cfg.Auth.OIDC.Enabled {
@@ -58,7 +69,7 @@ func (d Deps) serverFacts(ctx context.Context) web.ServerFacts {
 		local = "on, two-factor " + cfg.Auth.Local.TOTP
 	}
 	f.SignIn = [][2]string{{"local accounts", local}, {"proxy", proxy}, {"oidc", oidcFact},
-		{"admin group", adminGroup}, {"sessions", timefmt.Span(service.SessionTTL) + ", sliding"}}
+		{"admin group", adminGroup}, {"admin keys", adminKeys}, {"sessions", timefmt.Span(service.SessionTTL) + ", sliding"}}
 
 	outbound := "none"
 	if cfg.Outbound.Proxy != "" {

@@ -458,6 +458,32 @@ func auditText(e service.AuditEntry, now time.Time) ui.HTML {
 		return ui.HTML("revoked API key " + target)
 	case "orgkey.revoke":
 		return ui.HTML("revoked org key " + target)
+	case "adminkey.create":
+		s := "created admin key " + target
+		if access := detailString(e.Detail, "access"); access != "" {
+			s += " (" + esc(access)
+			if exp, err := time.Parse(time.RFC3339, detailString(e.Detail, "expires_at")); err == nil {
+				s += ", expires " + esc(exp.UTC().Format("2 Jan 2006"))
+			}
+			s += ")"
+		}
+		return ui.HTML(s)
+	case "adminkey.revoke":
+		if reason := detailString(e.Detail, "reason"); reason != "" {
+			return ui.HTML("revoked admin key " + target + ": " + esc(reason))
+		}
+		return ui.HTML("revoked admin key " + target)
+	case "auth.roles":
+		if detailString(e.Detail, "to") == "vink" {
+			n := detailInt(e.Detail, "memberships")
+			return ui.HTML("set the roles of " + target + " in vink from now on; " + strconv.Itoa(n) + " " + pluralWord(n, "role") + " from groups became ordinary ones")
+		}
+		n := detailInt(e.Detail, "memberships_set_in_vink")
+		verbs := " stay and override them"
+		if n == 1 {
+			verbs = " stays and overrides them"
+		}
+		return ui.HTML("let the groups of " + target + " decide roles again; " + strconv.Itoa(n) + " " + pluralWord(n, "role") + " set in vink" + verbs)
 	case "member.role":
 		from, to := detailString(e.Detail, "from"), detailString(e.Detail, "to")
 		if from == "" {
@@ -485,10 +511,17 @@ func auditText(e service.AuditEntry, now time.Time) ui.HTML {
 		}
 		return ui.HTML("changed the password of " + who)
 	case "user.instance_admin":
-		if detailBool(e.Detail, "admin") {
-			return ui.HTML("made " + who + " instance admin")
+		why := ""
+		switch detailString(e.Detail, "source") {
+		case "config":
+			why = ", listed in instance_admins"
+		case "group", "groups":
+			why = ", by the provider’s groups"
 		}
-		return ui.HTML("took instance admin from " + who)
+		if detailBool(e.Detail, "admin") {
+			return ui.HTML("made " + who + " instance admin" + why)
+		}
+		return ui.HTML("took instance admin from " + who + why)
 	case "user.disable":
 		return ui.HTML("disabled the account " + who)
 	case "user.enable":

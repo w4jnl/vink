@@ -92,6 +92,10 @@ func newEnvWith(t *testing.T, authCfg config.Auth, prefix string) *env {
 	user, _ := svc.CreateLocalUser(ctx, admin, "j", "j@example.com", "Jaro", "correct horse", false)
 	_ = svc.SetMembership(ctx, admin, user.ID, e.org.ID, domain.RoleAdmin)
 	e.scope = domain.Scope{OrgID: e.org.ID, ProjectID: e.project.ID, UserID: user.ID, Role: domain.RoleAdmin, Actor: "test"}
+	// as vink serve does before it builds the authenticator
+	if err := svc.ApplyAuthPolicy(ctx, auth.PolicyFrom(authCfg)); err != nil {
+		t.Fatal(err)
+	}
 	authn, err := auth.New(svc, authCfg, "http://localhost:8080"+prefix, quiet)
 	if err != nil {
 		t.Fatal(err)
@@ -284,7 +288,7 @@ func TestNoOrgYetPage(t *testing.T) {
 	if p.code != 403 {
 		t.Fatalf("no org: %d", p.code)
 	}
-	p.has(t, "not in an org yet", "<dt>user</dt><dd>nobody</dd>", "vink admin user create", ">Sign out<", `id="logout-form"`)
+	p.has(t, "not in an org yet", "<dt>user</dt><dd>nobody</dd>", "add you on its Members tab, or an instance admin with vink admin user grant", ">Sign out<", `id="logout-form"`)
 	if p := e.get(projPath, false); p.code != 404 {
 		t.Fatalf("a project the user cannot see: %d", p.code)
 	}
@@ -301,6 +305,9 @@ func TestProxyDeniedPage(t *testing.T) {
 	cfg.Proxy.GroupsHeader = "X-Groups"
 	cfg.Proxy.SecretHeader = "X-Proxy-Secret"
 	cfg.Proxy.Secret = "s3cret"
+	if err := e.svc.ApplyAuthPolicy(context.Background(), auth.PolicyFrom(cfg)); err != nil {
+		t.Fatal(err)
+	}
 	authn, err := auth.New(e.svc, cfg, "http://localhost:8080", quiet)
 	if err != nil {
 		t.Fatal(err)
@@ -348,6 +355,9 @@ func TestProxyRefusalPages(t *testing.T) {
 	cfg.Proxy.Enabled = true
 	cfg.Proxy.TrustedCIDRs = []string{"203.0.113.0/24"}
 	cfg.Proxy.Secret = "s3cret"
+	if err := e.svc.ApplyAuthPolicy(context.Background(), auth.PolicyFrom(cfg)); err != nil {
+		t.Fatal(err)
+	}
 	authn, err := auth.New(e.svc, cfg, "http://localhost:8080", quiet)
 	if err != nil {
 		t.Fatal(err)
