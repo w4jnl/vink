@@ -153,6 +153,25 @@ type APIKey struct {
 // IsOrg reports whether the key spans the org rather than one project.
 func (k *APIKey) IsOrg() bool { return k.ProjectID == "" }
 
+// AdminKey is an instance admin API key (vka_…). It acts as an instance
+// admin on /api/v1/admin and nothing else, always expires, and is made
+// only in the web UI or on the server host. Plaintext is returned once.
+type AdminKey struct {
+	ID         string
+	Name       string
+	Prefix     string
+	Access     Access
+	CreatedBy  string // the user who made it; empty for vink admin on the host
+	CreatedAt  time.Time
+	ExpiresAt  time.Time
+	LastUsedAt *time.Time
+	LastUsedIP string
+	RevokedAt  *time.Time
+}
+
+// Expired reports whether the key's time is up.
+func (k *AdminKey) Expired(now time.Time) bool { return !now.Before(k.ExpiresAt) }
+
 // ChannelKind is a notifier kind.
 type ChannelKind string
 

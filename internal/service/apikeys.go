@@ -159,6 +159,7 @@ type keyCache struct {
 	mu      sync.Mutex
 	entries map[string]keyCacheEntry
 	agents  map[string]agentCacheEntry
+	admins  map[string]adminCacheEntry
 }
 
 type agentCacheEntry struct {
@@ -205,6 +206,11 @@ func (c *keyCache) forget(prefix string) {
 	for fp, e := range c.entries {
 		if e.prefix == prefix {
 			delete(c.entries, fp)
+		}
+	}
+	for fp, e := range c.admins {
+		if e.prefix == prefix {
+			delete(c.admins, fp)
 		}
 	}
 }

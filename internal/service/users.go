@@ -181,7 +181,13 @@ func (s *Service) SetInstanceAdmin(ctx context.Context, sc domain.Scope, subject
 		if _, err := q.SetInstanceAdmin(ctx, db.SetInstanceAdminParams{IsInstanceAdmin: admin, ID: u.ID}); err != nil {
 			return err
 		}
-		return s.record(ctx, q, sc, audit.Entry{Action: "user.instance_admin", Target: u.Subject, TargetID: u.ID, Detail: map[string]any{"admin": admin}})
+		if err := s.record(ctx, q, sc, audit.Entry{Action: "user.instance_admin", Target: u.Subject, TargetID: u.ID, Detail: map[string]any{"admin": admin}}); err != nil {
+			return err
+		}
+		if !admin {
+			return s.revokeAdminKeysOf(ctx, q, sc, u.ID, "creator is no longer instance admin")
+		}
+		return nil
 	})
 }
 
@@ -405,7 +411,13 @@ func (s *Service) SetDerivedInstanceAdmin(ctx context.Context, u *domain.User, a
 			return err
 		}
 		u.InstanceAdmin = admin
-		return s.record(ctx, q, sc, audit.Entry{Action: "user.instance_admin", Target: u.Subject, TargetID: u.ID, Detail: map[string]any{"admin": admin, "source": why}})
+		if err := s.record(ctx, q, sc, audit.Entry{Action: "user.instance_admin", Target: u.Subject, TargetID: u.ID, Detail: map[string]any{"admin": admin, "source": why}}); err != nil {
+			return err
+		}
+		if !admin {
+			return s.revokeAdminKeysOf(ctx, q, sc, u.ID, "creator is no longer instance admin")
+		}
+		return nil
 	})
 }
 

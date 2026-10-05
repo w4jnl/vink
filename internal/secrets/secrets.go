@@ -237,6 +237,34 @@ func NewAgentToken() (token, prefix string, err error) {
 	return "vat_" + prefix + "_" + secret, prefix, nil
 }
 
+// NewAdminKey returns a plaintext instance admin key "vka_<prefix>_<secret>"
+// and its prefix; it is hashed like an API key. The vka_ prefix picks the
+// verify path, so it never reaches project or org keys.
+func NewAdminKey() (token, prefix string, err error) {
+	prefix, err = randomString(APIKeyPrefixLen)
+	if err != nil {
+		return "", "", err
+	}
+	secret, err := randomString(32)
+	if err != nil {
+		return "", "", err
+	}
+	return "vka_" + prefix + "_" + secret, prefix, nil
+}
+
+// ParseAdminKeyPrefix returns the prefix of a well-formed admin key.
+func ParseAdminKeyPrefix(token string) (string, bool) {
+	rest, ok := strings.CutPrefix(token, "vka_")
+	if !ok {
+		return "", false
+	}
+	prefix, secret, ok := strings.Cut(rest, "_")
+	if !ok || len(prefix) != APIKeyPrefixLen || len(secret) != 32 {
+		return "", false
+	}
+	return prefix, true
+}
+
 // ParseAgentTokenPrefix returns the prefix of a well-formed agent token.
 func ParseAgentTokenPrefix(token string) (string, bool) {
 	rest, ok := strings.CutPrefix(token, "vat_")

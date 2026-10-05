@@ -67,6 +67,9 @@ type Scope struct {
 	KeyID     string
 	KeyName   string
 	KeyAccess Access
+	// InstanceKey marks an instance admin API key (vka_…): InstanceAdmin
+	// on /api/v1/admin and nothing else.
+	InstanceKey bool
 }
 
 // IsKey reports whether the caller is an API key.
@@ -74,7 +77,10 @@ func (s Scope) IsKey() bool { return s.KeyID != "" }
 
 // IsOrgKey reports whether the caller is an org key: an API key bound to
 // the org and no project, allowed to export and apply the org's projects.
-func (s Scope) IsOrgKey() bool { return s.KeyID != "" && s.ProjectID == "" }
+func (s Scope) IsOrgKey() bool { return s.KeyID != "" && s.ProjectID == "" && !s.InstanceKey }
+
+// IsAdminKey reports whether the caller is an instance admin API key.
+func (s Scope) IsAdminKey() bool { return s.KeyID != "" && s.InstanceKey }
 
 // CanOperate: ack incidents, pause/resume, check now.
 func (s Scope) CanOperate() bool { return s.Role.AtLeast(RoleMember) }

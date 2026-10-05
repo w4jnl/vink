@@ -39,7 +39,7 @@ func (s *Service) CreateAgent(ctx context.Context, sc domain.Scope, name string,
 	if err := requireOrgAdmin(sc); err != nil {
 		return nil, "", err
 	}
-	if sc.IsKey() {
+	if sc.IsKey() && !sc.InstanceKey {
 		return nil, "", domain.ErrForbidden
 	}
 	a := &domain.Agent{Name: name, Labels: labels}

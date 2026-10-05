@@ -113,3 +113,24 @@ func TestAPIKeys(t *testing.T) {
 		t.Fatal("fingerprint")
 	}
 }
+
+// TestAdminKeys: vka_ tokens parse only as admin keys, and project keys
+// never as admin keys.
+func TestAdminKeys(t *testing.T) {
+	tok, prefix, err := NewAdminKey()
+	if err != nil || !strings.HasPrefix(tok, "vka_"+prefix+"_") || len(prefix) != APIKeyPrefixLen {
+		t.Fatalf("%q %q %v", tok, prefix, err)
+	}
+	if p, ok := ParseAdminKeyPrefix(tok); !ok || p != prefix {
+		t.Fatalf("parse prefix: %q %v", p, ok)
+	}
+	if _, ok := ParseAPIKeyPrefix(tok); ok {
+		t.Error("an admin key parsed as a project key")
+	}
+	project, _, _ := NewAPIKey()
+	for _, bad := range []string{"", "vka_short", project, "vka_" + prefix + "_" + strings.Repeat("a", 31), "vka_" + prefix + "x_" + strings.Repeat("a", 32), "vat_" + prefix + "_" + strings.Repeat("a", 32)} {
+		if _, ok := ParseAdminKeyPrefix(bad); ok {
+			t.Errorf("ParseAdminKeyPrefix(%q) must fail", bad)
+		}
+	}
+}

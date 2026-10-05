@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"strconv"
 	"strings"
 	"time"
@@ -216,7 +217,8 @@ func (s *Service) SetUserDisabled(ctx context.Context, sc domain.Scope, userID s
 		var by *string
 		action := "user.enable"
 		if disabled {
-			at, by, action = ptri(domain.Millis(now)), ptrs(strings.TrimPrefix(sc.Actor, "user:")), "user.disable"
+			actor, _, _ := actorOf(sc)
+			at, by, action = ptri(domain.Millis(now)), ptrs(actor), "user.disable"
 			if err := q.DeleteUserSessions(ctx, userID); err != nil {
 				return err
 			}
@@ -224,7 +226,13 @@ func (s *Service) SetUserDisabled(ctx context.Context, sc domain.Scope, userID s
 		if err := q.SetUserDisabled(ctx, db.SetUserDisabledParams{DisabledAt: at, DisabledBy: by, ID: userID}); err != nil {
 			return err
 		}
-		return s.record(ctx, q, sc, audit.Entry{Action: action, Target: u.Subject, TargetID: u.ID})
+		if err := s.record(ctx, q, sc, audit.Entry{Action: action, Target: u.Subject, TargetID: u.ID}); err != nil {
+			return err
+		}
+		if disabled {
+			return s.revokeAdminKeysOf(ctx, q, sc, u.ID, "creator was disabled")
+		}
+		return nil
 	})
 }
 
@@ -237,6 +245,9 @@ func (s *Service) ResetTOTP(ctx context.Context, sc domain.Scope, userID string)
 	u, err := s.UserByID(ctx, userID)
 	if err != nil {
 		return err
+	}
+	if sc.IsAdminKey() && u.InstanceAdmin {
+		return fmt.Errorf("%w: an admin key cannot reset an instance admin's two-factor; sign in to do it", domain.ErrForbidden)
 	}
 	return s.db.Tx(ctx, func(q *db.Queries) error {
 		if err := q.ResetUserTOTP(ctx, userID); err != nil {
@@ -261,6 +272,9 @@ func (s *Service) CreateResetLink(ctx context.Context, sc domain.Scope, userID s
 	}
 	if u.Source != "local" {
 		return "", time.Time{}, validation("user", "only local accounts have a password")
+	}
+	if sc.IsAdminKey() && u.InstanceAdmin {
+		return "", time.Time{}, fmt.Errorf("%w: an admin key cannot make a reset link for an instance admin; sign in to do it", domain.ErrForbidden)
 	}
 	token, err = secrets.NewLinkToken("rs_")
 	if err != nil {
