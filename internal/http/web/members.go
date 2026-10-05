@@ -66,7 +66,7 @@ type membersData struct {
 	Owner        *ownerActions
 	Flash        string
 	FlashTone    string
-	ProxyNote    *noteData
+	GroupNotes   []*noteData
 }
 
 // membersOpts are what one render of the tab may carry.
@@ -104,16 +104,16 @@ func (h *Web) newInvitePanel(c *reqCtx) *invitePanel {
 }
 
 // memberSub is the row's second line: who they are and where the role comes from.
-func memberSub(c *reqCtx, m domain.Member) string {
+func (h *Web) memberSub(m domain.Member) string {
 	who := m.Subject
 	if m.Email != "" {
 		who = m.Email
 	}
 	switch m.Source {
 	case "header":
-		return who + " · proxy group vink:" + c.org.Slug + ":" + string(m.Role)
+		return who + " · role from the proxy’s groups"
 	case "oidc":
-		return who + " · oidc group vink:" + c.org.Slug + ":" + string(m.Role)
+		return who + " · role from " + h.authn.OIDCDisplayName() + " groups"
 	}
 	switch m.UserSource {
 	case "proxy":
@@ -153,7 +153,7 @@ func (h *Web) membersData(c *reqCtx, o membersOpts) (membersData, error) {
 	}
 	owner := c.principal.InstanceAdmin || c.scope.CanOwnOrg()
 	root := c.orgPath() + "/members"
-	proxied := 0
+	derived := map[string]int{}
 	for _, m := range members {
 		self := m.UserID == c.principal.User.ID
 		locked := m.Source != "local" || self
@@ -166,12 +166,10 @@ func (h *Web) membersData(c *reqCtx, o membersOpts) (membersData, error) {
 			Attrs: ui.Attr("hx-post", root+"/"+m.UserID+"/role") + ui.Attr("hx-trigger", "change") + ui.Attr("hx-target", "closest .vk-srow") + ui.Attr("hx-swap", "outerHTML"),
 		})
 		row := memberRow{
-			UserID: m.UserID, Lead: string(ui.Avatar(m.Name())), TitleHTML: title, Sub: memberSub(c, m), Muted: m.Disabled,
+			UserID: m.UserID, Lead: string(ui.Avatar(m.Name())), TitleHTML: title, Sub: h.memberSub(m), Muted: m.Disabled,
 			Cells: []ui.Cell{{HTML: sel}, {Text: seenCell(m.LastSeenAt, c.now), Mono: true}},
 		}
-		if m.Source != "local" {
-			proxied++
-		}
+		derived[m.Source]++
 		switch {
 		case self:
 			row.Actions = ""
@@ -185,8 +183,11 @@ func (h *Web) membersData(c *reqCtx, o membersOpts) (membersData, error) {
 		}
 		d.Members = append(d.Members, row)
 	}
-	if proxied > 0 {
-		d.ProxyNote = &noteData{Tone: "info", Title: plural(proxied, "member") + " " + isAre(proxied) + " from the proxy.", Text: "Their roles follow groups named vink:" + c.org.Slug + ":<role> (or the default org). Change them in your identity provider; vink reads the groups again on every request."}
+	if n := derived["header"]; n > 0 {
+		d.GroupNotes = append(d.GroupNotes, &noteData{Tone: "info", Title: plural(n, "member") + " " + isAre(n) + " from the proxy.", Text: h.authn.GroupHint("header", c.org.Slug)})
+	}
+	if n := derived["oidc"]; n > 0 {
+		d.GroupNotes = append(d.GroupNotes, &noteData{Tone: "info", Title: plural(n, "member") + " " + isAre(n) + " from " + h.authn.OIDCDisplayName() + ".", Text: h.authn.GroupHint("oidc", c.org.Slug)})
 	}
 	invites, err := h.svc.ListInvites(ctx, c.scope)
 	if err != nil {

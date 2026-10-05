@@ -161,6 +161,39 @@ func (a *Authenticator) ProxyEnabled() bool { return a.cfg.Proxy.Enabled }
 // GroupPattern is the regex that maps groups to roles, for the no-access page.
 func (a *Authenticator) GroupPattern() string { return a.cfg.Proxy.GroupPattern }
 
+// GroupHint says, for an org's members tab, which groups of a provider
+// (source header for the proxy, oidc for OIDC) give roles in the org and
+// when vink reads them, from the configured pattern, group map and
+// default org rather than the default names.
+func (a *Authenticator) GroupHint(source, orgSlug string) string {
+	pattern, groupMap, defaultOrg := a.cfg.Proxy.GroupPattern, a.cfg.Proxy.GroupMap, a.cfg.Proxy.DefaultOrg
+	when := "vink reads the groups again on every request."
+	if source == "oidc" {
+		pattern, groupMap, defaultOrg = a.cfg.OIDC.GroupPattern, a.cfg.OIDC.GroupMap, a.cfg.OIDC.DefaultOrg
+		when = "vink reads the groups again at each sign-in."
+	}
+	var parts []string
+	if pattern == "" || pattern == config.DefaultGroupPattern {
+		parts = append(parts, "groups named vink:"+orgSlug+":<role>")
+	} else {
+		parts = append(parts, "groups matching "+pattern)
+	}
+	mapped := false
+	for _, target := range groupMap {
+		if org, _, _ := strings.Cut(target, ":"); org == orgSlug {
+			mapped = true
+		}
+	}
+	if mapped {
+		parts = append(parts, "the groups group_map names for "+orgSlug)
+	}
+	text := "Their roles follow " + strings.Join(parts, " and ")
+	if defaultOrg == orgSlug {
+		text += "; everyone else who signs in this way is a viewer here (default_org)"
+	}
+	return text + ". Change them in your identity provider; " + when
+}
+
 // LogoutURL is where a proxy identity signs out, or "".
 func (a *Authenticator) LogoutURL() string { return a.cfg.Proxy.LogoutURL }
 

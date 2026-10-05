@@ -390,6 +390,33 @@ func TestProxyRefusalPages(t *testing.T) {
 	get(local.hdr.Get("Location"), "j").has(t, "The proxy signed you in as j, which is a local account here. Sign in with its password.", `name="password"`)
 }
 
+// TestMemberRowsNameTheirProvider: a role from groups says which provider
+// it comes from, and the note under the list names the configured
+// pattern and group map instead of the default names.
+func TestMemberRowsNameTheirProvider(t *testing.T) {
+	cfg := config.Default().Auth
+	cfg.Proxy.GroupPattern = `^mon-(?P<org>[a-z0-9-]+)-(?P<role>owner|admin|member|viewer)$`
+	cfg.Proxy.GroupMap = map[string]string{"CN=Ops": "homelab:admin"}
+	cfg.OIDC.DisplayName = "Keycloak"
+	e := newEnvWith(t, cfg, "")
+	ctx := context.Background()
+	alice, _ := e.svc.EnsureProxyUser(ctx, "alice", "", "")
+	bob, _ := e.svc.EnsureExternalUser(ctx, "bob", "", "", "oidc")
+	if err := e.svc.SyncDerivedMemberships(ctx, alice.ID, map[string]domain.Role{"homelab": domain.RoleMember}, "header"); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.svc.SyncDerivedMemberships(ctx, bob.ID, map[string]domain.Role{"homelab": domain.RoleViewer}, "oidc"); err != nil {
+		t.Fatal(err)
+	}
+	tab := e.get("/o/homelab/admin/members", false)
+	tab.has(t, "alice · role from the proxy’s groups", "bob · role from Keycloak groups",
+		"1 member is from the proxy.", "groups matching ^mon-(?P&lt;org&gt;", "the groups group_map names for homelab", "on every request.",
+		"1 member is from Keycloak.", "groups named vink:homelab:&lt;role&gt;", "at each sign-in.")
+	if strings.Contains(tab.body, "proxy group vink:") || strings.Contains(tab.body, "oidc group vink:") {
+		t.Error("rows still name the default group")
+	}
+}
+
 func TestMonitorsPageEmptyAndRows(t *testing.T) {
 	e := newEnv(t)
 	p := e.get(projPath, false)

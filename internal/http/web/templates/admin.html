@@ -52,7 +52,7 @@
 {{if .Flash}}{{notice .FlashTone "" .Flash ""}}{{end}}
 {{if .Panel}}{{template "invite-panel" .Panel}}{{end}}
 <div class="vk-srows">{{range .Members}}{{template "member-row" .}}{{end}}</div>
-{{if .ProxyNote}}{{notice .ProxyNote.Tone .ProxyNote.Title .ProxyNote.Text ""}}{{end}}
+{{range .GroupNotes}}{{notice .Tone .Title .Text ""}}{{end}}
 {{if .Invites}}<h2 class="vk-listhead">Invites <span>{{.InviteCounts}}</span></h2>
 <div class="vk-srows">{{range .Invites}}{{settingsrow (dict "Lead" .Lead "HasLead" true "Title" .Title "Sub" .Sub "Muted" .Muted "Cells" .Cells "Actions" .Actions)}}{{if .Note}}<div class="vk-srow__note">{{.Note}}</div>{{end}}{{end}}</div>{{end}}
 {{if .Owner}}{{template "owner-actions" .Owner}}{{end}}{{end}}

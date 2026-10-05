@@ -169,6 +169,10 @@ type SMTP struct {
 }
 
 // Default returns the built-in defaults from the design document.
+// DefaultGroupPattern maps groups named vink:<org>:<role> to that role in
+// that org, for the proxy and OIDC alike.
+const DefaultGroupPattern = `^vink:(?P<org>[a-z0-9-]+):(?P<role>owner|admin|member|viewer)$`
+
 func Default() *Config {
 	return &Config{
 		Server: Server{Listen: ":8080", BaseURL: "http://localhost:8080"},
@@ -187,7 +191,7 @@ func Default() *Config {
 			Local: AuthLocal{Enabled: true, TOTP: "optional"},
 			OIDC: AuthOIDC{
 				Scopes: []string{"openid", "profile", "email", "groups"}, DisplayName: "single sign-on", UsernameClaim: "preferred_username", GroupsClaim: "groups", Lowercase: true,
-				GroupPattern: `^vink:(?P<org>[a-z0-9-]+):(?P<role>owner|admin|member|viewer)$`, InstanceAdminGroup: "vink:admin",
+				GroupPattern: DefaultGroupPattern, InstanceAdminGroup: "vink:admin",
 			},
 			Proxy: AuthProxy{ //nolint:gosec // G101: header names, not credentials
 				TrustedCIDRs:       []string{"127.0.0.1/32", "::1/128"},
@@ -199,7 +203,7 @@ func Default() *Config {
 				GroupsSeparator:    ",",
 				StripRealm:         true,
 				Lowercase:          true,
-				GroupPattern:       `^vink:(?P<org>[a-z0-9-]+):(?P<role>owner|admin|member|viewer)$`,
+				GroupPattern:       DefaultGroupPattern,
 				InstanceAdminGroup: "vink:admin",
 			},
 		},
