@@ -10,6 +10,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"strings"
 
 	"github.com/w4jnl/vink/internal/auth"
 	"github.com/w4jnl/vink/internal/domain"
@@ -55,11 +56,11 @@ func writeError(w http.ResponseWriter, r *http.Request, log *slog.Logger, err er
 		}
 		w.Header().Set("WWW-Authenticate", `Bearer realm="vink"`)
 	case errors.Is(err, domain.ErrForbidden):
-		p.Type, p.Title, p.Status, p.Detail = "forbidden", "Forbidden", http.StatusForbidden, err.Error()
+		p.Type, p.Title, p.Status, p.Detail = "forbidden", "Forbidden", http.StatusForbidden, detailOf(err, domain.ErrForbidden)
 	case errors.Is(err, domain.ErrNotFound):
 		p.Type, p.Title, p.Status, p.Detail = "not-found", "Not found", http.StatusNotFound, err.Error()
 	case errors.Is(err, domain.ErrConflict):
-		p.Type, p.Title, p.Status, p.Detail = "conflict", "Conflict", http.StatusConflict, err.Error()
+		p.Type, p.Title, p.Status, p.Detail = "conflict", "Conflict", http.StatusConflict, detailOf(err, domain.ErrConflict)
 	case errors.Is(err, domain.ErrRateLimited):
 		p.Type, p.Title, p.Status, p.Detail = "rate-limit", "Too many requests", http.StatusTooManyRequests, "slow down"
 		w.Header().Set("Retry-After", "1")
@@ -78,6 +79,20 @@ func writeError(w http.ResponseWriter, r *http.Request, log *slog.Logger, err er
 	w.Header().Set("Content-Type", "application/problem+json")
 	w.WriteHeader(p.Status)
 	_ = json.NewEncoder(w).Encode(p)
+}
+
+// detailOf is the error's message without the sentinel's word in front,
+// which the title already says: "forbidden: read-only API key" and
+// errors.Join's "forbidden\nread-only API key" both become "read-only
+// API key". A bare sentinel keeps its word.
+func detailOf(err, sentinel error) string {
+	msg := err.Error()
+	for _, sep := range []string{": ", "\n"} {
+		if rest, ok := strings.CutPrefix(msg, sentinel.Error()+sep); ok && rest != "" {
+			return rest
+		}
+	}
+	return msg
 }
 
 // writeJSON renders v with status.

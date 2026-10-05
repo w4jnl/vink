@@ -413,3 +413,21 @@ func TestAdminGrantWhileGroupsDecide(t *testing.T) {
 		t.Error("a refused create left an account")
 	}
 }
+
+// TestProblemDetailWithoutSentinel: a refusal's detail is the reason,
+// without "forbidden" or "conflict" again in front of it.
+func TestProblemDetailWithoutSentinel(t *testing.T) {
+	e := newAdminEnv(t)
+	for _, tc := range []struct {
+		r    resp
+		want string
+	}{
+		{e.key(e.roToken, "DELETE", "/admin/keys/"+e.rwKey.ID, nil), `"detail":"read-only API key"`},
+		{e.key(e.rwTok, "GET", "/monitors", nil), `"detail":"an instance admin key acts only on /api/v1/admin; use a project or org key"`},
+		{e.key(e.rwTok, "POST", "/admin/orgs", map[string]any{"slug": "homelab"}), `"detail":"`},
+	} {
+		if !strings.Contains(string(tc.r.body), tc.want) || strings.Contains(string(tc.r.body), `"detail":"forbidden`) || strings.Contains(string(tc.r.body), `"detail":"conflict`) {
+			t.Errorf("%d %s", tc.r.code, tc.r.body)
+		}
+	}
+}

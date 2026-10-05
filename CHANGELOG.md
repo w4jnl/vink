@@ -56,6 +56,8 @@ updates this file first. Dates are the tag dates.
   is refused now, with the setting to change instead.
 - **Fixed: an org admin could make anyone, themselves included, an owner.** Only owners and
   instance admins grant `owner`.
+- **Fixed: refusals said their kind twice.** The CLI printed "Forbidden: forbidden: …" and the
+  API's problem detail began with "forbidden" or "conflict"; the detail is now the reason alone.
 - **The no-access page says what is missing** for the person's provider: the configured group
   pattern or group map, a sign-out and in for OIDC, or an org admin to add them when roles are set
   in vink.
