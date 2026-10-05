@@ -136,6 +136,10 @@ func TestValidation(t *testing.T) {
 		"bad smtp tls":      {"VINK_SMTP_TLS": "maybe"},
 		"bad bool":          {"VINK_AUTH_LOCAL_ENABLED": "yes please"},
 		"bad int":           {"VINK_CHECKS_WORKERS": "many"},
+		"bad proxy roles":   {"VINK_AUTH_PROXY_ROLES": "ad"},
+		"bad oidc roles":    {"VINK_AUTH_OIDC_ROLES": "manual"},
+		"spaced admin name": {"VINK_AUTH_OIDC_INSTANCE_ADMINS": "j doe"},
+		"bad key network":   {"VINK_AUTH_ADMIN_KEYS_ALLOWED_CIDRS": "office"},
 	}
 	for name, env := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -256,4 +260,55 @@ func TestOIDCNeedsIssuerAndClient(t *testing.T) {
 	if err := c.Validate(); err != nil {
 		t.Fatalf("oidc alone must do: %v", err)
 	}
+}
+
+// TestRoleSourcesAndAdminKeys: the role source per provider, the
+// instance_admins lists and the admin key networks load from the
+// environment, survive Redacted as copies, and warn where they are
+// probably not what was meant.
+func TestRoleSourcesAndAdminKeys(t *testing.T) {
+	cfg, err := LoadWith("", envOf(map[string]string{
+		"VINK_AUTH_PROXY_ENABLED": "true", "VINK_AUTH_PROXY_SECRET": "x", "VINK_AUTH_PROXY_ROLES": "vink",
+		"VINK_AUTH_PROXY_INSTANCE_ADMINS": "jdoe,asmith", "VINK_AUTH_PROXY_DEFAULT_ORG": "homelab",
+		"VINK_AUTH_ADMIN_KEYS_ALLOWED_CIDRS": "10.0.0.0/8,fd00::/8",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Auth.Proxy.Roles != RolesVink || strings.Join(cfg.Auth.Proxy.InstanceAdmins, ",") != "jdoe,asmith" ||
+		len(cfg.Auth.AdminKeys.AllowedCIDRs) != 2 || cfg.Auth.OIDC.Roles != RolesGroups {
+		t.Fatalf("loaded: %+v %+v", cfg.Auth.Proxy, cfg.Auth.AdminKeys)
+	}
+	red := cfg.Redacted()
+	red.Auth.Proxy.InstanceAdmins[0] = "changed"
+	red.Auth.AdminKeys.AllowedCIDRs[0] = "changed"
+	if cfg.Auth.Proxy.InstanceAdmins[0] != "jdoe" || cfg.Auth.AdminKeys.AllowedCIDRs[0] != "10.0.0.0/8" {
+		t.Error("Redacted shares the lists with the original")
+	}
+	warnings := strings.Join(cfg.Warnings(), "\n")
+	for _, want := range []string{"auth.proxy.default_org give no roles", "allowed_cidrs is set without server.trusted_proxies"} {
+		if !strings.Contains(warnings, want) {
+			t.Errorf("warnings %q lack %q", warnings, want)
+		}
+	}
+	// a blank name can only come from a file; the environment drops it
+	path := filepath.Join(t.TempDir(), "vink.toml")
+	if err := os.WriteFile(path, []byte("[auth.proxy]\ninstance_admins = [\"jdoe\", \"\"]\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadWith(path, envOf(nil)); err == nil || !strings.Contains(err.Error(), "instance_admins") {
+		t.Errorf("a blank name: %v", err)
+	}
+	if w := config0Warnings(t); len(w) != 0 {
+		t.Errorf("defaults warn: %v", w)
+	}
+}
+
+func config0Warnings(t *testing.T) []string {
+	t.Helper()
+	cfg, err := LoadWith("", envOf(nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return cfg.Warnings()
 }

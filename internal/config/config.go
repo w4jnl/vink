@@ -97,6 +97,25 @@ type Auth struct {
 	Local AuthLocal `toml:"local"`
 	Proxy AuthProxy `toml:"proxy"`
 	OIDC  AuthOIDC  `toml:"oidc"`
+	// AdminKeys limits where instance admin API keys are accepted.
+	AdminKeys AuthAdminKeys `toml:"admin_keys"`
+}
+
+// Where the roles of people who sign in through a provider come from.
+const (
+	// RolesGroups derives memberships and instance admin from the
+	// provider's groups on every request (proxy) or sign-in (OIDC).
+	RolesGroups = "groups"
+	// RolesVink leaves them to vink: org admins set roles on the Members
+	// tab, instance admins the instance admin flag.
+	RolesVink = "vink"
+)
+
+// AuthAdminKeys: instance admin API keys (vka_…) act only on
+// /api/v1/admin. AllowedCIDRs, when set, is where they are accepted from,
+// the client address as server.trusted_proxies resolves it.
+type AuthAdminKeys struct {
+	AllowedCIDRs []string `toml:"allowed_cidrs"`
 }
 
 // AuthOIDC is native OpenID Connect: the authorization-code flow with
@@ -125,6 +144,10 @@ type AuthOIDC struct {
 	GroupMap           map[string]string `toml:"group_map"`
 	// LogoutURL is where an OIDC session signs out at the provider, or "".
 	LogoutURL string `toml:"logout_url"`
+	// Roles: RolesGroups or RolesVink, as in auth.proxy.
+	Roles string `toml:"roles"`
+	// InstanceAdmins, as in auth.proxy.
+	InstanceAdmins []string `toml:"instance_admins"`
 }
 
 type AuthLocal struct {
@@ -151,6 +174,12 @@ type AuthProxy struct {
 	DefaultOrg         string            `toml:"default_org"`
 	LogoutURL          string            `toml:"logout_url"`
 	GroupMap           map[string]string `toml:"group_map"`
+	// Roles: RolesGroups (the default) or RolesVink.
+	Roles string `toml:"roles"`
+	// InstanceAdmins are sign-in names that are instance admins on
+	// access, as the provider sends them (after strip_realm and
+	// lowercase); while listed, config wins over vink.
+	InstanceAdmins []string `toml:"instance_admins"`
 }
 
 type Secrets struct {
@@ -191,7 +220,7 @@ func Default() *Config {
 			Local: AuthLocal{Enabled: true, TOTP: "optional"},
 			OIDC: AuthOIDC{
 				Scopes: []string{"openid", "profile", "email", "groups"}, DisplayName: "single sign-on", UsernameClaim: "preferred_username", GroupsClaim: "groups", Lowercase: true,
-				GroupPattern: DefaultGroupPattern, InstanceAdminGroup: "vink:admin",
+				GroupPattern: DefaultGroupPattern, InstanceAdminGroup: "vink:admin", Roles: RolesGroups,
 			},
 			Proxy: AuthProxy{ //nolint:gosec // G101: header names, not credentials
 				TrustedCIDRs:       []string{"127.0.0.1/32", "::1/128"},
@@ -205,6 +234,7 @@ func Default() *Config {
 				Lowercase:          true,
 				GroupPattern:       DefaultGroupPattern,
 				InstanceAdminGroup: "vink:admin",
+				Roles:              RolesGroups,
 			},
 		},
 		SMTP: SMTP{Port: 587, TLS: "starttls"},
@@ -414,6 +444,25 @@ func (c *Config) Validate() error {
 			fail("auth.proxy.group_pattern must have named groups (?P<org>…) and (?P<role>…)")
 		}
 	}
+	for _, p := range []struct {
+		name   string
+		roles  string
+		admins []string
+	}{{"auth.proxy", c.Auth.Proxy.Roles, c.Auth.Proxy.InstanceAdmins}, {"auth.oidc", c.Auth.OIDC.Roles, c.Auth.OIDC.InstanceAdmins}} {
+		if p.roles != RolesGroups && p.roles != RolesVink {
+			fail("%s.roles must be groups or vink, got %q", p.name, p.roles)
+		}
+		for _, name := range p.admins {
+			if strings.TrimSpace(name) == "" || strings.ContainsAny(name, " \t\r\n") {
+				fail("%s.instance_admins: %q is not a sign-in name", p.name, name)
+			}
+		}
+	}
+	for _, cidr := range c.Auth.AdminKeys.AllowedCIDRs {
+		if _, _, err := net.ParseCIDR(cidr); err != nil {
+			fail("auth.admin_keys.allowed_cidrs: %q is not a CIDR", cidr)
+		}
+	}
 	switch strings.ToLower(c.SMTP.TLS) {
 	case "starttls", "tls", "none":
 	default:
@@ -422,11 +471,51 @@ func (c *Config) Validate() error {
 	return errors.Join(errs...)
 }
 
+// Warnings are settings that are valid but probably not what was meant;
+// vink serve logs them at start.
+func (c *Config) Warnings() []string {
+	var out []string
+	vinkMode := func(name string, roles, defaultOrg, adminGroup string, groupMap map[string]string) {
+		if roles != RolesVink {
+			return
+		}
+		var ignored []string
+		if defaultOrg != "" {
+			ignored = append(ignored, "default_org")
+		}
+		if len(groupMap) > 0 {
+			ignored = append(ignored, "group_map")
+		}
+		if adminGroup != "" && adminGroup != "vink:admin" {
+			ignored = append(ignored, "instance_admin_group")
+		}
+		if len(ignored) > 0 {
+			out = append(out, name+".roles is vink, so "+name+"."+strings.Join(ignored, " and ")+" give no roles")
+		}
+	}
+	if c.Auth.Proxy.Enabled {
+		vinkMode("auth.proxy", c.Auth.Proxy.Roles, c.Auth.Proxy.DefaultOrg, c.Auth.Proxy.InstanceAdminGroup, c.Auth.Proxy.GroupMap)
+	}
+	if c.Auth.OIDC.Enabled {
+		vinkMode("auth.oidc", c.Auth.OIDC.Roles, c.Auth.OIDC.DefaultOrg, c.Auth.OIDC.InstanceAdminGroup, c.Auth.OIDC.GroupMap)
+	}
+	if c.Auth.Proxy.Enabled && c.Auth.OIDC.Enabled && c.Auth.Proxy.Roles != c.Auth.OIDC.Roles {
+		out = append(out, "auth.proxy.roles and auth.oidc.roles differ; a person follows the mode of the provider they last signed in with")
+	}
+	if len(c.Auth.AdminKeys.AllowedCIDRs) > 0 && len(c.Server.TrustedProxies) == 0 {
+		out = append(out, "auth.admin_keys.allowed_cidrs is set without server.trusted_proxies; behind a proxy every request comes from the proxy's address")
+	}
+	return out
+}
+
 // Redacted returns a copy with every secret replaced by "***".
 func (c *Config) Redacted() *Config {
 	cp := *c
 	cp.Server.TrustedProxies = append([]string(nil), c.Server.TrustedProxies...)
 	cp.Auth.Proxy.TrustedCIDRs = append([]string(nil), c.Auth.Proxy.TrustedCIDRs...)
+	cp.Auth.Proxy.InstanceAdmins = append([]string(nil), c.Auth.Proxy.InstanceAdmins...)
+	cp.Auth.OIDC.InstanceAdmins = append([]string(nil), c.Auth.OIDC.InstanceAdmins...)
+	cp.Auth.AdminKeys.AllowedCIDRs = append([]string(nil), c.Auth.AdminKeys.AllowedCIDRs...)
 	if c.Auth.Proxy.GroupMap != nil {
 		cp.Auth.Proxy.GroupMap = make(map[string]string, len(c.Auth.Proxy.GroupMap))
 		for k, v := range c.Auth.Proxy.GroupMap {

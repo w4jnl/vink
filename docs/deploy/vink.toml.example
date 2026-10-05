@@ -68,6 +68,8 @@ instance_admin_group = "vink:admin"
 default_org = ""                       # give every authenticated person viewer in this org
 logout_url = ""                        # e.g. "https://auth.example.com/logout?rd=https://vink.example.com"; the rd (Authelia, oauth2-proxy) or next (Authentik) parameter brings people back
 # group_map = { "CN=Monitoring Admins" = "corp:admin" }
+roles = "groups"                       # "groups": roles follow the groups above; "vink": org admins set them on the Members tab (AD groups out of reach)
+instance_admins = []                   # sign-in names that are instance admins on access, e.g. ["jdoe"], to bootstrap without an admin group
 
 [auth.oidc]                            # native OpenID Connect (Keycloak, Authentik, Entra, ...), authorization code with PKCE
 enabled = false
@@ -86,6 +88,11 @@ instance_admin_group = "vink:admin"
 default_org = ""
 logout_url = ""                        # the provider's end-session URL with its return parameter, e.g. ".../logout?post_logout_redirect_uri=https://vink.example.com&client_id=vink" for Keycloak
 # group_map = { "CN=Monitoring Admins" = "corp:admin" }
+roles = "groups"                       # "groups" or "vink", as in auth.proxy
+instance_admins = []
+
+[auth.admin_keys]
+allowed_cidrs = []                     # where instance admin API keys (vka_…) are accepted from, e.g. ["10.0.0.0/8"]; needs server.trusted_proxies behind a proxy
 
 [checks]
 workers = 32            # concurrent pull check attempts

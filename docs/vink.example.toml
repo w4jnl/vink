@@ -63,6 +63,8 @@ instance_admin_group = "vink:admin"
 default_org = ""                       # give every signed-in person viewer in this org
 logout_url = ""                        # with the provider's return parameter, e.g. ".../logout?rd=https://vink.example.com"
 # group_map = { "CN=Monitoring Admins" = "corp:admin" }
+roles = "groups"                       # where roles come from: "groups" (above) or "vink" (set on the Members tab)
+instance_admins = []                   # sign-in names that are instance admins on access, e.g. ["jdoe"]
 
 [auth.oidc]
 enabled = false                        # OpenID Connect, authorization code with PKCE
@@ -81,6 +83,11 @@ instance_admin_group = "vink:admin"
 default_org = ""
 logout_url = ""                        # the provider's end-session URL with its return parameter
 # group_map = { "monitoring-admins" = "homelab:admin" }
+roles = "groups"                       # "groups" or "vink", as in auth.proxy
+instance_admins = []
+
+[auth.admin_keys]
+allowed_cidrs = []                     # where instance admin API keys (vka_…) are accepted from; empty is anywhere
 
 [secrets]
 key_file = ""                          # default: secret.key next to the database, created on first run

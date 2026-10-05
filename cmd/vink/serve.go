@@ -66,6 +66,9 @@ func newServeCmd(g *globals) *cobra.Command {
 // runServe wires the process and blocks until ctx is cancelled.
 func runServe(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 	log.Info("starting", "version", version.String(), "db", cfg.DB.Path, "listen", cfg.Server.Listen)
+	for _, w := range cfg.Warnings() {
+		log.Warn("config: " + w)
+	}
 	d, err := db.Open(ctx, cfg.DB.Path)
 	if err != nil {
 		return err
