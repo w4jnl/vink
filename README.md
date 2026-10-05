@@ -134,9 +134,9 @@ hosted synthetic monitor).
   templates, ntfy, Gotify, Matrix, Slack-compatible hooks and Alertmanager; repeats while an
   incident stays unacknowledged; six delivery attempts with backoff; one-click acknowledgement
   links; a Test button per channel; maintenance windows, one-off and weekly.
-- **Status pages**: one per project at `/s/<slug>`, grouped by tag, 90-day bars, open incidents,
-  an optional password, a custom domain, SVG and JSON badges, cacheable for 30 s and free of
-  scripts.
+- **Status pages**: per project, or per org across its projects, at `/s/<slug>`, grouped by tag
+  or by project, 90-day bars, open incidents and optionally those of the last 7, 30 or 90 days, an
+  optional password, a custom domain, SVG and JSON badges, cacheable for 30 s and free of scripts.
 - **Teams and sign-in**: orgs, projects and the roles viewer, member, admin and owner; invites
   by one-time link; monitor and agent quotas per org; an instance admin page; local accounts with
   TOTP and recovery codes; trusted proxy headers; OpenID Connect with PKCE; groups mapped to
@@ -238,9 +238,14 @@ or weekly with a timezone, hold alerts back for the monitors that carry their ta
 ### Status pages and badges
 
 A status page shows the monitors that carry any of its tags, grouped by tag, each with a state
-and a 90-day bar built from its events, plus open incidents. It ships no script, is cacheable
-for 30 s, can ask for a password, and can be served on its own domain routed to vink. Badges live
-at `/s/<slug>/badge/<monitor>.svg` and `.json` (Shields schema).
+and a 90-day bar built from its events, plus open incidents. A project's members make pages in
+its settings. An org's admins make pages in org settings that span the org's projects, all of
+them or a chosen few, one box per project or grouped by tag across them. Any page can also list
+the incidents resolved in the last 7, 30 or 90 days, showing the monitor, when it started and how
+long it lasted, never the reason. It ships no script, is cacheable for 30 s, can ask for a
+password, and can be served on its own domain routed to vink. Badges live at
+`/s/<slug>/badge/<monitor>.svg` and `.json` (Shields schema), or
+`/s/<slug>/badge/<project>/<monitor>.svg` on an org page where two projects share a slug.
 
 ### Agents
 

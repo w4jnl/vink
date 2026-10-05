@@ -4,6 +4,23 @@ User-facing changes per release, newest first. `scripts/release.sh` refuses to t
 that has no section here and uses the section as the GitHub release notes, so every release
 updates this file first. Dates are the tag dates.
 
+## Unreleased
+
+- **Org status pages.** An org's admins and owners add status pages of the org itself, under a new
+  Status pages tab in org settings. A page shows monitors of the org's projects, all of them (new
+  ones included) or a chosen few, one box per project or grouped by tag across them with each
+  row naming its project. Its clock is the timezone its projects share, else UTC. It has the same
+  address space, password, custom domain and badges as a project page; a badge takes the project,
+  `/s/<slug>/badge/<project>/<monitor>.svg`, where two projects share a monitor slug. The API has
+  `/api/v1/orgs/{org}/status-pages`, and an org file has a top-level `status_pages` with projects
+  by slug, which `vink export --org` writes back.
+- **Past incidents on status pages.** Every page, a project's or an org's, has an Incidents
+  setting: the open ones (the default, as before), the open ones and those resolved in the last
+  7, 30 or 90 days, or none. A past incident shows the monitor, when it started and how long it
+  lasted, never the reason. It is in the settings panel, the API and apply files as `incidents`.
+- **API Location on org routes.** Creating an agent answered with `Location:
+  /api/v1/agents/{name}`; it is `/api/v1/orgs/{org}/agents/{name}`, where the agent is.
+
 ## 0.1.4 (2026-10-04)
 
 - **Deploying under a path.** vink can live on a shared host at `https://www.example.com/vink`
