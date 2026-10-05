@@ -164,12 +164,57 @@ func (a *Authenticator) GroupPattern() string { return a.cfg.Proxy.GroupPattern 
 // LogoutURL is where a proxy identity signs out, or "".
 func (a *Authenticator) LogoutURL() string { return a.cfg.Proxy.LogoutURL }
 
+// Why the proxy's identity was refused although the request was trusted.
+const (
+	// RefusedDisabled: the account is disabled in vink.
+	RefusedDisabled = "disabled"
+	// RefusedLocal: the name belongs to a local account, which signs in
+	// with its password and never through the proxy.
+	RefusedLocal = "local_account"
+)
+
+// RefusedError is a trusted proxy identity vink will not accept. Identity
+// stores it on the request (RefusalFrom) and goes on without a principal,
+// so the handler can say why; the API answers 401.
+type RefusedError struct {
+	Reason  string // RefusedDisabled or RefusedLocal
+	Subject string
+}
+
+func (e *RefusedError) Error() string {
+	if e.Reason == RefusedDisabled {
+		return "the account " + e.Subject + " is disabled"
+	}
+	return e.Subject + " is a local account here; it signs in with its password, not through the proxy"
+}
+
+type refusalKey struct{}
+
+// RefusalFrom returns why the proxy's identity was refused on this
+// request, or nil.
+func RefusalFrom(ctx context.Context) *RefusedError {
+	ref, _ := ctx.Value(refusalKey{}).(*RefusedError)
+	return ref
+}
+
 // Identify resolves the principal of a UI request: the proxy identity
 // when proxy mode is on and the request is trusted, else the session
-// cookie when local mode is on. It returns nil, nil for anonymous.
+// cookie when local mode is on. It returns nil, nil for anonymous, and a
+// *RefusedError for a trusted proxy identity vink does not accept; a
+// local account's name from the proxy falls back to that person's own
+// session, if they signed in with the password.
 func (a *Authenticator) Identify(r *http.Request) (*Principal, error) {
 	if a.cfg.Proxy.Enabled {
 		p, err := a.fromProxy(r)
+		var ref *RefusedError
+		if errors.As(err, &ref) {
+			if ref.Reason == RefusedLocal && (a.cfg.Local.Enabled || a.cfg.OIDC.Enabled) {
+				if sp, serr := a.fromSession(r); serr == nil && sp != nil && sp.User.Subject == ref.Subject {
+					return sp, nil
+				}
+			}
+			return nil, err
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -229,6 +274,14 @@ func (a *Authenticator) fromProxy(r *http.Request) (*Principal, error) {
 	user, err := a.svc.EnsureProxyUser(ctx, subject, email, name)
 	if err != nil {
 		return nil, err
+	}
+	switch {
+	case user.Source == "local":
+		a.log.Info("proxy identity refused: the name belongs to a local account", "subject", subject, "path", r.URL.Path)
+		return nil, &RefusedError{Reason: RefusedLocal, Subject: subject}
+	case user.Disabled():
+		a.log.Info("proxy identity refused: the account is disabled", "subject", subject, "path", r.URL.Path)
+		return nil, &RefusedError{Reason: RefusedDisabled, Subject: subject}
 	}
 	if err := a.svc.SyncHeaderMemberships(ctx, user.ID, roles); err != nil {
 		return nil, err
@@ -545,6 +598,12 @@ func ScopeFrom(ctx context.Context) (domain.Scope, bool) {
 func (a *Authenticator) Identity(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		p, err := a.Identify(r)
+		var ref *RefusedError
+		if errors.As(err, &ref) {
+			// the handler says why; go on without a principal
+			next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), refusalKey{}, ref)))
+			return
+		}
 		if err != nil {
 			a.log.Error("identify", "err", err, "req_id", middleware.GetRequestID(r.Context()))
 			http.Error(w, "internal server error", http.StatusInternalServerError)

@@ -182,10 +182,15 @@ func (s *Service) EnsureProxyUser(ctx context.Context, subject, email, name stri
 }
 
 // EnsureExternalUser is EnsureProxyUser for any identity provider: source
-// is proxy or oidc.
+// is proxy or oidc. A local account with the subject comes back as it is,
+// for the caller to refuse.
 func (s *Service) EnsureExternalUser(ctx context.Context, subject, email, name, source string) (*domain.User, error) {
 	row, err := s.db.Read().GetUserBySubject(ctx, subject)
 	if err == nil {
+		if row.Source == "local" {
+			// a provider never edits a local account; the caller refuses it
+			return userFromRow(row), nil
+		}
 		if (email != "" && row.Email != email) || (name != "" && row.DisplayName != name) {
 			if email == "" {
 				email = row.Email

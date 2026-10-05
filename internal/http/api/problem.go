@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"net/http"
 
+	"github.com/w4jnl/vink/internal/auth"
 	"github.com/w4jnl/vink/internal/domain"
 	"github.com/w4jnl/vink/internal/http/middleware"
 )
@@ -43,6 +44,10 @@ func writeError(w http.ResponseWriter, r *http.Request, log *slog.Logger, err er
 		p.Type, p.Title, p.Status, p.Detail = "malformed", "Malformed request", http.StatusBadRequest, br.msg
 	case errors.Is(err, domain.ErrUnauthorized):
 		p.Type, p.Title, p.Status, p.Detail = "unauthorized", "Authentication required", http.StatusUnauthorized, "send a valid bearer API key or sign in"
+		var ref *auth.RefusedError
+		if errors.As(err, &ref) {
+			p.Detail = ref.Error() // the proxy's identity was refused: say why
+		}
 		w.Header().Set("WWW-Authenticate", `Bearer realm="vink"`)
 	case errors.Is(err, domain.ErrForbidden):
 		p.Type, p.Title, p.Status, p.Detail = "forbidden", "Forbidden", http.StatusForbidden, err.Error()

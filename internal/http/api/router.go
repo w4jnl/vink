@@ -171,6 +171,11 @@ func (a *API) wrap(h handlerFunc, mode scopeMode, sessionPath, orgKeys bool) htt
 			}
 		} else {
 			principal, err = a.auth.Identify(r)
+			var ref *auth.RefusedError
+			if errors.As(err, &ref) {
+				writeError(w, r, a.log, errors.Join(domain.ErrUnauthorized, ref))
+				return
+			}
 			if err != nil {
 				writeError(w, r, a.log, err)
 				return

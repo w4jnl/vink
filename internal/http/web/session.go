@@ -138,6 +138,10 @@ func (h *Web) loginForm(c *reqCtx) error {
 		data.Error = "Too many wrong codes. Sign in again."
 	case "expired":
 		data.Error = "The sign-in timed out. Start again."
+	case "local":
+		if ref := auth.RefusalFrom(c.r.Context()); ref != nil {
+			data.Error = "The proxy signed you in as " + ref.Subject + ", which is a local account here. Sign in with its password."
+		}
 	}
 	data.OIDCError = q.Get("oidc_error")
 	return h.render(c, http.StatusOK, "login", "layout", data)

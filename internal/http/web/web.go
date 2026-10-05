@@ -250,8 +250,29 @@ func (h *Web) project(fn handlerFn) http.Handler {
 var errCSRF = errors.New("the form token is missing or stale; reload the page and try again")
 
 // anonymous sends people to the login form in local mode and shows the
-// proxy-denied page in proxy-only mode.
+// proxy-denied page in proxy-only mode. A trusted proxy identity vink
+// refused gets its own answer: a disabled account a 403 page, a local
+// account's name the login form with a note.
 func (h *Web) anonymous(c *reqCtx) error {
+	if ref := auth.RefusalFrom(c.r.Context()); ref != nil {
+		if ref.Reason == auth.RefusedDisabled {
+			return h.authPage(c, http.StatusForbidden, authPage{
+				Heading: "This account is disabled",
+				Lead:    ref.Subject + " is disabled in vink, so the proxy’s sign-in is not accepted. Ask an instance admin to enable it.",
+				KV:      []kv{{"user", ref.Subject}, {"status", "403"}, {"request", middleware.GetRequestID(c.r.Context())}},
+			})
+		}
+		if h.authn.LocalEnabled() && c.r.Method == http.MethodGet {
+			next := c.href(c.r.URL.RequestURI())
+			http.Redirect(c.w, c.r, c.href("/login?code=local&next="+url.QueryEscape(next)), http.StatusSeeOther)
+			return nil
+		}
+		return h.authPage(c, http.StatusForbidden, authPage{
+			Heading: "Not through the proxy",
+			Lead:    ref.Error() + ". Ask an instance admin about your account.",
+			KV:      []kv{{"user", ref.Subject}, {"status", "403"}, {"request", middleware.GetRequestID(c.r.Context())}},
+		})
+	}
 	if h.authn.LocalEnabled() || h.authn.OIDCEnabled() {
 		if c.r.Method != http.MethodGet {
 			return domain.ErrUnauthorized

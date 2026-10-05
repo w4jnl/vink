@@ -337,6 +337,59 @@ func TestProxyDeniedPage(t *testing.T) {
 	noOrg.has(t, "not in an org yet", "<dt>user</dt><dd>stranger</dd>", "<dt>groups</dt><dd>staff, ops</dd>", "vink:&lt;org&gt;:&lt;role&gt;")
 }
 
+// TestProxyRefusalPages: a disabled account through the proxy gets its own
+// 403 card; a local account's name from the proxy is sent to the login
+// form, which says to use the password.
+func TestProxyRefusalPages(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	quiet := slog.New(slog.NewTextHandler(io.Discard, nil))
+	cfg := config.Default().Auth
+	cfg.Proxy.Enabled = true
+	cfg.Proxy.TrustedCIDRs = []string{"203.0.113.0/24"}
+	cfg.Proxy.Secret = "s3cret"
+	authn, err := auth.New(e.svc, cfg, "http://localhost:8080", quiet)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w, err := New(e.svc, authn, quiet)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mux := http.NewServeMux()
+	w.Mount(mux)
+	srv := middleware.Chain(mux, middleware.RequestID)
+	get := func(path, user string) page {
+		req := httptest.NewRequest("GET", path, nil)
+		req.RemoteAddr = "203.0.113.9:1"
+		req.Header.Set("X-Auth-Proxy-Secret", "s3cret")
+		req.Header.Set("Remote-User", user)
+		rec := httptest.NewRecorder()
+		srv.ServeHTTP(rec, req)
+		return page{code: rec.Code, body: rec.Body.String(), hdr: rec.Header()}
+	}
+	bob, err := e.svc.EnsureProxyUser(ctx, "bob", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := e.svc.SetUserDisabled(ctx, domain.Scope{InstanceAdmin: true, Role: domain.RoleOwner, Actor: "test"}, bob.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	disabled := get(projPath, "bob")
+	if disabled.code != 403 {
+		t.Fatalf("disabled: %d %s", disabled.code, disabled.body)
+	}
+	disabled.has(t, "This account is disabled", "<dt>user</dt><dd>bob</dd>", "Ask an instance admin to enable it.")
+	if strings.Contains(disabled.body, "vk-top") {
+		t.Error("a refused identity gets the auth card, not the app")
+	}
+	local := get(projPath, "j")
+	if local.code != 303 || !strings.HasPrefix(local.hdr.Get("Location"), "/login?code=local&next=") {
+		t.Fatalf("local account's name: %d %v", local.code, local.hdr)
+	}
+	get(local.hdr.Get("Location"), "j").has(t, "The proxy signed you in as j, which is a local account here. Sign in with its password.", `name="password"`)
+}
+
 func TestMonitorsPageEmptyAndRows(t *testing.T) {
 	e := newEnv(t)
 	p := e.get(projPath, false)

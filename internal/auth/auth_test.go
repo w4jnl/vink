@@ -343,3 +343,64 @@ func TestIdentityMiddlewareAndContext(t *testing.T) {
 		t.Error("empty context has no scope")
 	}
 }
+
+// TestProxyRefusals: a trusted proxy identity is refused when the account
+// is disabled in vink, or when the name belongs to a local account, which
+// signs in with its password; the local account's own session still works
+// with the proxy in front, and the proxy never edits its profile or roles.
+func TestProxyRefusals(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	a := proxyAuth(t, e, func(c *config.Auth) { c.Local.Enabled = true })
+	admin := domain.Scope{InstanceAdmin: true, Role: domain.RoleOwner, Actor: "test"}
+	bob, err := a.Identify(proxyReq("10.0.0.1:1", "s3cret", "bob", "vink:homelab:admin"))
+	if err != nil || bob == nil {
+		t.Fatalf("bob: %+v %v", bob, err)
+	}
+	if err := e.svc.SetUserDisabled(ctx, admin, bob.User.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name, user, reason string
+	}{
+		{"a disabled account", "bob", RefusedDisabled},
+		{"a local account's name", "j", RefusedLocal},
+		{"a local account's name with a realm", "J@CORP.EXAMPLE", RefusedLocal},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p, err := a.Identify(proxyReq("10.0.0.1:1", "s3cret", tc.user, "vink:homelab:owner"))
+			var ref *RefusedError
+			if p != nil || !errors.As(err, &ref) || ref.Reason != tc.reason {
+				t.Fatalf("got %+v %v, want refused for %s", p, err, tc.reason)
+			}
+		})
+	}
+	j, _ := e.svc.UserBySubject(ctx, "j")
+	if j.Email == "alice@example.com" {
+		t.Error("the proxy edited a local account's profile")
+	}
+	if ms, _ := e.svc.MembershipsForUser(ctx, j.ID); len(ms) != 1 || ms[0].Source != "local" {
+		t.Errorf("the proxy gave a local account roles: %+v", ms)
+	}
+	// j signed in with the password: the session wins over the proxy's name
+	rec := httptest.NewRecorder()
+	if _, err := a.Login(rec, httptest.NewRequest("POST", "/login", nil), "j", "correct horse"); err != nil {
+		t.Fatal(err)
+	}
+	req := proxyReq("10.0.0.1:1", "s3cret", "j", "vink:homelab:owner")
+	req.AddCookie(rec.Result().Cookies()[0])
+	if got, err := a.Identify(req); err != nil || got == nil || got.User.Subject != "j" || got.Source != "session" {
+		t.Fatalf("j's own session: %+v %v", got, err)
+	}
+	// the middleware keeps the refusal for the handler and goes on
+	var seen *RefusedError
+	var who *Principal
+	h := a.Identity(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seen, who = RefusalFrom(r.Context()), PrincipalFrom(r.Context())
+	}))
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, proxyReq("10.0.0.1:1", "s3cret", "bob", ""))
+	if rec.Code != 200 || who != nil || seen == nil || seen.Reason != RefusedDisabled || seen.Subject != "bob" {
+		t.Fatalf("middleware: %d %+v %+v", rec.Code, who, seen)
+	}
+}

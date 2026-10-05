@@ -1018,3 +1018,35 @@ func TestAPIUnderAPath(t *testing.T) {
 		t.Fatal("openapi servers at the root")
 	}
 }
+
+// TestProxyRefusalIsUnauthorized: a trusted proxy identity vink refuses
+// (here a disabled account) is a 401 on the API, saying why.
+func TestProxyRefusalIsUnauthorized(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	quiet := slog.New(slog.NewTextHandler(io.Discard, nil))
+	cfg := config.Default().Auth
+	cfg.Proxy.Enabled = true
+	cfg.Proxy.TrustedCIDRs = []string{"203.0.113.0/24"}
+	cfg.Proxy.Secret = "s3cret"
+	authn, err := auth.New(e.svc, cfg, "http://localhost:8080", quiet)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mux := http.NewServeMux()
+	New(e.svc, authn, quiet).Mount(mux)
+	srv := middleware.Chain(mux, middleware.RequestID)
+	bob, _ := e.svc.EnsureProxyUser(ctx, "bob", "", "")
+	if err := e.svc.SetUserDisabled(ctx, domain.Scope{InstanceAdmin: true, Role: domain.RoleOwner, Actor: "test"}, bob.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest("GET", "/api/v1/me", nil)
+	req.RemoteAddr = "203.0.113.9:1"
+	req.Header.Set("X-Auth-Proxy-Secret", "s3cret")
+	req.Header.Set("Remote-User", "bob")
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+	if rec.Code != 401 || !strings.Contains(rec.Body.String(), "the account bob is disabled") {
+		t.Fatalf("disabled through the proxy: %d %s", rec.Code, rec.Body.String())
+	}
+}
