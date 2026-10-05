@@ -3,6 +3,7 @@ package web
 import (
 	"context"
 	"errors"
+	"html"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -17,10 +18,10 @@ import (
 	"github.com/w4jnl/vink/internal/version"
 )
 
-// Instance admin: /admin/{orgs|users|server}, instance admins only. Anyone
-// else gets a 404, the way other tenants' pages do.
+// Instance admin: /admin/{orgs|users|keys|server|audit}, instance admins
+// only. Anyone else gets a 404, the way other tenants' pages do.
 
-var instanceTabs = []ui.Tab{{ID: "orgs", Label: "Orgs"}, {ID: "users", Label: "Users"}, {ID: "server", Label: "Server"}, {ID: "audit", Label: "Audit log"}}
+var instanceTabs = []ui.Tab{{ID: "orgs", Label: "Orgs"}, {ID: "users", Label: "Users"}, {ID: "keys", Label: "API keys"}, {ID: "server", Label: "Server"}, {ID: "audit", Label: "Audit log"}}
 
 // ServerFacts are the read-only facts the Server tab shows; vink serve
 // fills them from its config and loops.
@@ -64,6 +65,13 @@ type instanceData struct {
 	Chips     ui.HTML
 	UserRows  []userRow
 	UserPanel *userPanel
+	// keys
+	KeyRows        []keyRow
+	KeyForm        keyForm
+	NewKey         ui.HTML
+	KeysPath       string
+	AccessOptions  []ui.Option
+	ExpiresOptions []ui.Option
 	// server
 	Backup *noteData
 	Facts  *ServerFacts
@@ -119,6 +127,10 @@ func (h *Web) instanceData(c *reqCtx, tab string) (instanceData, error) {
 	if err != nil {
 		return d, err
 	}
+	keys, err := h.svc.ListAdminKeys(ctx, c.scope)
+	if err != nil {
+		return d, err
+	}
 	for _, t := range instanceTabs {
 		tab := ui.Tab{ID: t.ID, Label: t.Label, Href: c.href("/admin/" + t.ID)}
 		switch t.ID {
@@ -126,6 +138,8 @@ func (h *Web) instanceData(c *reqCtx, tab string) (instanceData, error) {
 			tab.Count = ui.Count(len(orgs))
 		case "users":
 			tab.Count = ui.Count(len(users))
+		case "keys":
+			tab.Count = ui.Count(len(keys))
 		}
 		d.Tabs = append(d.Tabs, tab)
 	}
@@ -134,6 +148,12 @@ func (h *Web) instanceData(c *reqCtx, tab string) (instanceData, error) {
 		d.Lede = "Instance admins create orgs and set their quotas. Everything inside an org is up to its owners and admins."
 	case "users":
 		d.Lede = "Everyone who has signed in or accepted an invite. Roles are set in each org; here you make instance admins, reset local sign-ins and disable accounts."
+	case "keys":
+		where := "They are accepted from any address."
+		if nets := h.authn.AdminNetworks(); len(nets) > 0 {
+			where = "They are accepted only from " + html.EscapeString(joinAnd(nets)) + "."
+		}
+		d.Lede = ui.HTML(`Keys that act as an instance admin on <span class="vk-mono">/api/v1/admin</span> and nothing else, for <span class="vk-mono">vink admin</span> from your own machine through a CLI context. ro keys read; rw keys also change. Every key expires. ` + where)
 	case "audit":
 		d.Lede = "Everything that happened on this instance, across orgs: changes made by people and API keys, sign-ins and access changes, and every state flip."
 	case "server":
@@ -173,12 +193,104 @@ func (h *Web) instanceTab(c *reqCtx) error {
 			panel = p
 		}
 		return h.usersTab(c, http.StatusOK, panel)
+	case "keys":
+		return h.adminKeysTab(c, http.StatusOK, keyForm{Values: map[string]string{}, Errors: map[string]string{}}, "")
 	case "server":
 		return h.serverTab(c)
 	case "audit":
 		return h.instanceAudit(c)
 	}
 	return domain.NotFound("page")
+}
+
+// --- API keys -------------------------------------------------------------
+
+// adminKeysTab renders the instance admin keys; newKey, when set, is the
+// plaintext of the key just made, shown this once.
+func (h *Web) adminKeysTab(c *reqCtx, status int, form keyForm, newKey string) error {
+	d, err := h.instanceData(c, "keys")
+	if err != nil {
+		return err
+	}
+	d.KeyForm, d.KeysPath = form, c.href("/admin/keys")
+	d.AccessOptions = ui.Opts("ro", "ro", "rw", "rw")
+	d.ExpiresOptions = ui.Opts("30", "30 d", "90", "90 d", "365", "365 d")
+	if newKey != "" {
+		line := "vink ctx add admin --server " + strings.TrimRight(h.svc.Config().BaseURL, "/") + " --key " + newKey
+		d.NewKey = ui.HTML(`<div class="vk-field__row"><code class="vk-ping__url">` + html.EscapeString(newKey) + `</code><button type="button" class="vk-btn vk-copy" data-copy="` + html.EscapeString(newKey) + `">Copy</button></div>` +
+			`<div class="vk-field__row"><code class="vk-ping__url">` + html.EscapeString(line) + `</code><button type="button" class="vk-btn vk-copy" data-copy="` + html.EscapeString(line) + `">Copy</button></div>`)
+	}
+	ctx := c.r.Context()
+	keys, err := h.svc.ListAdminKeys(ctx, c.scope)
+	if err != nil {
+		return err
+	}
+	names := map[string]string{"": "server host"}
+	for _, k := range keys {
+		if _, ok := names[k.CreatedBy]; !ok {
+			names[k.CreatedBy] = "someone gone"
+			if u, err := h.svc.UserByID(ctx, k.CreatedBy); err == nil {
+				names[k.CreatedBy] = u.Subject
+			}
+		}
+		used := "never used"
+		if k.LastUsedAt != nil {
+			used = "used " + view.Ago(*k.LastUsedAt, c.now)
+		}
+		expired := k.Expired(c.now)
+		expiry := "expires " + k.ExpiresAt.UTC().Format("2 Jan 2006")
+		label, confirm := "Revoke", "Really revoke?"
+		if expired {
+			expiry = "expired " + dayShort(k.ExpiresAt, c.now, time.UTC)
+			label, confirm = "Remove", "Really remove?"
+		}
+		d.KeyRows = append(d.KeyRows, keyRow{Name: k.Name, Sub: "vka_" + k.Prefix + "…", Muted: expired, Cells: []ui.Cell{
+			{HTML: ui.Tag(string(k.Access)), Size: "s"}, {Text: names[k.CreatedBy] + " · " + dayShort(k.CreatedAt, c.now, time.UTC)}, {Text: expiry}, {Text: used, Mono: true},
+		}, Actions: postForm(c, c.href("/admin/keys/"+k.ID+"/revoke"), false, ui.Button(ui.ButtonProps{Label: label, Variant: "danger", Confirm: confirm, Type: "submit"}))})
+	}
+	return h.render(c, status, "instance", "layout", d)
+}
+
+func (h *Web) createAdminKey(c *reqCtx) error {
+	if err := c.r.ParseForm(); err != nil {
+		return err
+	}
+	f := keyForm{Values: map[string]string{"name": strings.TrimSpace(c.r.PostFormValue("name")), "access": c.r.PostFormValue("access"), "expires": c.r.PostFormValue("expires")}, Errors: map[string]string{}}
+	days, err := strconv.Atoi(f.Values["expires"])
+	if err != nil || (days != 30 && days != 90 && days != 365) {
+		f.Errors["expires"] = "Pick 30, 90 or 365 days."
+		return h.adminKeysTab(c, http.StatusUnprocessableEntity, f, "")
+	}
+	_, plain, err := h.svc.CreateAdminKey(c.r.Context(), c.scope, f.Values["name"], domain.Access(f.Values["access"]), time.Duration(days)*24*time.Hour)
+	if err != nil {
+		if ve, ok := domain.AsValidation(err); ok {
+			for _, fe := range ve.Errors {
+				f.Errors[fe.Field] = capitalise(fe.Msg) + "."
+			}
+			return h.adminKeysTab(c, http.StatusUnprocessableEntity, f, "")
+		}
+		return err
+	}
+	// The plaintext is shown once, in this response, never in a URL.
+	return h.adminKeysTab(c, http.StatusOK, keyForm{Values: map[string]string{}, Errors: map[string]string{}}, plain)
+}
+
+func (h *Web) revokeAdminKey(c *reqCtx) error {
+	if err := h.svc.RevokeAdminKey(c.r.Context(), c.scope, c.r.PathValue("id")); err != nil {
+		return err
+	}
+	return h.redirect(c, "/admin/keys?flash="+url.QueryEscape("Key revoked. It stopped working at once."))
+}
+
+// joinAnd lists items as "a, b and c".
+func joinAnd(items []string) string {
+	switch len(items) {
+	case 0:
+		return ""
+	case 1:
+		return items[0]
+	}
+	return strings.Join(items[:len(items)-1], ", ") + " and " + items[len(items)-1]
 }
 
 // --- orgs -----------------------------------------------------------------

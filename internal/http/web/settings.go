@@ -40,6 +40,7 @@ type routeRow struct {
 
 type keyRow struct {
 	Name, Sub string
+	Muted     bool
 	Cells     []ui.Cell
 	Actions   ui.HTML
 }

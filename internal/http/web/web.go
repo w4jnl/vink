@@ -85,6 +85,8 @@ func (h *Web) Mount(mux *http.ServeMux) {
 	mux.Handle("POST /admin/users/{id}/reset-link", h.instanceAdmin(h.makeResetLink))
 	mux.Handle("POST /admin/users/{id}/disable", h.instanceAdmin(h.setUserDisabled(true)))
 	mux.Handle("POST /admin/users/{id}/enable", h.instanceAdmin(h.setUserDisabled(false)))
+	mux.Handle("POST /admin/keys", h.instanceAdmin(h.createAdminKey))
+	mux.Handle("POST /admin/keys/{id}/revoke", h.instanceAdmin(h.revokeAdminKey))
 	mux.Handle("GET /reset/{token}", h.public(h.resetPage))
 	mux.Handle("POST /reset/{token}", h.public(h.resetPassword))
 	mux.Handle("GET /o/{org}/admin/audit", h.orgMember(h.orgAudit))

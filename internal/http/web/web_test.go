@@ -1649,12 +1649,12 @@ func TestInstanceAdminPages(t *testing.T) {
 	_ = e.svc.SetMembership(ctx, admin, bob.ID, e.org.ID, domain.RoleMember)
 
 	// an org admin who is not an instance admin sees nothing here
-	for _, path := range []string{"/admin", "/admin/orgs", "/admin/users", "/admin/server", "/admin/users?edit=" + bob.ID} {
+	for _, path := range []string{"/admin", "/admin/orgs", "/admin/users", "/admin/keys", "/admin/server", "/admin/users?edit=" + bob.ID} {
 		if r := e.get(path, false); r.code != 404 {
 			t.Errorf("%s as org admin: %d", path, r.code)
 		}
 	}
-	for _, path := range []string{"/admin/orgs", "/admin/users/" + bob.ID + "/disable", "/admin/users/" + bob.ID + "/reset-link"} {
+	for _, path := range []string{"/admin/orgs", "/admin/users/" + bob.ID + "/disable", "/admin/users/" + bob.ID + "/reset-link", "/admin/keys", "/admin/keys/x/revoke"} {
 		if r := e.post(path, url.Values{}, false); r.code != 404 {
 			t.Errorf("POST %s as org admin: %d", path, r.code)
 		}
@@ -1676,7 +1676,7 @@ func TestInstanceAdminPages(t *testing.T) {
 	}
 	orgs := e.get("/admin/orgs", false)
 	orgs.has(t, `<header class="vk-top">`, `<summary class="vk-top__crumb" title="Switch project">homelab / <b>prod</b>`, `<h1>Instance</h1><span class="vk-muted vk-mono">vink `, ` · localhost:8080</span>`,
-		`<nav class="vk-tabs" aria-label="Instance"><a class="vk-tab" href="/admin/orgs" aria-current="page">Orgs<span class="vk-tab__n">2</span></a><a class="vk-tab" href="/admin/users">Users<span class="vk-tab__n">2</span></a><a class="vk-tab" href="/admin/server">Server</a><a class="vk-tab" href="/admin/audit">Audit log</a></nav>`,
+		`<nav class="vk-tabs" aria-label="Instance"><a class="vk-tab" href="/admin/orgs" aria-current="page">Orgs<span class="vk-tab__n">2</span></a><a class="vk-tab" href="/admin/users">Users<span class="vk-tab__n">2</span></a><a class="vk-tab" href="/admin/keys">API keys<span class="vk-tab__n">0</span></a><a class="vk-tab" href="/admin/server">Server</a><a class="vk-tab" href="/admin/audit">Audit log</a></nav>`,
 		`Instance admins create orgs and set their quotas.`, `href="/admin/orgs?add=1">Add org</a>`,
 		`<a class="vk-srow__link" href="/o/homelab/admin/members">homelab</a></span><span class="vk-srow__sub" title="1 project · no owner">1 project · no owner</span></div><span class="vk-srow__cell vk-srow__cell--l"><span class="vk-usage"><span class="vk-usage__text">0 monitors · no quota</span></span></span>`,
 		`href="/o/acme/admin/members">acme</a>`, `href="/admin/orgs?edit=homelab">Edit</a>`, `<p class="vk-field__hint">Only an org without projects can be deleted.</p>`)
@@ -2402,7 +2402,7 @@ func TestDeployedUnderAPath(t *testing.T) {
 		"/o/homelab/p/prod/m/nightly/history", "/o/homelab/p/prod/incidents",
 		"/o/homelab/p/prod/settings/channels", "/o/homelab/p/prod/settings/channels?add=1", "/o/homelab/p/prod/settings/routes", "/o/homelab/p/prod/settings/maintenance", "/o/homelab/p/prod/settings/pages", "/o/homelab/p/prod/settings/keys",
 		"/o/homelab/admin/members", "/o/homelab/admin/projects", "/o/homelab/admin/pages", "/o/homelab/admin/pages?add=1", "/o/homelab/admin/agents", "/o/homelab/admin/agents/dc2-probe", "/o/homelab/admin/audit",
-		"/admin/orgs", "/admin/orgs?add=1", "/admin/users", "/admin/server", "/admin/audit", "/account", "/account?setup=1", "/account?off=1", "/projects", "/s/homelab", "/s/office", "/nope",
+		"/admin/orgs", "/admin/orgs?add=1", "/admin/users", "/admin/keys", "/admin/server", "/admin/audit", "/account", "/account?setup=1", "/account?off=1", "/projects", "/s/homelab", "/s/office", "/nope",
 	}
 	for _, p := range pages {
 		full := e.get("/vink"+p, false)
