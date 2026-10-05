@@ -4,7 +4,7 @@ User-facing changes per release, newest first. `scripts/release.sh` refuses to t
 that has no section here and uses the section as the GitHub release notes, so every release
 updates this file first. Dates are the tag dates.
 
-## Unreleased
+## 0.2.0 (2026-10-05)
 
 - **Org status pages.** An org's admins and owners add status pages of the org itself, under a new
   Status pages tab in org settings. A page shows monitors of the org's projects, all of them (new
@@ -38,7 +38,9 @@ updates this file first. Dates are the tag dates.
   people by sign-in name on the Members tab, and instance admins use `vink admin user create
   --source proxy` and `user grant`, ahead of the first visit if need be. Switching to `vink`
   keeps every role the groups gave, as ordinary ones. `instance_admins` names people who are
-  instance admin on first access. The Server tab shows each provider's role source.
+  instance admin on first access. The Server tab shows each provider's role source. If you
+  switch the proxy to `vink` in the same restart as this upgrade, list its instance admins in
+  `instance_admins` for that start: earlier versions did not store the flag its admin group gave.
 - **New `vink admin` commands:** `key create|ls|revoke`, `user create --source local|proxy|oidc`,
   `user demote`, and `org create --owner`.
 - **Changed: `vink admin --json`.** It prints the API's snake_case shapes now, the same on the
