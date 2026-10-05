@@ -310,6 +310,20 @@ CREATE TABLE status_pages (
 );
 CREATE INDEX status_pages_project ON status_pages(project_id);
 CREATE INDEX status_pages_org ON status_pages(org_id);
+CREATE TABLE admin_keys (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  prefix TEXT NOT NULL,
+  hash TEXT NOT NULL,
+  access TEXT NOT NULL CHECK (access IN ('ro', 'rw')),
+  created_by TEXT REFERENCES users(id) ON DELETE SET NULL,
+  created_at INTEGER NOT NULL,
+  expires_at INTEGER NOT NULL,
+  last_used_at INTEGER,
+  last_used_ip TEXT,
+  revoked_at INTEGER
+);
+CREATE INDEX admin_keys_prefix ON admin_keys(prefix);
 -- Dbmate schema migrations
 INSERT INTO "schema_migrations" (version) VALUES
   ('20260927000000'),
@@ -319,4 +333,5 @@ INSERT INTO "schema_migrations" (version) VALUES
   ('20261003000000'),
   ('20261004000000'),
   ('20261005000000'),
-  ('20261006000000');
+  ('20261006000000'),
+  ('20261007000000');

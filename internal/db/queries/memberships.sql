@@ -57,3 +57,14 @@ SELECT COUNT(*) FROM memberships WHERE org_id = ? AND role = 'owner';
 SELECT m.*, o.slug AS org_slug, o.name AS org_name
 FROM memberships m JOIN orgs o ON o.id = m.org_id
 ORDER BY o.slug;
+
+-- name: ConvertMembershipsSource :execrows
+-- tenancy: root (a provider switched to roles set in vink: its group-derived
+-- roles become ordinary ones, once)
+UPDATE memberships SET source = 'local' WHERE source = ?;
+
+-- name: CountLocalMembershipsOfSource :one
+-- tenancy: root (roles set in vink held by a provider's users, which keep
+-- overriding groups after a switch back to groups)
+SELECT COUNT(*) FROM memberships m JOIN users u ON u.id = m.user_id WHERE m.source = 'local' AND u.source = ?;
+

@@ -9,6 +9,33 @@ import (
 	"context"
 )
 
+const convertMembershipsSource = `-- name: ConvertMembershipsSource :execrows
+UPDATE memberships SET source = 'local' WHERE source = ?
+`
+
+// tenancy: root (a provider switched to roles set in vink: its group-derived
+// roles become ordinary ones, once)
+func (q *Queries) ConvertMembershipsSource(ctx context.Context, source string) (int64, error) {
+	result, err := q.db.ExecContext(ctx, convertMembershipsSource, source)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const countLocalMembershipsOfSource = `-- name: CountLocalMembershipsOfSource :one
+SELECT COUNT(*) FROM memberships m JOIN users u ON u.id = m.user_id WHERE m.source = 'local' AND u.source = ?
+`
+
+// tenancy: root (roles set in vink held by a provider's users, which keep
+// overriding groups after a switch back to groups)
+func (q *Queries) CountLocalMembershipsOfSource(ctx context.Context, source string) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countLocalMembershipsOfSource, source)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const countOwners = `-- name: CountOwners :one
 SELECT COUNT(*) FROM memberships WHERE org_id = ? AND role = 'owner'
 `

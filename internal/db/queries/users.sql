@@ -57,3 +57,7 @@ WHERE r.token_hash = ?;
 -- name: UseResetToken :execrows
 -- tenancy: root (the link's token establishes the user)
 UPDATE reset_tokens SET used_at = ? WHERE id = ? AND used_at IS NULL AND expires_at > ?;
+
+-- name: CountActiveInstanceAdmins :one
+SELECT COUNT(*) FROM users WHERE is_instance_admin = 1 AND disabled_at IS NULL;
+

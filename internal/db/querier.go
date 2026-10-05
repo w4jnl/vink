@@ -13,12 +13,19 @@ type Querier interface {
 	BumpLoginChallenge(ctx context.Context, id string) (int64, error)
 	// tenancy: root (agent gateway)
 	ClearAgentMonitors(ctx context.Context, agentID *string) (int64, error)
+	// tenancy: root (a provider switched to roles set in vink: its group-derived
+	// roles become ordinary ones, once)
+	ConvertMembershipsSource(ctx context.Context, source string) (int64, error)
+	CountActiveInstanceAdmins(ctx context.Context) (int64, error)
 	// tenancy: org
 	CountAgents(ctx context.Context, orgID string) (int64, error)
 	// tenancy: root (the service scopes by org_id and project_id)
 	CountAudit(ctx context.Context, arg CountAuditParams) (CountAuditRow, error)
 	// tenancy: root (dispatcher keeps per-monitor order)
 	CountEarlierPendingDeliveries(ctx context.Context, arg CountEarlierPendingDeliveriesParams) (int64, error)
+	// tenancy: root (roles set in vink held by a provider's users, which keep
+	// overriding groups after a switch back to groups)
+	CountLocalMembershipsOfSource(ctx context.Context, source string) (int64, error)
 	CountMonitorsByState(ctx context.Context, projectID string) ([]CountMonitorsByStateRow, error)
 	// tenancy: org (quota check)
 	CountMonitorsInOrg(ctx context.Context, orgID string) (int64, error)
@@ -39,6 +46,10 @@ type Querier interface {
 	CountStateEvents(ctx context.Context, arg CountStateEventsParams) (int64, error)
 	CountUsers(ctx context.Context) (int64, error)
 	CreateAPIKey(ctx context.Context, arg CreateAPIKeyParams) (ApiKey, error)
+	// Instance admin API keys belong to no org or project: every query here
+	// is instance-wide by design.
+	// tenancy: root
+	CreateAdminKey(ctx context.Context, arg CreateAdminKeyParams) (AdminKey, error)
 	// tenancy: org
 	CreateAgent(ctx context.Context, arg CreateAgentParams) (Agent, error)
 	CreateChannel(ctx context.Context, arg CreateChannelParams) (Channel, error)
@@ -88,6 +99,10 @@ type Querier interface {
 	DeleteUserSessions(ctx context.Context, userID string) error
 	EnableUserTOTP(ctx context.Context, arg EnableUserTOTPParams) error
 	GetAPIKey(ctx context.Context, arg GetAPIKeyParams) (ApiKey, error)
+	// tenancy: root
+	GetAdminKey(ctx context.Context, id string) (AdminKey, error)
+	// tenancy: root (re-checks a cached key on every use)
+	GetAdminKeyState(ctx context.Context, id string) (GetAdminKeyStateRow, error)
 	// tenancy: org
 	GetAgent(ctx context.Context, arg GetAgentParams) (Agent, error)
 	// tenancy: org
@@ -148,6 +163,12 @@ type Querier interface {
 	ListAPIKeys(ctx context.Context, projectID *string) ([]ApiKey, error)
 	// tenancy: root (bearer lookup establishes the scope)
 	ListAPIKeysByPrefix(ctx context.Context, prefix string) ([]ApiKey, error)
+	// tenancy: root (keys not revoked, expired ones included)
+	ListAdminKeys(ctx context.Context) ([]AdminKey, error)
+	// tenancy: root (the verify path: a prefix may be shared, the hash decides)
+	ListAdminKeysByPrefix(ctx context.Context, prefix string) ([]AdminKey, error)
+	// tenancy: root (the keys to revoke when their creator loses instance admin)
+	ListAdminKeysCreatedBy(ctx context.Context, createdBy *string) ([]AdminKey, error)
 	// tenancy: root (agent gateway, for a verified agent)
 	ListAgentMonitors(ctx context.Context, agentID *string) ([]Monitor, error)
 	// tenancy: org
@@ -239,6 +260,8 @@ type Querier interface {
 	ResetUserTOTP(ctx context.Context, id string) error
 	ResolveIncident(ctx context.Context, arg ResolveIncidentParams) error
 	RevokeAPIKey(ctx context.Context, arg RevokeAPIKeyParams) (int64, error)
+	// tenancy: root
+	RevokeAdminKey(ctx context.Context, arg RevokeAdminKeyParams) (int64, error)
 	// tenancy: org
 	RevokeInvite(ctx context.Context, arg RevokeInviteParams) (int64, error)
 	// tenancy: org (org keys have no project)
@@ -265,6 +288,8 @@ type Querier interface {
 	SetUserTOTPSecret(ctx context.Context, arg SetUserTOTPSecretParams) error
 	// tenancy: root (called after the key was verified)
 	TouchAPIKey(ctx context.Context, arg TouchAPIKeyParams) error
+	// tenancy: root
+	TouchAdminKey(ctx context.Context, arg TouchAdminKeyParams) error
 	// tenancy: root (the gateway acts for a verified agent)
 	TouchAgent(ctx context.Context, arg TouchAgentParams) error
 	TouchSession(ctx context.Context, arg TouchSessionParams) error

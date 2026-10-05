@@ -4,6 +4,20 @@
 
 package db
 
+type AdminKey struct {
+	ID         string
+	Name       string
+	Prefix     string
+	Hash       string
+	Access     string
+	CreatedBy  *string
+	CreatedAt  int64
+	ExpiresAt  int64
+	LastUsedAt *int64
+	LastUsedIp *string
+	RevokedAt  *int64
+}
+
 type Agent struct {
 	ID          string
 	OrgID       string

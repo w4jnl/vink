@@ -9,6 +9,17 @@ import (
 	"context"
 )
 
+const countActiveInstanceAdmins = `-- name: CountActiveInstanceAdmins :one
+SELECT COUNT(*) FROM users WHERE is_instance_admin = 1 AND disabled_at IS NULL
+`
+
+func (q *Queries) CountActiveInstanceAdmins(ctx context.Context) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countActiveInstanceAdmins)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const countUsers = `-- name: CountUsers :one
 SELECT COUNT(*) FROM users
 `

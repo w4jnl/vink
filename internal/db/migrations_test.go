@@ -52,8 +52,8 @@ func TestMigrateAppliesOnceAndIsIdempotent(t *testing.T) {
 	if err := d.Reader.QueryRowContext(ctx, `SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name <> 'schema_migrations'`).Scan(&n); err != nil {
 		t.Fatal(err)
 	}
-	if n != 24 {
-		t.Errorf("expected 24 tables, got %d", n)
+	if n != 25 {
+		t.Errorf("expected 25 tables, got %d", n)
 	}
 }
 
@@ -116,7 +116,7 @@ func TestRollbackAndDump(t *testing.T) {
 		t.Errorf("dump missing the route_channels migration:\n%s", s)
 	}
 	// rolling back walks the migrations newest first, down to nothing
-	for _, want := range []string{"20261006000000", "20261005000000", "20261004000000", "20261003000000", "20261002000000", "20261001000000", "20260930000000", "20260927000000"} {
+	for _, want := range []string{"20261007000000", "20261006000000", "20261005000000", "20261004000000", "20261003000000", "20261002000000", "20261001000000", "20260930000000", "20260927000000"} {
 		v, err := Rollback(ctx, d.Writer, quiet())
 		if err != nil {
 			t.Fatal(err)
@@ -146,8 +146,10 @@ func TestOrgStatusPagesMigration(t *testing.T) {
 	if _, err := Migrate(ctx, d.Writer, quiet()); err != nil {
 		t.Fatal(err)
 	}
-	if v, err := Rollback(ctx, d.Writer, quiet()); err != nil || v != "20261006000000" {
-		t.Fatalf("rollback: %s %v", v, err)
+	for _, want := range []string{"20261007000000", "20261006000000"} {
+		if v, err := Rollback(ctx, d.Writer, quiet()); err != nil || v != want {
+			t.Fatalf("rollback: %s %v, want %s", v, err, want)
+		}
 	}
 	exec := func(q string) {
 		t.Helper()
@@ -171,8 +173,10 @@ func TestOrgStatusPagesMigration(t *testing.T) {
 	if _, err := d.Writer.ExecContext(ctx, `INSERT INTO status_pages (id, org_id, project_id, slug, title, group_by, created_at, updated_at) VALUES ('bad', 'o', 'p', 'bad', 'Bad', 'project', 0, 0)`); err == nil {
 		t.Error("a project page grouped by project must be refused")
 	}
-	if _, err := Rollback(ctx, d.Writer, quiet()); err != nil {
-		t.Fatal(err)
+	for range 2 {
+		if _, err := Rollback(ctx, d.Writer, quiet()); err != nil {
+			t.Fatal(err)
+		}
 	}
 	var n int
 	if err := d.Reader.QueryRowContext(ctx, `SELECT COUNT(*) FROM status_pages`).Scan(&n); err != nil || n != 1 {
