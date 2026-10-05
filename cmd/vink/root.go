@@ -44,7 +44,7 @@ func newRootCmd() *cobra.Command {
 	pf.BoolVarP(&g.debug, "debug", "d", false, "debug logging with colour")
 	pf.StringVar(&g.color, "color", "auto", "colour output: auto, always or never")
 
-	root.AddCommand(newVersionCmd(g), newMigrateCmd(), newServeCmd(g), newAgentCmd(g), newAdminCmd(), newCtxCmd(g),
+	root.AddCommand(newVersionCmd(g), newMigrateCmd(), newServeCmd(g), newAgentCmd(g), newAdminCmd(g), newCtxCmd(g),
 		newLsCmd(g), newGetCmd(g), newLogsCmd(g), newStatusCmd(g), newAckCmd(g), newPingCmd(g), newRunCmd(g),
 		newApplyCmd(g), newExportCmd(g), newImportCmd(g),
 		newActionCmd(g, "pause", "Pause a monitor", "pause"), newActionCmd(g, "resume", "Resume a paused monitor", "resume"), newActionCmd(g, "check", "Run a pull monitor's check now", "check"))

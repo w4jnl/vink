@@ -57,7 +57,7 @@ func TestAdminInitAndFriends(t *testing.T) {
 		t.Fatalf("promote: %s", errs)
 	}
 	out, _, _ = runCLI("", "admin", "user", "ls", "--db", dbPath, "--json")
-	if strings.Count(out, `"InstanceAdmin":true`) != 2 {
+	if strings.Count(out, `"instance_admin":true`) != 2 {
 		t.Errorf("promote not applied: %s", out)
 	}
 	// text output of init on a fresh db
@@ -169,8 +169,8 @@ func TestAdminOrgKeys(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("create: %s", errs)
 	}
-	var k struct{ ID, Name, Prefix, Access, Token string }
-	if err := json.Unmarshal([]byte(out), &k); err != nil || !strings.HasPrefix(k.Token, "vk_") || k.Access != "rw" || k.Name != "gitops" {
+	var k struct{ ID, Name, Prefix, Access, Key string }
+	if err := json.Unmarshal([]byte(out), &k); err != nil || !strings.HasPrefix(k.Key, "vk_") || k.Access != "rw" || k.Name != "gitops" {
 		t.Fatalf("create output: %s %v", out, err)
 	}
 	out, errs, code = runCLI("", "admin", "org", "key", "create", "--db", dbPath, "--org", "homelab")
@@ -181,7 +181,7 @@ func TestAdminOrgKeys(t *testing.T) {
 		t.Fatalf("bad access: %d %s", code, errs)
 	}
 	out, _, _ = runCLI("", "admin", "org", "key", "ls", "--db", dbPath, "--org", "homelab")
-	if !strings.Contains(out, "gitops") || !strings.Contains(out, "org key") || !strings.Contains(out, "vk_"+k.Prefix) || strings.Contains(out, k.Token) {
+	if !strings.Contains(out, "gitops") || !strings.Contains(out, "org key") || !strings.Contains(out, "vk_"+k.Prefix) || strings.Contains(out, k.Key) {
 		t.Fatalf("ls: %s", out)
 	}
 	if _, errs, code := runCLI("", "admin", "org", "key", "revoke", "--db", dbPath, "--org", "homelab", k.ID); code != 0 {

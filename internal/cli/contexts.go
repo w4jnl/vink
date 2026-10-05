@@ -1,12 +1,14 @@
 package cli
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/pelletier/go-toml/v2"
 )
@@ -18,6 +20,92 @@ type Context struct {
 	// PingBase and PingKey are cached from /me for `vink ping`.
 	PingBase string `toml:"ping_base,omitempty"`
 	PingKey  string `toml:"ping_key,omitempty"`
+	// Kind, Scope and ExpiresAt say what the key is, from /me: a project
+	// key (scope homelab/prod), an org key (homelab) or an instance admin
+	// key (instance), which expires. Empty until the server has answered.
+	Kind      string     `toml:"kind,omitempty"`
+	Scope     string     `toml:"scope,omitempty"`
+	ExpiresAt *time.Time `toml:"expires_at,omitempty"`
+}
+
+// Key kinds a context can hold.
+const (
+	KindProject = "project"
+	KindOrg     = "org"
+	KindAdmin   = "admin"
+	KindUnknown = "unknown"
+)
+
+// IsAdminKey reports whether a key is an instance admin key, by its
+// prefix; no server is asked.
+func IsAdminKey(key string) bool { return strings.HasPrefix(key, "vka_") }
+
+// Describe says what the context's key is, for vink ctx ls: an admin key
+// is known by its prefix, the others by what the server said.
+func (c Context) Describe(now time.Time) (kind, scope string) {
+	kind, scope = c.Kind, c.Scope
+	if IsAdminKey(c.Key) {
+		kind, scope = KindAdmin, "instance"
+		if c.ExpiresAt != nil {
+			word := "expires"
+			if !now.Before(*c.ExpiresAt) {
+				word = "expired"
+			}
+			scope += ", " + word + " " + c.ExpiresAt.Local().Format("2 Jan 2006")
+		}
+	}
+	if kind == "" {
+		kind = KindUnknown
+	}
+	return kind, scope
+}
+
+// KeyInfo is what the server says a key is.
+type KeyInfo struct {
+	Kind      string
+	Scope     string
+	ExpiresAt *time.Time
+}
+
+// Apply stores what the server said in the context.
+func (k KeyInfo) Apply(c *Context) {
+	c.Kind, c.Scope, c.ExpiresAt = k.Kind, k.Scope, k.ExpiresAt
+}
+
+// LookupKey asks the server's /me what a key is, giving up after timeout.
+func LookupKey(ctx context.Context, server, key string, timeout time.Duration) (KeyInfo, error) {
+	c := NewClient(server, key)
+	c.HTTP.Timeout = timeout
+	var me struct {
+		Key *struct {
+			Kind      string     `json:"kind"`
+			ExpiresAt *time.Time `json:"expires_at"`
+		} `json:"key"`
+		Org *struct {
+			Slug string `json:"slug"`
+		} `json:"org"`
+		Project *struct {
+			Slug string `json:"slug"`
+		} `json:"project"`
+	}
+	if err := c.Do(ctx, "GET", "/me", nil, &me); err != nil {
+		return KeyInfo{}, err
+	}
+	var info KeyInfo
+	if me.Key != nil {
+		info.Kind, info.ExpiresAt = me.Key.Kind, me.Key.ExpiresAt
+	}
+	switch {
+	case info.Kind == KindAdmin || IsAdminKey(key):
+		info.Kind, info.Scope = KindAdmin, "instance"
+	case me.Project != nil && me.Org != nil:
+		info.Kind, info.Scope = KindProject, me.Org.Slug+"/"+me.Project.Slug
+	case me.Org != nil:
+		info.Kind, info.Scope = KindOrg, me.Org.Slug
+	default:
+		return KeyInfo{}, fmt.Errorf("%s did not say what the key is", server)
+	}
+	return info, nil
 }
 
 // Config is ~/.config/vink/config.toml.
