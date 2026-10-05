@@ -237,7 +237,7 @@ a.vk-btn { text-decoration: none; box-sizing: border-box; }
 .vk-seg__opt input { position: absolute; width: 1px; height: 1px; margin: 0; opacity: 0; }
 .vk-seg__opt span { display: inline-flex; align-items: center; height: 26px; padding: 0 10px; border-radius: 4px; color: var(--ink-muted); font: 500 13px/1 var(--font-sans); cursor: pointer; }
 .vk-seg__opt span:hover { color: var(--ink); }
-.vk-seg__opt input:checked + span { background: var(--accent-soft); color: var(--accent); }
+.vk-seg__opt input:checked + span { background: var(--accent); color: var(--on-accent); font-weight: 600; }
 .vk-seg--mono .vk-seg__opt span { font: 400 13px/1 var(--font-mono); }
 
 /* KindPicker */

@@ -4,6 +4,13 @@ User-facing changes per release, newest first. `scripts/release.sh` refuses to t
 that has no section here and uses the section as the GitHub release notes, so every release
 updates this file first. Dates are the tag dates.
 
+## Unreleased
+
+- **Fixed: you could not see which option was selected** in a segmented control: Access and
+  Expires on the key forms, the schedule type and period, maintenance weekdays, Run from and a
+  status page's Group by. The selected option is now filled with the accent colour, in light and
+  dark.
+
 ## 0.2.0 (2026-10-05)
 
 - **Org status pages.** An org's admins and owners add status pages of the org itself, under a new
