@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"sort"
 	"strings"
@@ -14,11 +15,18 @@ import (
 
 func statusPageFromRow(r db.StatusPage) *domain.StatusPage {
 	p := &domain.StatusPage{
-		ID: r.ID, ProjectID: r.ProjectID, Slug: r.Slug, Title: r.Title, MatchTags: domain.ParseTags(r.MatchTags), Public: r.Public,
+		ID: r.ID, OrgID: r.OrgID, Slug: r.Slug, Title: r.Title, MatchTags: domain.ParseTags(r.MatchTags),
+		Projects: domain.ParseTags(r.Projects), GroupBy: r.GroupBy, Incidents: r.Incidents, Public: r.Public,
 		CreatedAt: domain.FromMillis(r.CreatedAt), UpdatedAt: domain.FromMillis(r.UpdatedAt),
+	}
+	if r.ProjectID != nil {
+		p.ProjectID = *r.ProjectID
 	}
 	if p.MatchTags == nil {
 		p.MatchTags = []string{}
+	}
+	if p.Projects == nil {
+		p.Projects = []string{}
 	}
 	if r.PasswordHash != nil {
 		p.PasswordHash = *r.PasswordHash
@@ -29,8 +37,19 @@ func statusPageFromRow(r db.StatusPage) *domain.StatusPage {
 	return p
 }
 
+// idsJSON encodes project ids as they are; tagsJSON would lowercase them.
+func idsJSON(ids []string) string {
+	if len(ids) == 0 {
+		return "[]"
+	}
+	b, _ := json.Marshal(ids)
+	return string(b)
+}
+
 // preparePage normalises the page and turns a plaintext password into a
-// hash; an empty password keeps the current hash on a private page.
+// hash; an empty password keeps the current hash on a private page. The
+// page's owner (OrgID, ProjectID) must be set first: validation depends on
+// whether it is an org's page.
 func preparePage(p *domain.StatusPage, password, currentHash string) error {
 	p.Normalize()
 	switch {
@@ -53,6 +72,7 @@ func (s *Service) CreateStatusPage(ctx context.Context, sc domain.Scope, p *doma
 	if err := requireEdit(sc); err != nil {
 		return nil, err
 	}
+	p.OrgID, p.ProjectID = sc.OrgID, sc.ProjectID
 	if err := preparePage(p, password, ""); err != nil {
 		return nil, err
 	}
@@ -60,7 +80,8 @@ func (s *Service) CreateStatusPage(ctx context.Context, sc domain.Scope, p *doma
 	var out *domain.StatusPage
 	err := s.db.Tx(ctx, func(q *db.Queries) error {
 		row, err := q.CreateStatusPage(ctx, db.CreateStatusPageParams{
-			ID: domain.NewID(), ProjectID: sc.ProjectID, Slug: p.Slug, Title: p.Title, MatchTags: tagsJSON(p.MatchTags), Public: p.Public,
+			ID: domain.NewID(), OrgID: sc.OrgID, ProjectID: &sc.ProjectID, Slug: p.Slug, Title: p.Title, MatchTags: tagsJSON(p.MatchTags),
+			Projects: idsJSON(p.Projects), GroupBy: p.GroupBy, Incidents: p.Incidents, Public: p.Public,
 			PasswordHash: ptrs(p.PasswordHash), CustomDomain: ptrs(p.CustomDomain), CreatedAt: domain.Millis(now), UpdatedAt: domain.Millis(now),
 		})
 		if err != nil {
@@ -83,7 +104,7 @@ func (s *Service) StatusPage(ctx context.Context, sc domain.Scope, slug string) 
 	if err := requireProject(sc); err != nil {
 		return nil, err
 	}
-	row, err := s.db.Read().GetStatusPage(ctx, db.GetStatusPageParams{ProjectID: sc.ProjectID, Slug: slug})
+	row, err := s.db.Read().GetStatusPage(ctx, db.GetStatusPageParams{ProjectID: &sc.ProjectID, Slug: slug})
 	if err != nil {
 		return nil, notFoundIfNoRows(err, "status page")
 	}
@@ -95,7 +116,7 @@ func (s *Service) ListStatusPages(ctx context.Context, sc domain.Scope) ([]*doma
 	if err := requireProject(sc); err != nil {
 		return nil, err
 	}
-	rows, err := s.db.Read().ListStatusPages(ctx, sc.ProjectID)
+	rows, err := s.db.Read().ListStatusPages(ctx, &sc.ProjectID)
 	if err != nil {
 		return nil, err
 	}
@@ -117,6 +138,7 @@ func (s *Service) UpdateStatusPage(ctx context.Context, sc domain.Scope, slug st
 		return nil, err
 	}
 	next := *p
+	next.OrgID, next.ProjectID = cur.OrgID, cur.ProjectID
 	if next.Slug == "" {
 		next.Slug = cur.Slug
 	}
@@ -126,8 +148,9 @@ func (s *Service) UpdateStatusPage(ctx context.Context, sc domain.Scope, slug st
 	var out *domain.StatusPage
 	err = s.db.Tx(ctx, func(q *db.Queries) error {
 		row, err := q.UpdateStatusPage(ctx, db.UpdateStatusPageParams{
-			Slug: next.Slug, Title: next.Title, MatchTags: tagsJSON(next.MatchTags), Public: next.Public, PasswordHash: ptrs(next.PasswordHash), CustomDomain: ptrs(next.CustomDomain),
-			UpdatedAt: domain.Millis(s.now()), ProjectID: sc.ProjectID, ID: cur.ID,
+			Slug: next.Slug, Title: next.Title, MatchTags: tagsJSON(next.MatchTags), Incidents: next.Incidents, Public: next.Public,
+			PasswordHash: ptrs(next.PasswordHash), CustomDomain: ptrs(next.CustomDomain),
+			UpdatedAt: domain.Millis(s.now()), ProjectID: &sc.ProjectID, ID: cur.ID,
 		})
 		if err != nil {
 			return conflictIfUnique(err, "the address "+next.Slug+" is taken")
@@ -155,7 +178,7 @@ func (s *Service) DeleteStatusPage(ctx context.Context, sc domain.Scope, slug st
 		return err
 	}
 	err = s.db.Tx(ctx, func(q *db.Queries) error {
-		n, err := q.DeleteStatusPage(ctx, db.DeleteStatusPageParams{ProjectID: sc.ProjectID, Slug: slug})
+		n, err := q.DeleteStatusPage(ctx, db.DeleteStatusPageParams{ProjectID: &sc.ProjectID, Slug: slug})
 		if err != nil {
 			return err
 		}

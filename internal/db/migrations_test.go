@@ -116,7 +116,7 @@ func TestRollbackAndDump(t *testing.T) {
 		t.Errorf("dump missing the route_channels migration:\n%s", s)
 	}
 	// rolling back walks the migrations newest first, down to nothing
-	for _, want := range []string{"20261005000000", "20261004000000", "20261003000000", "20261002000000", "20261001000000", "20260930000000", "20260927000000"} {
+	for _, want := range []string{"20261006000000", "20261005000000", "20261004000000", "20261003000000", "20261002000000", "20261001000000", "20260930000000", "20260927000000"} {
 		v, err := Rollback(ctx, d.Writer, quiet())
 		if err != nil {
 			t.Fatal(err)
@@ -134,6 +134,49 @@ func TestRollbackAndDump(t *testing.T) {
 	}
 	if _, err := Rollback(ctx, d.Writer, quiet()); err == nil {
 		t.Error("rollback on empty schema must fail")
+	}
+}
+
+// TestOrgStatusPagesMigration: the rebuild keeps a project's page and
+// fills its org; rolling back keeps project pages and drops org pages,
+// which have no project to go back to.
+func TestOrgStatusPagesMigration(t *testing.T) {
+	d := openTemp(t)
+	ctx := context.Background()
+	if _, err := Migrate(ctx, d.Writer, quiet()); err != nil {
+		t.Fatal(err)
+	}
+	if v, err := Rollback(ctx, d.Writer, quiet()); err != nil || v != "20261006000000" {
+		t.Fatalf("rollback: %s %v", v, err)
+	}
+	exec := func(q string) {
+		t.Helper()
+		if _, err := d.Writer.ExecContext(ctx, q); err != nil {
+			t.Fatalf("%s: %v", q, err)
+		}
+	}
+	exec(`INSERT INTO orgs (id, slug, name, created_at) VALUES ('o', 'o', 'O', 0)`)
+	exec(`INSERT INTO projects (id, org_id, slug, name, ping_key, created_at) VALUES ('p', 'o', 'p', 'P', 'k', 0)`)
+	exec(`INSERT INTO status_pages (id, project_id, slug, title, match_tags, public, created_at, updated_at) VALUES ('sp', 'p', 'home', 'Home', '["prod"]', 1, 0, 0)`)
+	if _, err := Migrate(ctx, d.Writer, quiet()); err != nil {
+		t.Fatal(err)
+	}
+	var org, project, tags, projects, groupBy, incidents string
+	err := d.Reader.QueryRowContext(ctx, `SELECT org_id, project_id, match_tags, projects, group_by, incidents FROM status_pages WHERE id = 'sp'`).
+		Scan(&org, &project, &tags, &projects, &groupBy, &incidents)
+	if err != nil || org != "o" || project != "p" || tags != `["prod"]` || projects != "[]" || groupBy != "tag" || incidents != "open" {
+		t.Fatalf("page after the rebuild: %v %s %s %s %s %s %s", err, org, project, tags, projects, groupBy, incidents)
+	}
+	exec(`INSERT INTO status_pages (id, org_id, slug, title, projects, group_by, incidents, created_at, updated_at) VALUES ('op', 'o', 'all', 'All', '["p"]', 'project', '30d', 0, 0)`)
+	if _, err := d.Writer.ExecContext(ctx, `INSERT INTO status_pages (id, org_id, project_id, slug, title, group_by, created_at, updated_at) VALUES ('bad', 'o', 'p', 'bad', 'Bad', 'project', 0, 0)`); err == nil {
+		t.Error("a project page grouped by project must be refused")
+	}
+	if _, err := Rollback(ctx, d.Writer, quiet()); err != nil {
+		t.Fatal(err)
+	}
+	var n int
+	if err := d.Reader.QueryRowContext(ctx, `SELECT COUNT(*) FROM status_pages`).Scan(&n); err != nil || n != 1 {
+		t.Fatalf("pages after rolling back: %d %v", n, err)
 	}
 }
 

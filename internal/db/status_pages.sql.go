@@ -10,17 +10,21 @@ import (
 )
 
 const createStatusPage = `-- name: CreateStatusPage :one
-INSERT INTO status_pages (id, project_id, slug, title, match_tags, public, password_hash, custom_domain, created_at, updated_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-RETURNING id, project_id, slug, title, match_tags, public, password_hash, custom_domain, created_at, updated_at
+INSERT INTO status_pages (id, org_id, project_id, slug, title, match_tags, projects, group_by, incidents, public, password_hash, custom_domain, created_at, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+RETURNING id, org_id, project_id, slug, title, match_tags, projects, group_by, incidents, public, password_hash, custom_domain, created_at, updated_at
 `
 
 type CreateStatusPageParams struct {
 	ID           string
-	ProjectID    string
+	OrgID        string
+	ProjectID    *string
 	Slug         string
 	Title        string
 	MatchTags    string
+	Projects     string
+	GroupBy      string
+	Incidents    string
 	Public       bool
 	PasswordHash *string
 	CustomDomain *string
@@ -28,13 +32,18 @@ type CreateStatusPageParams struct {
 	UpdatedAt    int64
 }
 
+// a project page has project_id; an org page has none (project_id NULL)
 func (q *Queries) CreateStatusPage(ctx context.Context, arg CreateStatusPageParams) (StatusPage, error) {
 	row := q.db.QueryRowContext(ctx, createStatusPage,
 		arg.ID,
+		arg.OrgID,
 		arg.ProjectID,
 		arg.Slug,
 		arg.Title,
 		arg.MatchTags,
+		arg.Projects,
+		arg.GroupBy,
+		arg.Incidents,
 		arg.Public,
 		arg.PasswordHash,
 		arg.CustomDomain,
@@ -44,10 +53,14 @@ func (q *Queries) CreateStatusPage(ctx context.Context, arg CreateStatusPagePara
 	var i StatusPage
 	err := row.Scan(
 		&i.ID,
+		&i.OrgID,
 		&i.ProjectID,
 		&i.Slug,
 		&i.Title,
 		&i.MatchTags,
+		&i.Projects,
+		&i.GroupBy,
+		&i.Incidents,
 		&i.Public,
 		&i.PasswordHash,
 		&i.CustomDomain,
@@ -57,12 +70,30 @@ func (q *Queries) CreateStatusPage(ctx context.Context, arg CreateStatusPagePara
 	return i, err
 }
 
+const deleteOrgStatusPage = `-- name: DeleteOrgStatusPage :execrows
+DELETE FROM status_pages WHERE org_id = ? AND project_id IS NULL AND slug = ?
+`
+
+type DeleteOrgStatusPageParams struct {
+	OrgID string
+	Slug  string
+}
+
+// tenancy: org
+func (q *Queries) DeleteOrgStatusPage(ctx context.Context, arg DeleteOrgStatusPageParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, deleteOrgStatusPage, arg.OrgID, arg.Slug)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const deleteStatusPage = `-- name: DeleteStatusPage :execrows
 DELETE FROM status_pages WHERE project_id = ? AND slug = ?
 `
 
 type DeleteStatusPageParams struct {
-	ProjectID string
+	ProjectID *string
 	Slug      string
 }
 
@@ -74,12 +105,44 @@ func (q *Queries) DeleteStatusPage(ctx context.Context, arg DeleteStatusPagePara
 	return result.RowsAffected()
 }
 
+const getOrgStatusPage = `-- name: GetOrgStatusPage :one
+SELECT id, org_id, project_id, slug, title, match_tags, projects, group_by, incidents, public, password_hash, custom_domain, created_at, updated_at FROM status_pages WHERE org_id = ? AND project_id IS NULL AND slug = ?
+`
+
+type GetOrgStatusPageParams struct {
+	OrgID string
+	Slug  string
+}
+
+// tenancy: org (a page of the org itself, project_id NULL)
+func (q *Queries) GetOrgStatusPage(ctx context.Context, arg GetOrgStatusPageParams) (StatusPage, error) {
+	row := q.db.QueryRowContext(ctx, getOrgStatusPage, arg.OrgID, arg.Slug)
+	var i StatusPage
+	err := row.Scan(
+		&i.ID,
+		&i.OrgID,
+		&i.ProjectID,
+		&i.Slug,
+		&i.Title,
+		&i.MatchTags,
+		&i.Projects,
+		&i.GroupBy,
+		&i.Incidents,
+		&i.Public,
+		&i.PasswordHash,
+		&i.CustomDomain,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const getStatusPage = `-- name: GetStatusPage :one
-SELECT id, project_id, slug, title, match_tags, public, password_hash, custom_domain, created_at, updated_at FROM status_pages WHERE project_id = ? AND slug = ?
+SELECT id, org_id, project_id, slug, title, match_tags, projects, group_by, incidents, public, password_hash, custom_domain, created_at, updated_at FROM status_pages WHERE project_id = ? AND slug = ?
 `
 
 type GetStatusPageParams struct {
-	ProjectID string
+	ProjectID *string
 	Slug      string
 }
 
@@ -88,10 +151,14 @@ func (q *Queries) GetStatusPage(ctx context.Context, arg GetStatusPageParams) (S
 	var i StatusPage
 	err := row.Scan(
 		&i.ID,
+		&i.OrgID,
 		&i.ProjectID,
 		&i.Slug,
 		&i.Title,
 		&i.MatchTags,
+		&i.Projects,
+		&i.GroupBy,
+		&i.Incidents,
 		&i.Public,
 		&i.PasswordHash,
 		&i.CustomDomain,
@@ -102,7 +169,7 @@ func (q *Queries) GetStatusPage(ctx context.Context, arg GetStatusPageParams) (S
 }
 
 const getStatusPageByDomain = `-- name: GetStatusPageByDomain :one
-SELECT id, project_id, slug, title, match_tags, public, password_hash, custom_domain, created_at, updated_at FROM status_pages WHERE custom_domain = ?
+SELECT id, org_id, project_id, slug, title, match_tags, projects, group_by, incidents, public, password_hash, custom_domain, created_at, updated_at FROM status_pages WHERE custom_domain = ?
 `
 
 // tenancy: root (public page served on its custom domain)
@@ -111,10 +178,14 @@ func (q *Queries) GetStatusPageByDomain(ctx context.Context, customDomain *strin
 	var i StatusPage
 	err := row.Scan(
 		&i.ID,
+		&i.OrgID,
 		&i.ProjectID,
 		&i.Slug,
 		&i.Title,
 		&i.MatchTags,
+		&i.Projects,
+		&i.GroupBy,
+		&i.Incidents,
 		&i.Public,
 		&i.PasswordHash,
 		&i.CustomDomain,
@@ -125,7 +196,7 @@ func (q *Queries) GetStatusPageByDomain(ctx context.Context, customDomain *strin
 }
 
 const getStatusPageBySlug = `-- name: GetStatusPageBySlug :one
-SELECT id, project_id, slug, title, match_tags, public, password_hash, custom_domain, created_at, updated_at FROM status_pages WHERE slug = ?
+SELECT id, org_id, project_id, slug, title, match_tags, projects, group_by, incidents, public, password_hash, custom_domain, created_at, updated_at FROM status_pages WHERE slug = ?
 `
 
 // tenancy: root (public page: the slug is unique per instance)
@@ -134,10 +205,14 @@ func (q *Queries) GetStatusPageBySlug(ctx context.Context, slug string) (StatusP
 	var i StatusPage
 	err := row.Scan(
 		&i.ID,
+		&i.OrgID,
 		&i.ProjectID,
 		&i.Slug,
 		&i.Title,
 		&i.MatchTags,
+		&i.Projects,
+		&i.GroupBy,
+		&i.Incidents,
 		&i.Public,
 		&i.PasswordHash,
 		&i.CustomDomain,
@@ -147,12 +222,13 @@ func (q *Queries) GetStatusPageBySlug(ctx context.Context, slug string) (StatusP
 	return i, err
 }
 
-const listStatusPages = `-- name: ListStatusPages :many
-SELECT id, project_id, slug, title, match_tags, public, password_hash, custom_domain, created_at, updated_at FROM status_pages WHERE project_id = ? ORDER BY title, id
+const listOrgStatusPages = `-- name: ListOrgStatusPages :many
+SELECT id, org_id, project_id, slug, title, match_tags, projects, group_by, incidents, public, password_hash, custom_domain, created_at, updated_at FROM status_pages WHERE org_id = ? AND project_id IS NULL ORDER BY title, id
 `
 
-func (q *Queries) ListStatusPages(ctx context.Context, projectID string) ([]StatusPage, error) {
-	rows, err := q.db.QueryContext(ctx, listStatusPages, projectID)
+// tenancy: org
+func (q *Queries) ListOrgStatusPages(ctx context.Context, orgID string) ([]StatusPage, error) {
+	rows, err := q.db.QueryContext(ctx, listOrgStatusPages, orgID)
 	if err != nil {
 		return nil, err
 	}
@@ -162,10 +238,14 @@ func (q *Queries) ListStatusPages(ctx context.Context, projectID string) ([]Stat
 		var i StatusPage
 		if err := rows.Scan(
 			&i.ID,
+			&i.OrgID,
 			&i.ProjectID,
 			&i.Slug,
 			&i.Title,
 			&i.MatchTags,
+			&i.Projects,
+			&i.GroupBy,
+			&i.Incidents,
 			&i.Public,
 			&i.PasswordHash,
 			&i.CustomDomain,
@@ -185,22 +265,123 @@ func (q *Queries) ListStatusPages(ctx context.Context, projectID string) ([]Stat
 	return items, nil
 }
 
+const listStatusPages = `-- name: ListStatusPages :many
+SELECT id, org_id, project_id, slug, title, match_tags, projects, group_by, incidents, public, password_hash, custom_domain, created_at, updated_at FROM status_pages WHERE project_id = ? ORDER BY title, id
+`
+
+func (q *Queries) ListStatusPages(ctx context.Context, projectID *string) ([]StatusPage, error) {
+	rows, err := q.db.QueryContext(ctx, listStatusPages, projectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []StatusPage
+	for rows.Next() {
+		var i StatusPage
+		if err := rows.Scan(
+			&i.ID,
+			&i.OrgID,
+			&i.ProjectID,
+			&i.Slug,
+			&i.Title,
+			&i.MatchTags,
+			&i.Projects,
+			&i.GroupBy,
+			&i.Incidents,
+			&i.Public,
+			&i.PasswordHash,
+			&i.CustomDomain,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const updateOrgStatusPage = `-- name: UpdateOrgStatusPage :one
+UPDATE status_pages
+SET slug = ?, title = ?, match_tags = ?, projects = ?, group_by = ?, incidents = ?, public = ?, password_hash = ?, custom_domain = ?, updated_at = ?
+WHERE org_id = ? AND project_id IS NULL AND id = ?
+RETURNING id, org_id, project_id, slug, title, match_tags, projects, group_by, incidents, public, password_hash, custom_domain, created_at, updated_at
+`
+
+type UpdateOrgStatusPageParams struct {
+	Slug         string
+	Title        string
+	MatchTags    string
+	Projects     string
+	GroupBy      string
+	Incidents    string
+	Public       bool
+	PasswordHash *string
+	CustomDomain *string
+	UpdatedAt    int64
+	OrgID        string
+	ID           string
+}
+
+// tenancy: org
+func (q *Queries) UpdateOrgStatusPage(ctx context.Context, arg UpdateOrgStatusPageParams) (StatusPage, error) {
+	row := q.db.QueryRowContext(ctx, updateOrgStatusPage,
+		arg.Slug,
+		arg.Title,
+		arg.MatchTags,
+		arg.Projects,
+		arg.GroupBy,
+		arg.Incidents,
+		arg.Public,
+		arg.PasswordHash,
+		arg.CustomDomain,
+		arg.UpdatedAt,
+		arg.OrgID,
+		arg.ID,
+	)
+	var i StatusPage
+	err := row.Scan(
+		&i.ID,
+		&i.OrgID,
+		&i.ProjectID,
+		&i.Slug,
+		&i.Title,
+		&i.MatchTags,
+		&i.Projects,
+		&i.GroupBy,
+		&i.Incidents,
+		&i.Public,
+		&i.PasswordHash,
+		&i.CustomDomain,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const updateStatusPage = `-- name: UpdateStatusPage :one
 UPDATE status_pages
-SET slug = ?, title = ?, match_tags = ?, public = ?, password_hash = ?, custom_domain = ?, updated_at = ?
+SET slug = ?, title = ?, match_tags = ?, incidents = ?, public = ?, password_hash = ?, custom_domain = ?, updated_at = ?
 WHERE project_id = ? AND id = ?
-RETURNING id, project_id, slug, title, match_tags, public, password_hash, custom_domain, created_at, updated_at
+RETURNING id, org_id, project_id, slug, title, match_tags, projects, group_by, incidents, public, password_hash, custom_domain, created_at, updated_at
 `
 
 type UpdateStatusPageParams struct {
 	Slug         string
 	Title        string
 	MatchTags    string
+	Incidents    string
 	Public       bool
 	PasswordHash *string
 	CustomDomain *string
 	UpdatedAt    int64
-	ProjectID    string
+	ProjectID    *string
 	ID           string
 }
 
@@ -209,6 +390,7 @@ func (q *Queries) UpdateStatusPage(ctx context.Context, arg UpdateStatusPagePara
 		arg.Slug,
 		arg.Title,
 		arg.MatchTags,
+		arg.Incidents,
 		arg.Public,
 		arg.PasswordHash,
 		arg.CustomDomain,
@@ -219,10 +401,14 @@ func (q *Queries) UpdateStatusPage(ctx context.Context, arg UpdateStatusPagePara
 	var i StatusPage
 	err := row.Scan(
 		&i.ID,
+		&i.OrgID,
 		&i.ProjectID,
 		&i.Slug,
 		&i.Title,
 		&i.MatchTags,
+		&i.Projects,
+		&i.GroupBy,
+		&i.Incidents,
 		&i.Public,
 		&i.PasswordHash,
 		&i.CustomDomain,

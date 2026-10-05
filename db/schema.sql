@@ -164,19 +164,6 @@ CREATE TABLE maintenance (
   updated_at INTEGER NOT NULL
 , ended_until INTEGER);
 CREATE INDEX maintenance_project ON maintenance(project_id);
-CREATE TABLE status_pages (
-  id TEXT PRIMARY KEY,
-  project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-  slug TEXT NOT NULL UNIQUE,
-  title TEXT NOT NULL,
-  match_tags TEXT NOT NULL DEFAULT '[]',
-  public BOOLEAN NOT NULL DEFAULT 1,
-  password_hash TEXT,
-  custom_domain TEXT,
-  created_at INTEGER NOT NULL,
-  updated_at INTEGER NOT NULL
-);
-CREATE INDEX status_pages_project ON status_pages(project_id);
 CREATE TABLE agents (
   id TEXT PRIMARY KEY,
   org_id TEXT NOT NULL REFERENCES orgs(id) ON DELETE CASCADE,
@@ -301,6 +288,28 @@ CREATE TABLE instance_meta (
   value TEXT NOT NULL,
   updated_at INTEGER NOT NULL
 );
+CREATE TABLE status_pages (
+  id TEXT PRIMARY KEY,
+  org_id TEXT NOT NULL REFERENCES orgs(id) ON DELETE CASCADE,
+  project_id TEXT REFERENCES projects(id) ON DELETE CASCADE,
+  slug TEXT NOT NULL UNIQUE,
+  title TEXT NOT NULL,
+  match_tags TEXT NOT NULL DEFAULT '[]',
+  -- org pages: the project ids shown, JSON; empty shows every project
+  projects TEXT NOT NULL DEFAULT '[]',
+  group_by TEXT NOT NULL DEFAULT 'tag' CHECK (group_by IN ('tag', 'project')),
+  -- open: open incidents; 7d, 30d, 90d: and those resolved in that window
+  incidents TEXT NOT NULL DEFAULT 'open' CHECK (incidents IN ('none', 'open', '7d', '30d', '90d')),
+  public BOOLEAN NOT NULL DEFAULT 1,
+  password_hash TEXT,
+  custom_domain TEXT,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  -- a project page groups by tag and lists no projects
+  CHECK (project_id IS NULL OR (group_by = 'tag' AND projects = '[]'))
+);
+CREATE INDEX status_pages_project ON status_pages(project_id);
+CREATE INDEX status_pages_org ON status_pages(org_id);
 -- Dbmate schema migrations
 INSERT INTO "schema_migrations" (version) VALUES
   ('20260927000000'),
@@ -309,4 +318,5 @@ INSERT INTO "schema_migrations" (version) VALUES
   ('20261002000000'),
   ('20261003000000'),
   ('20261004000000'),
-  ('20261005000000');
+  ('20261005000000'),
+  ('20261006000000');

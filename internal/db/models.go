@@ -282,10 +282,14 @@ type Session struct {
 
 type StatusPage struct {
 	ID           string
-	ProjectID    string
+	OrgID        string
+	ProjectID    *string
 	Slug         string
 	Title        string
 	MatchTags    string
+	Projects     string
+	GroupBy      string
+	Incidents    string
 	Public       bool
 	PasswordHash *string
 	CustomDomain *string

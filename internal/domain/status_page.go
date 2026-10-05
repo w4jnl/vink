@@ -6,15 +6,25 @@ import (
 )
 
 // StatusPage shows the monitors carrying its tags to people without an
-// account, at /s/{slug} and on an optional custom domain.
+// account, at /s/{slug} and on an optional custom domain. It belongs to a
+// project, or, with no ProjectID, to its org and shows monitors of the
+// org's projects.
 type StatusPage struct {
 	ID        string
-	ProjectID string
+	OrgID     string
+	ProjectID string // empty for an org page
 	Slug      string
 	Title     string
-	// MatchTags: any-of; each tag is a group on the page, in this order.
-	// Empty shows every monitor.
+	// MatchTags: any-of; with GroupBy tag each tag is a group on the page,
+	// in this order. Empty shows every monitor.
 	MatchTags []string
+	// Projects: an org page's project ids, in page order; empty shows every
+	// project of the org, new ones included. Always empty on a project page.
+	Projects []string
+	// GroupBy: GroupByTag, or on an org page GroupByProject.
+	GroupBy string
+	// Incidents: which incidents the page lists, IncidentsOpen by default.
+	Incidents string
 	// Public is false when a password protects the page.
 	Public       bool
 	PasswordHash string
@@ -23,12 +33,65 @@ type StatusPage struct {
 	UpdatedAt    time.Time
 }
 
-// Normalize trims and lowercases what must be canonical. Call before Validate.
+// How a page groups its monitors.
+const (
+	GroupByTag     = "tag"
+	GroupByProject = "project"
+)
+
+// Which incidents a page lists: none, the open ones, or the open ones and
+// those resolved in the last 7, 30 or 90 days.
+const (
+	IncidentsNone = "none"
+	IncidentsOpen = "open"
+)
+
+// IncidentChoices are the values of Incidents, in the order a form offers them.
+var IncidentChoices = []string{IncidentsOpen, "7d", "30d", "90d", IncidentsNone}
+
+// IsOrg reports whether the page belongs to an org rather than a project.
+func (p *StatusPage) IsOrg() bool { return p.ProjectID == "" }
+
+// IncidentWindow says whether the page lists open incidents and over how
+// many days it lists resolved ones (0 for none).
+func (p *StatusPage) IncidentWindow() (open bool, days int) {
+	switch p.Incidents {
+	case IncidentsNone:
+		return false, 0
+	case "7d":
+		return true, 7
+	case "30d":
+		return true, 30
+	case "90d":
+		return true, 90
+	}
+	return true, 0
+}
+
+// Normalize trims and lowercases what must be canonical and fills the
+// defaults. Call before Validate.
 func (p *StatusPage) Normalize() {
 	p.Slug = strings.ToLower(strings.TrimSpace(p.Slug))
 	p.Title = strings.TrimSpace(p.Title)
 	p.MatchTags = NormalizeTags(p.MatchTags)
 	p.CustomDomain = strings.ToLower(strings.TrimSpace(p.CustomDomain))
+	p.GroupBy = strings.ToLower(strings.TrimSpace(p.GroupBy))
+	if p.GroupBy == "" {
+		p.GroupBy = GroupByTag
+	}
+	p.Incidents = strings.ToLower(strings.TrimSpace(p.Incidents))
+	if p.Incidents == "" {
+		p.Incidents = IncidentsOpen
+	}
+	seen := map[string]bool{}
+	ids := make([]string, 0, len(p.Projects))
+	for _, id := range p.Projects {
+		if id = strings.TrimSpace(id); id != "" && !seen[id] {
+			seen[id] = true
+			ids = append(ids, id)
+		}
+	}
+	p.Projects = ids
 	if p.PasswordHash != "" {
 		p.Public = false
 	}
@@ -53,6 +116,22 @@ func (p *StatusPage) Validate() error {
 	}
 	if !p.Public && p.PasswordHash == "" {
 		ve.Add("password", "set a password or make the page public")
+	}
+	switch {
+	case p.GroupBy != GroupByTag && p.GroupBy != GroupByProject:
+		ve.Add("group_by", "must be tag or project")
+	case p.GroupBy == GroupByProject && !p.IsOrg():
+		ve.Add("group_by", "only an org's page groups by project")
+	}
+	if len(p.Projects) > 0 && !p.IsOrg() {
+		ve.Add("projects", "only an org's page lists projects")
+	}
+	valid := false
+	for _, c := range IncidentChoices {
+		valid = valid || p.Incidents == c
+	}
+	if !valid {
+		ve.Add("incidents", "must be none, open, 7d, 30d or 90d")
 	}
 	return ve.OrNil()
 }
