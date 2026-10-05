@@ -168,8 +168,12 @@ func (a *API) createMonitor(w http.ResponseWriter, r *http.Request) error {
 // locationFor builds a Location header under the same prefix form the
 // request used, and under the deployment's path.
 func locationFor(r *http.Request, path string) string {
-	if org, project := r.PathValue("org"), r.PathValue("project"); org != "" && project != "" {
+	org, project := r.PathValue("org"), r.PathValue("project")
+	switch {
+	case org != "" && project != "":
 		return middleware.Href(r, Prefix+"/orgs/"+org+"/projects/"+project+path)
+	case org != "": // an org-level route
+		return middleware.Href(r, Prefix+"/orgs/"+org+path)
 	}
 	return middleware.Href(r, Prefix+path)
 }
@@ -849,6 +853,135 @@ func (a *API) putStatusPage(w http.ResponseWriter, r *http.Request) error {
 
 func (a *API) deleteStatusPage(w http.ResponseWriter, r *http.Request) error {
 	if err := a.svc.DeleteStatusPage(r.Context(), scope(r), r.PathValue("slug")); err != nil {
+		return err
+	}
+	w.WriteHeader(http.StatusNoContent)
+	return nil
+}
+
+// --- status pages (org level) -----------------------------------------------
+
+// orgPageIn turns an org page's input into the domain, its project slugs
+// into ids.
+func (a *API) orgPageIn(r *http.Request, in StatusPageIn) (*domain.StatusPage, error) {
+	p := in.toDomain()
+	p.Projects = nil
+	if len(in.Projects) == 0 {
+		return p, nil
+	}
+	projects, err := a.svc.ListProjects(r.Context(), scope(r))
+	if err != nil {
+		return nil, err
+	}
+	ids := make(map[string]string, len(projects))
+	for _, pr := range projects {
+		ids[pr.Slug] = pr.ID
+	}
+	ve := &domain.ValidationError{}
+	for _, slug := range in.Projects {
+		if id, ok := ids[slug]; ok {
+			p.Projects = append(p.Projects, id)
+		} else {
+			ve.Addf("projects", "no project %s in this org", slug)
+		}
+	}
+	return p, ve.OrNil()
+}
+
+// orgPageOut shows an org page with its projects by slug.
+func (a *API) orgPageOut(r *http.Request, p *domain.StatusPage) (OrgStatusPageOut, error) {
+	projects, err := a.svc.ListProjects(r.Context(), scope(r))
+	if err != nil {
+		return OrgStatusPageOut{}, err
+	}
+	slugs := make(map[string]string, len(projects))
+	for _, pr := range projects {
+		slugs[pr.ID] = pr.Slug
+	}
+	out := OrgStatusPageOut{StatusPageOut: statusPageOut(a.svc, p), GroupBy: p.GroupBy, Projects: []string{}}
+	for _, id := range p.Projects {
+		if slug, ok := slugs[id]; ok {
+			out.Projects = append(out.Projects, slug)
+		}
+	}
+	return out, nil
+}
+
+func (a *API) listOrgStatusPages(w http.ResponseWriter, r *http.Request) error {
+	list, err := a.svc.ListOrgStatusPages(r.Context(), scope(r))
+	if err != nil {
+		return err
+	}
+	out := make([]OrgStatusPageOut, 0, len(list))
+	for _, p := range list {
+		o, err := a.orgPageOut(r, p)
+		if err != nil {
+			return err
+		}
+		out = append(out, o)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": out})
+	return nil
+}
+
+func (a *API) createOrgStatusPage(w http.ResponseWriter, r *http.Request) error {
+	var in StatusPageIn
+	if err := decodeJSON(r, &in); err != nil {
+		return err
+	}
+	want, err := a.orgPageIn(r, in)
+	if err != nil {
+		return err
+	}
+	p, err := a.svc.CreateOrgStatusPage(r.Context(), scope(r), want, in.Password)
+	if err != nil {
+		return err
+	}
+	out, err := a.orgPageOut(r, p)
+	if err != nil {
+		return err
+	}
+	w.Header().Set("Location", locationFor(r, "/status-pages/"+p.Slug))
+	writeJSON(w, http.StatusCreated, out)
+	return nil
+}
+
+func (a *API) getOrgStatusPage(w http.ResponseWriter, r *http.Request) error {
+	p, err := a.svc.OrgStatusPage(r.Context(), scope(r), r.PathValue("slug"))
+	if err != nil {
+		return err
+	}
+	out, err := a.orgPageOut(r, p)
+	if err != nil {
+		return err
+	}
+	writeJSON(w, http.StatusOK, out)
+	return nil
+}
+
+func (a *API) putOrgStatusPage(w http.ResponseWriter, r *http.Request) error {
+	var in StatusPageIn
+	if err := decodeJSON(r, &in); err != nil {
+		return err
+	}
+	want, err := a.orgPageIn(r, in)
+	if err != nil {
+		return err
+	}
+	p, err := a.svc.UpdateOrgStatusPage(r.Context(), scope(r), r.PathValue("slug"), want, in.Password)
+	if err != nil {
+		return err
+	}
+	out, err := a.orgPageOut(r, p)
+	if err != nil {
+		return err
+	}
+	writeJSON(w, http.StatusOK, out)
+	return nil
+}
+
+func (a *API) deleteOrgStatusPage(w http.ResponseWriter, r *http.Request) error {
+	if err := a.svc.DeleteOrgStatusPage(r.Context(), scope(r), r.PathValue("slug")); err != nil {
 		return err
 	}
 	w.WriteHeader(http.StatusNoContent)

@@ -633,6 +633,73 @@ func (e *env) adminSession(t *testing.T) (*http.Cookie, string) {
 	return rec.Result().Cookies()[0], p.CSRF()
 }
 
+// TestOrgStatusPagesAPI: org admins manage the org's own pages under
+// /orgs/{org}/status-pages with projects by slug; project pages take
+// incidents and refuse the org-only fields.
+func TestOrgStatusPagesAPI(t *testing.T) {
+	e := newEnv(t)
+	cookie, csrf := e.adminSession(t)
+	as := func(r *http.Request) {
+		r.AddCookie(cookie)
+		r.Header.Set(auth.CSRFHeader, csrf)
+	}
+	member := func(r *http.Request) {
+		r.AddCookie(e.cookie)
+		r.Header.Set(auth.CSRFHeader, e.csrf)
+	}
+	root := "/api/v1/orgs/homelab/status-pages"
+	if r := e.do("GET", root, nil, member); r.code != 403 {
+		t.Fatalf("member: %d", r.code)
+	}
+	if r := e.key(e.rw, "GET", "/orgs/homelab/status-pages", nil); r.code != 403 {
+		t.Fatalf("project key: %d", r.code)
+	}
+	created := e.do("POST", root, map[string]any{"slug": "all", "title": "Everything", "projects": []string{"prod"}, "incidents": "30d"}, as)
+	if created.code != 201 || created.hdr.Get("Location") != "/api/v1/orgs/homelab/status-pages/all" {
+		t.Fatalf("create: %d %s %v", created.code, created.body, created.hdr)
+	}
+	var out OrgStatusPageOut
+	created.json(t, &out)
+	if out.GroupBy != "project" || out.Incidents != "30d" || len(out.Projects) != 1 || out.Projects[0] != "prod" || out.URL != "http://localhost:8080/s/all" {
+		t.Fatalf("created: %s", created.body)
+	}
+	if r := e.do("POST", root, map[string]any{"slug": "x", "title": "X", "projects": []string{"nope"}}, as); r.code != 422 || !strings.Contains(string(r.body), "no project nope in this org") {
+		t.Fatalf("unknown project: %d %s", r.code, r.body)
+	}
+	if r := e.do("POST", root, map[string]any{"slug": "all", "title": "Again"}, as); r.code != 409 {
+		t.Fatalf("taken: %d", r.code)
+	}
+	upd := e.do("PUT", root+"/all", map[string]any{"slug": "all", "title": "Everything", "group_by": "tag", "match_tags": []string{"prod"}}, as)
+	if upd.code != 200 || !strings.Contains(string(upd.body), `"group_by":"tag"`) || !strings.Contains(string(upd.body), `"projects":[]`) || !strings.Contains(string(upd.body), `"incidents":"open"`) {
+		t.Fatalf("put: %d %s", upd.code, upd.body)
+	}
+	list := e.do("GET", root, nil, as)
+	if list.code != 200 || !strings.Contains(string(list.body), `"slug":"all"`) {
+		t.Fatalf("list: %d %s", list.code, list.body)
+	}
+	if r := e.do("GET", "/api/v1/orgs/acme/status-pages", nil, as); r.code != 404 {
+		t.Fatalf("another org: %d", r.code)
+	}
+	// the project's routes do not see the org's page
+	if r := e.key(e.rw, "GET", "/status-pages/all", nil); r.code != 404 {
+		t.Fatalf("org page through a project: %d", r.code)
+	}
+	// a project page takes incidents and refuses the org-only fields
+	pp := e.key(e.rw, "POST", "/status-pages", map[string]any{"slug": "lab", "title": "Lab", "incidents": "7d"})
+	if pp.code != 201 || !strings.Contains(string(pp.body), `"incidents":"7d"`) {
+		t.Fatalf("project page: %d %s", pp.code, pp.body)
+	}
+	if r := e.key(e.rw, "POST", "/status-pages", map[string]any{"slug": "lab2", "title": "Lab", "group_by": "project"}); r.code != 422 || !strings.Contains(string(r.body), "only an org's page groups by project") {
+		t.Fatalf("project page grouped by project: %d %s", r.code, r.body)
+	}
+	if r := e.do("DELETE", root+"/all", nil, as); r.code != 204 {
+		t.Fatalf("delete: %d", r.code)
+	}
+	if r := e.do("GET", root+"/all", nil, as); r.code != 404 {
+		t.Fatalf("after delete: %d", r.code)
+	}
+}
+
 func TestAgentsAPI(t *testing.T) {
 	e := newEnv(t)
 	cookie, csrf := e.adminSession(t)
@@ -652,6 +719,9 @@ func TestAgentsAPI(t *testing.T) {
 	created := e.do("POST", "/api/v1/orgs/homelab/agents", map[string]any{"name": "DC2-probe", "labels": map[string]string{"site": "dc2", "zone": "dmz"}}, as(cookie, csrf))
 	if created.code != 201 {
 		t.Fatalf("create: %d %s", created.code, created.body)
+	}
+	if loc := created.hdr.Get("Location"); loc != "/api/v1/orgs/homelab/agents/dc2-probe" {
+		t.Errorf("Location of an org route: %q", loc)
 	}
 	var out AgentCreated
 	created.json(t, &out)

@@ -32,7 +32,7 @@ type tenant struct {
 	incident, channel   string
 	route, key          string
 	window              string
-	page                string
+	page, orgPage       string
 	agent               string
 }
 
@@ -99,6 +99,11 @@ func TestCrossTenantIsolation(t *testing.T) {
 			t.Fatal(err)
 		}
 		tn.agent = agent.Name
+		orgPage, err := svc.CreateOrgStatusPage(ctx, sc, &domain.StatusPage{Slug: name + "-everything", Title: name + " everything", Public: true}, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		tn.orgPage = orgPage.Slug
 		return tn
 	}
 	a, b := mk("alpha"), mk("beta")
@@ -210,7 +215,7 @@ func TestCrossTenantIsolation(t *testing.T) {
 	// org-level routes: B's session sees nothing of alpha, keys are refused
 	for _, route := range spec.OrgRoutes {
 		method, path, _ := strings.Cut(route, " ")
-		filled := strings.Replace(path, "{name}", a.agent, 1)
+		filled := strings.Replace(strings.Replace(path, "{name}", a.agent, 1), "{slug}", a.orgPage, 1)
 		for _, c := range []struct {
 			name   string
 			prefix string
@@ -243,10 +248,10 @@ func TestCrossTenantIsolation(t *testing.T) {
 				h.ServeHTTP(rec, req)
 				ownOrg := c.prefix == "/api/v1/orgs/beta"
 				keyRoute := path == "/apply" || path == "/export" // the two routes an org key may call
-				if !strings.Contains(path, "{name}") && ownOrg && (c.want == 404 || (keyRoute && c.key == b.orgRW)) {
+				if !strings.Contains(path, "{") && ownOrg && (c.want == 404 || (keyRoute && c.key == b.orgRW)) {
 					// a list, create, export or apply in B's own org: never
-					// A's agent, A's monitor or A's org
-					leak := bytes.Contains(rec.Body.Bytes(), []byte(a.agent)) || bytes.Contains(rec.Body.Bytes(), []byte(a.monitor)) || bytes.Contains(rec.Body.Bytes(), []byte("org: alpha"))
+					// A's agent, A's monitor, A's org page or A's org
+					leak := bytes.Contains(rec.Body.Bytes(), []byte(a.agent)) || bytes.Contains(rec.Body.Bytes(), []byte(a.monitor)) || bytes.Contains(rec.Body.Bytes(), []byte(a.orgPage)) || bytes.Contains(rec.Body.Bytes(), []byte("org: alpha"))
 					if rec.Code == 404 || rec.Code == 403 || leak {
 						t.Fatalf("own org %s: %d %s", route, rec.Code, rec.Body.String())
 					}

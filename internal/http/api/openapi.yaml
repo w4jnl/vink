@@ -177,9 +177,18 @@ components:
         slug: {type: string, description: unique across the instance; the page lives at /s/{slug}}
         title: {type: string}
         match_tags: {type: array, items: {type: string}, description: any-of; one group per tag in this order; empty shows every monitor}
+        incidents: {type: string, enum: [open, 7d, 30d, 90d, none], default: open, description: "open: open incidents; 7d, 30d, 90d: and those resolved in that window (monitor, start, duration, never the reason); none: neither"}
         public: {type: boolean, default: true}
         password: {type: string, description: write-only; makes the page private; empty keeps the current one}
         custom_domain: {type: string}
+    OrgStatusPageIn:
+      description: An org's page shows monitors of the org's projects; the slug shares the instance's /s/ namespace with project pages.
+      allOf:
+        - $ref: "#/components/schemas/StatusPageIn"
+        - type: object
+          properties:
+            projects: {type: array, items: {type: string}, description: project slugs in page order; empty shows every project, new ones included}
+            group_by: {type: string, enum: [project, tag], default: project}
     StatusPage:
       allOf:
         - $ref: "#/components/schemas/StatusPageIn"
@@ -418,6 +427,21 @@ paths:
       requestBody: {content: {application/json: {schema: {$ref: "#/components/schemas/StatusPageIn"}}}}
       responses: {"200": {description: The page.}}
     delete: {summary: Delete a status page, responses: {"204": {description: Deleted.}}}
+  /orgs/{org}/status-pages:
+    parameters: [{$ref: "#/components/parameters/org"}]
+    get: {summary: List the org's own status pages (sessions of org admins and owners), responses: {"200": {description: "{items: [OrgStatusPage]}: the page, projects by slug, group_by"}}}
+    post:
+      summary: Add a status page of the org
+      requestBody: {content: {application/json: {schema: {$ref: "#/components/schemas/OrgStatusPageIn"}}}}
+      responses: {"201": {description: The page, with Location.}, "409": {description: The address is taken.}, "422": {description: Validation failed, or a project is not in the org.}}
+  /orgs/{org}/status-pages/{slug}:
+    parameters: [{$ref: "#/components/parameters/org"}, {$ref: "#/components/parameters/slug"}]
+    get: {summary: One status page of the org, responses: {"200": {description: The page.}, "404": {description: Unknown, or a project's page.}}}
+    put:
+      summary: Replace a status page of the org
+      requestBody: {content: {application/json: {schema: {$ref: "#/components/schemas/OrgStatusPageIn"}}}}
+      responses: {"200": {description: The page.}}
+    delete: {summary: Delete a status page of the org, responses: {"204": {description: Deleted.}}}
   /orgs/{org}/agents:
     parameters: [{$ref: "#/components/parameters/org"}]
     get: {summary: List the org's agents with their state (sessions of org admins and owners), responses: {"200": {description: "{items: [Agent]}"}}}

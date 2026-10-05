@@ -388,16 +388,22 @@ func maintenanceOut(w *domain.Maintenance, now time.Time) MaintenanceOut {
 // StatusPageIn creates or replaces a status page. A password makes the
 // page private; an empty one keeps the current password on an update.
 type StatusPageIn struct {
-	Slug         string   `json:"slug"`
-	Title        string   `json:"title"`
-	MatchTags    []string `json:"match_tags"`
+	Slug      string   `json:"slug"`
+	Title     string   `json:"title"`
+	MatchTags []string `json:"match_tags"`
+	// Projects (slugs, none for all) and GroupBy (project or tag) belong to
+	// an org's pages; a project's page refuses them.
+	Projects     []string `json:"projects"`
+	GroupBy      string   `json:"group_by"`
+	Incidents    string   `json:"incidents"`
 	Public       *bool    `json:"public"`
 	Password     string   `json:"password"`
 	CustomDomain string   `json:"custom_domain"`
 }
 
 func (in StatusPageIn) toDomain() *domain.StatusPage {
-	p := &domain.StatusPage{Slug: in.Slug, Title: in.Title, MatchTags: in.MatchTags, CustomDomain: in.CustomDomain, Public: true}
+	p := &domain.StatusPage{Slug: in.Slug, Title: in.Title, MatchTags: in.MatchTags, CustomDomain: in.CustomDomain, Public: true,
+		Projects: in.Projects, GroupBy: in.GroupBy, Incidents: in.Incidents}
 	if in.Public != nil {
 		p.Public = *in.Public
 	}
@@ -413,6 +419,7 @@ type StatusPageOut struct {
 	Slug         string    `json:"slug"`
 	Title        string    `json:"title"`
 	MatchTags    []string  `json:"match_tags"`
+	Incidents    string    `json:"incidents"`
 	Public       bool      `json:"public"`
 	HasPassword  bool      `json:"has_password"`
 	CustomDomain string    `json:"custom_domain,omitempty"`
@@ -427,9 +434,17 @@ func statusPageOut(svc *service.Service, p *domain.StatusPage) StatusPageOut {
 		tags = []string{}
 	}
 	return StatusPageOut{
-		ID: p.ID, Slug: p.Slug, Title: p.Title, MatchTags: tags, Public: p.Public, HasPassword: p.HasPassword(), CustomDomain: p.CustomDomain,
+		ID: p.ID, Slug: p.Slug, Title: p.Title, MatchTags: tags, Incidents: p.Incidents, Public: p.Public, HasPassword: p.HasPassword(), CustomDomain: p.CustomDomain,
 		URL: strings.TrimRight(svc.Config().BaseURL, "/") + "/s/" + p.Slug, CreatedAt: p.CreatedAt, UpdatedAt: p.UpdatedAt,
 	}
+}
+
+// OrgStatusPageOut is an org's page: the project page's fields, the
+// projects it shows by slug (empty for all) and how it groups them.
+type OrgStatusPageOut struct {
+	StatusPageOut
+	Projects []string `json:"projects"`
+	GroupBy  string   `json:"group_by"`
 }
 
 // AgentIn creates an agent or replaces its labels.
