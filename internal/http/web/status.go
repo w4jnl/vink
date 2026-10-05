@@ -26,7 +26,13 @@ type statusData struct {
 	Down      bool
 	Banner    ui.HTML
 	Groups    []statusGroup
+	ShowOpen  bool
 	Incidents []statusIncident
+	// ShowPast lists the incidents resolved within the page's window.
+	ShowPast  bool
+	Past      []statusIncident
+	PastEmpty string
+	PastMore  string
 	Updated   string
 	Error     string
 }
@@ -37,17 +43,23 @@ type statusGroup struct {
 }
 
 type statusItem struct {
-	Name  string
-	Badge ui.HTML
-	Bar   ui.HTML
+	Name string
+	// Project follows the name on an org page grouped by tag, where two
+	// projects may name a monitor alike.
+	Project string
+	Badge   ui.HTML
+	Bar     ui.HTML
 }
 
-type statusIncident struct{ Name, Since string }
+// statusIncident is a row of open or past incidents: the monitor, its
+// project on an org page, and when. Never the reason.
+type statusIncident struct{ Name, Project, Since string }
 
 func (h *Web) mountStatus(mux *http.ServeMux) {
 	mux.Handle("GET /s/{slug}", h.publicPage(h.statusPage))
 	mux.Handle("POST /s/{slug}", h.publicPage(h.statusUnlock))
 	mux.Handle("GET /s/{slug}/badge/{file}", h.publicPage(h.statusBadge))
+	mux.Handle("GET /s/{slug}/badge/{project}/{file}", h.publicPage(h.statusBadge))
 }
 
 // publicPage serves a route that never reads identity: headers for a
@@ -164,20 +176,45 @@ func (h *Web) renderStatus(w http.ResponseWriter, r *http.Request, page *domain.
 	loc := st.Location
 	d := statusData{Root: middleware.Prefix(r), Title: page.Title, Slug: page.Slug, Down: st.Down > 0, Updated: "updated " + timefmt.Clock(now, loc) + " " + now.In(loc).Format("MST")}
 	d.Banner = statusBanner(st, loc)
+	// an org page names a row's project where the group does not
+	projectOf := func(id string, always bool) string {
+		if !page.IsOrg() || (!always && page.GroupBy == domain.GroupByProject) {
+			return ""
+		}
+		if pr := st.ProjectOf(id); pr != nil {
+			return pr.Name
+		}
+		return ""
+	}
 	for _, g := range st.Groups {
 		group := statusGroup{Name: g.Name}
 		for _, m := range g.Monitors {
 			cells := view.DayCells(now, m.CreatedAt, m.State, st.Events[m.ID])
 			pct := view.UpPercent(now, m.CreatedAt, m.State, st.Events[m.ID], 90*24*time.Hour)
 			group.Items = append(group.Items, statusItem{
-				Name: m.Name, Badge: ui.StateBadge(ui.StateBadgeProps{State: string(m.State)}),
+				Name: m.Name, Project: projectOf(m.ProjectID, false), Badge: ui.StateBadge(ui.StateBadgeProps{State: string(m.State)}),
 				Bar: ui.UptimeBar(cells, false, upLabel(pct, " over 90 days"), []string{"90 days ago", upLabel(pct, ""), "today"}),
 			})
 		}
 		d.Groups = append(d.Groups, group)
 	}
+	open, days := page.IncidentWindow()
+	d.ShowOpen, d.ShowPast = open, days > 0
 	for _, inc := range st.Incidents {
-		d.Incidents = append(d.Incidents, statusIncident{Name: inc.MonitorName, Since: "since " + timefmt.Clock(inc.OpenedAt, loc)[:5]})
+		d.Incidents = append(d.Incidents, statusIncident{Name: inc.MonitorName, Project: projectOf(inc.ProjectID, true), Since: "since " + timefmt.Clock(inc.OpenedAt, loc)[:5]})
+	}
+	for _, inc := range st.PastIncidents {
+		when := inc.OpenedAt.In(loc).Format("2 Jan 15:04")
+		if inc.ResolvedAt != nil {
+			when += " · " + timefmt.Span(inc.ResolvedAt.Sub(inc.OpenedAt))
+		}
+		d.Past = append(d.Past, statusIncident{Name: inc.MonitorName, Project: projectOf(inc.ProjectID, true), Since: when})
+	}
+	if d.ShowPast && len(d.Past) == 0 {
+		d.PastEmpty = fmt.Sprintf("No incidents in the last %d days.", days)
+	}
+	if st.PastMore > 0 {
+		d.PastMore = fmt.Sprintf("and %d earlier", st.PastMore)
 	}
 	out, err := h.tmpl.Render("status", "status-page", d)
 	if err != nil {
@@ -218,7 +255,9 @@ func statusBanner(st *service.PublicStatus, loc *time.Location) ui.HTML {
 	return ui.StatusBanner("up", "All systems operational", "")
 }
 
-// statusBadge answers /s/{slug}/badge/{monitor}.svg and .json.
+// statusBadge answers /s/{slug}/badge/{monitor}.svg and .json. On an org
+// page where two projects use the slug, /s/{slug}/badge/{project}/{monitor}
+// names one; an ambiguous slug alone is a 404.
 func (h *Web) statusBadge(w http.ResponseWriter, r *http.Request) error {
 	page, err := h.svc.StatusPageBySlug(r.Context(), r.PathValue("slug"))
 	if err != nil {
@@ -236,11 +275,19 @@ func (h *Web) statusBadge(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	project := r.PathValue("project")
 	var m *domain.Monitor
 	for _, cand := range st.Monitors {
-		if cand.Slug == slug {
-			m = cand
+		if cand.Slug != slug {
+			continue
 		}
+		if pr := st.ProjectOf(cand.ProjectID); project != "" && (pr == nil || pr.Slug != project) {
+			continue
+		}
+		if m != nil {
+			return domain.NotFound("badge")
+		}
+		m = cand
 	}
 	if m == nil {
 		return domain.NotFound("badge")

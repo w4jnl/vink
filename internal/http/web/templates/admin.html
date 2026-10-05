@@ -1,7 +1,7 @@
 {{define "content"}}<div class="vk-page{{if not .Drawer}} vk-page--full{{end}}" id="page"><main class="vk-main" id="admin">
 <div class="vk-main__head"><h1>{{.Org}}</h1><span class="vk-muted vk-mono">org settings</span></div>
 {{tabs .Tabs .Tab "Org settings"}}
-<div id="tab">{{if eq .Tab "agents"}}{{template "admin-agents" .}}{{else if eq .Tab "projects"}}{{template "admin-projects" .}}{{else if eq .Tab "members"}}{{template "admin-members" .}}{{else if eq .Tab "audit"}}{{template "admin-audit" .}}{{else}}{{template "admin-tab" .}}{{end}}</div>
+<div id="tab">{{if eq .Tab "agents"}}{{template "admin-agents" .}}{{else if eq .Tab "projects"}}{{template "admin-projects" .}}{{else if eq .Tab "members"}}{{template "admin-members" .}}{{else if eq .Tab "pages"}}{{template "admin-pages" .}}{{else if eq .Tab "audit"}}{{template "admin-audit" .}}{{else}}{{template "admin-tab" .}}{{end}}</div>
 </main>{{if .Drawer}}<aside class="vk-drawer" id="drawer">{{template "agent-drawer" .Drawer}}</aside>{{end}}</div>{{end}}
 
 {{define "admin-audit"}}<div class="vk-tabhead"><p class="vk-lede">{{.Lede}}</p></div>{{template "audit-log" .Audit}}{{end}}
@@ -74,3 +74,6 @@
 {{settingsrow (dict "Title" "Transfer ownership" "Sub" "Make another member the owner. You stay on as admin." "Prose" true "Cells" .TransferCells "Actions" .TransferActions)}}
 {{settingsrow (dict "Title" "Delete org" "Sub" .DeleteSub "Prose" true "Actions" .DeleteActions)}}
 </div>{{end}}
+
+{{define "admin-pages"}}<div class="vk-tabhead"><p class="vk-lede">{{.Lede}}</p>{{if not .Panel}}{{button (dict "Label" "Add page" "Href" (print .TabPath "?add=1"))}}{{end}}</div>
+<div class="vk-srows">{{if and .Panel (eq .Panel.EditID "")}}{{template "page-panel" .Panel}}{{end}}{{range .Pages}}{{if and $.Panel (eq $.Panel.EditID .Slug)}}{{template "page-panel" $.Panel}}{{else}}{{settingsrow (dict "Title" .Title "Sub" .Sub "Cells" .Cells "Actions" .Actions)}}{{end}}{{else}}{{if not .Panel}}<div class="vk-empty"><h3>No status pages</h3><p>Add one to show monitors from the org's projects to people without an account.</p></div>{{end}}{{end}}</div>{{end}}

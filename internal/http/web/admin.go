@@ -7,11 +7,11 @@ import (
 	"github.com/w4jnl/vink/internal/http/web/ui"
 )
 
-// Org settings: /o/{org}/admin/{members|projects|agents}, for org admins
+// Org settings: /o/{org}/admin/{members|projects|pages|agents}, for org admins
 // and owners. A member of another org gets a 404, a member of this org
 // without the role a 403.
 
-var orgTabs = []ui.Tab{{ID: "members", Label: "Members"}, {ID: "projects", Label: "Projects"}, {ID: "agents", Label: "Agents"}, {ID: "audit", Label: "Audit log"}}
+var orgTabs = []ui.Tab{{ID: "members", Label: "Members"}, {ID: "projects", Label: "Projects"}, {ID: "pages", Label: "Status pages"}, {ID: "agents", Label: "Agents"}, {ID: "audit", Label: "Audit log"}}
 
 // orgAdmin resolves the org from the path and binds an org scope.
 func (h *Web) orgAdmin(fn handlerFn) http.Handler {
@@ -98,6 +98,10 @@ func (h *Web) adminData(c *reqCtx, tab string) (adminData, error) {
 	if err != nil {
 		return d, err
 	}
+	pages, err := h.svc.ListOrgStatusPages(c.r.Context(), c.scope)
+	if err != nil {
+		return d, err
+	}
 	for _, t := range orgTabs {
 		tab := ui.Tab{ID: t.ID, Label: t.Label, Href: c.orgPath() + "/" + t.ID}
 		switch t.ID {
@@ -105,6 +109,8 @@ func (h *Web) adminData(c *reqCtx, tab string) (adminData, error) {
 			tab.Count = ui.Count(len(members))
 		case "projects":
 			tab.Count = ui.Count(n)
+		case "pages":
+			tab.Count = ui.Count(len(pages))
 		case "agents":
 			tab.Count = ui.Count(len(agents))
 		}
@@ -115,6 +121,8 @@ func (h *Web) adminData(c *reqCtx, tab string) (adminData, error) {
 		d.Lede = "Roles apply to every project in " + c.org.Slug + ". Admins manage members and projects; only owners transfer ownership or delete the org."
 	case "projects":
 		d.Lede = "A project holds monitors, channels, routes and keys. Roles in " + c.org.Slug + " apply to every project."
+	case "pages":
+		d.Lede = "Public pages that show monitors from " + c.org.Slug + "'s projects, one group per project or per tag. No sign-in, no scripts, cached for 30 s."
 	case "agents":
 		d.Lede = "Agents run pull checks from networks vink cannot reach. An agent dials out to vink over WebSocket, keeps nothing on disk and never listens on a port."
 	case "audit":
@@ -146,6 +154,8 @@ func (h *Web) orgAdminTab(c *reqCtx) error {
 		return h.projectsList(c)
 	case "members":
 		return h.membersList(c)
+	case "pages":
+		return h.orgPagesList(c)
 	}
 	d, err := h.adminData(c, tab)
 	if err != nil {

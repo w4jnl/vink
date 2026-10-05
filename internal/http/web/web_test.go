@@ -955,7 +955,11 @@ func TestSettingsPages(t *testing.T) {
 	tab := e.get(projPath+"/settings/pages", false)
 	tab.has(t, `Status pages<span class="vk-tab__n">0</span>`, "No status pages", "cached for 30 s")
 	add := e.get(projPath+"/settings/pages?add=1", false)
-	add.has(t, `id="page-panel"`, `vk-affix__text">localhost:8080/s/<`, `name="access" value="public" checked`, `placeholder="only with Password"`, `disabled`, `for="custom_domain"`, ">Save page<")
+	add.has(t, `id="page-panel"`, `vk-affix__text">localhost:8080/s/<`, `name="access" value="public" checked`, `placeholder="only with Password"`, `disabled`, `for="custom_domain"`, ">Save page<",
+		`<select class="vk-input" id="incidents" name="incidents"`, `<option value="open" selected>Open incidents</option>`, `<option value="30d">Open and the last 30 days</option>`, "never why")
+	if strings.Contains(add.body, `name="group_by"`) || strings.Contains(add.body, `name="projects"`) {
+		t.Error("a project's page has no project list and no grouping choice")
+	}
 	pw := e.get(projPath+"/settings/pages?add=1&access=password&title=Office", true)
 	pw.has(t, `name="access" value="password" checked`, `value="Office"`)
 	if strings.Contains(pw.body, `disabled=""`) {
@@ -966,7 +970,7 @@ func TestSettingsPages(t *testing.T) {
 		t.Fatalf("create: %d %s", created.code, created.body)
 	}
 	tab = e.get(projPath+"/settings/pages", false)
-	tab.has(t, "Homelab status", "http://localhost:8080/s/homelab", ">public<", `<span class="vk-tag">prod</span>`, "no custom domain", `href="/s/homelab"`, ">Open<")
+	tab.has(t, "Homelab status", "http://localhost:8080/s/homelab", ">public<", `<span class="vk-tag">prod</span>`, ">open incidents<", "no custom domain", `href="/s/homelab"`, ">Open<")
 	noPw := e.post(projPath+"/settings/pages", url.Values{"title": {"Office"}, "slug": {"office"}, "access": {"password"}}, false)
 	if noPw.code != 422 || !strings.Contains(noPw.body, "Set a password or make the page public.") {
 		t.Fatalf("private without password: %d %s", noPw.code, noPw.body)
@@ -980,17 +984,118 @@ func TestSettingsPages(t *testing.T) {
 	}
 	edit := e.get(projPath+"/settings/pages?edit=office", false)
 	edit.has(t, `value="Office"`, `name="access" value="password" checked`, `placeholder="unchanged"`, "Delete page")
-	if p := e.post(projPath+"/settings/pages/office", url.Values{"title": {"Office"}, "slug": {"office"}, "access": {"password"}, "custom_domain": {"status.w4j.nl"}}, false); p.code != 303 {
+	if p := e.post(projPath+"/settings/pages/office", url.Values{"title": {"Office"}, "slug": {"office"}, "access": {"password"}, "custom_domain": {"status.w4j.nl"}, "incidents": {"7d"}}, false); p.code != 303 {
 		t.Fatalf("edit keeps the password: %d %s", p.code, p.body)
 	}
 	tab = e.get(projPath+"/settings/pages", false)
-	tab.has(t, ">password<", "status.w4j.nl")
+	tab.has(t, ">password<", "status.w4j.nl", ">incidents, 7 days<")
 	page, _ := e.svc.StatusPage(context.Background(), e.scope, "office")
-	if !page.HasPassword() || page.CustomDomain != "status.w4j.nl" {
+	if !page.HasPassword() || page.CustomDomain != "status.w4j.nl" || page.Incidents != "7d" {
 		t.Fatalf("edited page: %+v", page)
 	}
 	if p := e.post(projPath+"/settings/pages/office/delete", nil, false); p.code != 303 {
 		t.Fatalf("delete: %d", p.code)
+	}
+}
+
+// TestOrgStatusPages: the org's Status pages tab manages pages that show
+// monitors of the org's projects, grouped by project or by tag, with past
+// incidents when asked; badges name a project when a slug is not unique.
+func TestOrgStatusPages(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	root := "/o/homelab/admin/pages"
+	admin := domain.Scope{InstanceAdmin: true, Role: domain.RoleOwner}
+	staging, err := e.svc.CreateProject(ctx, admin, e.org.ID, "staging", "Staging", "Europe/Amsterdam")
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.monitor("api", "prod")
+	e.monitor("nightly", "backup")
+	stagingScope := domain.Scope{OrgID: e.org.ID, ProjectID: staging.ID, Role: domain.RoleAdmin, Actor: "test"}
+	if _, err := e.svc.CreateMonitor(ctx, stagingScope, &domain.Monitor{Slug: "api", Name: "Api", Kind: domain.KindHeartbeat, Tags: []string{"prod"},
+		Heartbeat: &domain.HeartbeatSpec{Schedule: domain.Schedule{Period: domain.MustDuration("1h")}, Grace: domain.MustDuration("5m")}}); err != nil {
+		t.Fatal(err)
+	}
+
+	tab := e.get(root, false)
+	tab.has(t, `aria-current="page">Status pages<span class="vk-tab__n">0</span>`, "No status pages", "one group per project or per tag",
+		`href="/o/homelab/admin/pages?add=1">Add page</a>`)
+	add := e.get(root+"?add=1", false)
+	add.has(t, `id="page-panel"`, ">Projects<", `name="projects" value="`+e.project.ID+`" form="page-form"`, ">Production<", ">Staging<",
+		"None ticked shows every project", `name="group_by" value="project" checked`, `name="incidents"`, `action="/o/homelab/admin/pages"`)
+
+	created := e.post(root, url.Values{"title": {"Everything"}, "slug": {"everything"}, "group_by": {"project"}, "incidents": {"30d"}, "access": {"public"}}, false)
+	if created.code != 303 {
+		t.Fatalf("create: %d %s", created.code, created.body)
+	}
+	tab = e.get(root, false)
+	tab.has(t, "Everything", "http://localhost:8080/s/everything", ">every project<", ">incidents, 30 days<", `href="/s/everything"`)
+	if dup := e.post(root, url.Values{"title": {"Clash"}, "slug": {"everything"}, "access": {"public"}}, false); dup.code != 422 || !strings.Contains(dup.body, "This address is taken.") {
+		t.Fatalf("duplicate: %d", dup.code)
+	}
+
+	// staging's api failed for 12 minutes half an hour ago
+	now := e.now
+	tgt, _ := e.svc.ResolvePing(ctx, staging.PingKey, "api", "", false)
+	_, _, _ = e.svc.RecordPing(ctx, tgt, service.PingObservation{Signal: domain.SignalFail, At: now.Add(-30 * time.Minute)})
+	_, _, _ = e.svc.RecordPing(ctx, tgt, service.PingObservation{Signal: domain.SignalOK, At: now.Add(-18 * time.Minute)})
+
+	page := e.do("GET", "/s/everything", nil, false, false)
+	if page.code != 200 {
+		t.Fatalf("org page: %d %s", page.code, page.body)
+	}
+	page.has(t, "<h1>Everything</h1>", "<h2>Production</h2>", "<h2>Staging</h2>", "All systems operational", "<h2>Past incidents</h2>",
+		`<span class="vk-status__name">Api <span class="vk-muted">· Staging</span></span><span class="vk-muted vk-mono">27 Sep 13:30 · 12 min</span>`, "updated 14:00:00 CEST")
+	if strings.Contains(page.body, "Open incidents") || strings.Contains(page.body, "Acme") {
+		t.Error("no open incidents, and nothing from another org")
+	}
+	if strings.Index(page.body, "<h2>Production</h2>") > strings.Index(page.body, "<h2>Staging</h2>") {
+		t.Error("projects are in name order")
+	}
+	// the same slug in two projects: the badge needs the project
+	if p := e.do("GET", "/s/everything/badge/api.svg", nil, false, false); p.code != 404 {
+		t.Fatalf("ambiguous badge: %d", p.code)
+	}
+	if p := e.do("GET", "/s/everything/badge/staging/api.svg", nil, false, false); p.code != 200 || !strings.Contains(p.body, ">up<") {
+		t.Fatalf("badge by project: %d %s", p.code, p.body)
+	}
+	if p := e.do("GET", "/s/everything/badge/nightly.json", nil, false, false); p.code != 200 {
+		t.Fatalf("unique badge: %d", p.code)
+	}
+
+	// by tag: tag groups, each row with its project
+	if p := e.post(root+"/everything", url.Values{"title": {"Everything"}, "slug": {"everything"}, "group_by": {"tag"}, "match_tags": {"prod"}, "incidents": {"open"}, "access": {"public"}}, false); p.code != 303 {
+		t.Fatalf("edit: %d %s", p.code, p.body)
+	}
+	page = e.do("GET", "/s/everything", nil, false, false)
+	page.has(t, "<h2>prod</h2>", `Api <span class="vk-muted">· Production</span>`, `Api <span class="vk-muted">· Staging</span>`)
+	if strings.Contains(page.body, "Past incidents") || strings.Contains(page.body, "Nightly") {
+		t.Error("open incidents only, and only the prod tag")
+	}
+
+	// a chosen project, ticked again when the panel opens
+	if p := e.post(root+"/everything", url.Values{"title": {"Everything"}, "slug": {"everything"}, "group_by": {"project"}, "projects": {staging.ID}, "incidents": {"7d"}, "access": {"public"}}, false); p.code != 303 {
+		t.Fatalf("choose: %d %s", p.code, p.body)
+	}
+	e.get(root, false).has(t, ">Staging<")
+	e.get(root+"?edit=everything", false).has(t, `value="`+staging.ID+`" checked form="page-form"`, `name="group_by" value="project" checked`, `<option value="7d" selected>`, "Delete page")
+	page = e.do("GET", "/s/everything", nil, false, false)
+	if strings.Contains(page.body, "Production") || !strings.Contains(page.body, "<h2>Staging</h2>") {
+		t.Fatalf("chosen project only: %s", page.body)
+	}
+	if bad := e.post(root+"/everything", url.Values{"title": {"Everything"}, "slug": {"everything"}, "projects": {"01NOTAPROJECT"}, "access": {"public"}}, false); bad.code != 422 || !strings.Contains(bad.body, "not a project of this org") {
+		t.Fatalf("unknown project: %d %s", bad.code, bad.body)
+	}
+	// the project's own tab does not list the org's page
+	if strings.Contains(e.get(projPath+"/settings/pages", false).body, "Everything") {
+		t.Error("an org page in a project's list")
+	}
+	if p := e.post(root+"/everything/delete", nil, false); p.code != 303 {
+		t.Fatalf("delete: %d", p.code)
+	}
+	if p := e.do("GET", "/s/everything", nil, false, false); p.code != 404 {
+		t.Fatalf("deleted page: %d", p.code)
 	}
 }
 
@@ -2216,7 +2321,7 @@ func TestDeployedUnderAPath(t *testing.T) {
 		"/o/homelab/p/prod", "/o/homelab/p/prod/m/nightly", "/o/homelab/p/prod/m/new", "/o/homelab/p/prod/m/new?kind=http", "/o/homelab/p/prod/m/nightly/edit",
 		"/o/homelab/p/prod/m/nightly/history", "/o/homelab/p/prod/incidents",
 		"/o/homelab/p/prod/settings/channels", "/o/homelab/p/prod/settings/channels?add=1", "/o/homelab/p/prod/settings/routes", "/o/homelab/p/prod/settings/maintenance", "/o/homelab/p/prod/settings/pages", "/o/homelab/p/prod/settings/keys",
-		"/o/homelab/admin/members", "/o/homelab/admin/projects", "/o/homelab/admin/agents", "/o/homelab/admin/agents/dc2-probe", "/o/homelab/admin/audit",
+		"/o/homelab/admin/members", "/o/homelab/admin/projects", "/o/homelab/admin/pages", "/o/homelab/admin/pages?add=1", "/o/homelab/admin/agents", "/o/homelab/admin/agents/dc2-probe", "/o/homelab/admin/audit",
 		"/admin/orgs", "/admin/orgs?add=1", "/admin/users", "/admin/server", "/admin/audit", "/account", "/account?setup=1", "/account?off=1", "/projects", "/s/homelab", "/s/office", "/nope",
 	}
 	for _, p := range pages {

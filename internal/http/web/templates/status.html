@@ -13,8 +13,9 @@
 <body class="vk-app">
 <div class="vk-status"><div class="vk-status__head"><span class="vk-status__mark">{{mark 28}}</span><h1>{{.Title}}</h1></div>
 {{.Banner}}
-{{range .Groups}}<div class="vk-status__group"><h2>{{.Name}}</h2>{{range .Items}}<div class="vk-status__item"><div class="vk-status__line"><span class="vk-status__name">{{.Name}}</span>{{.Badge}}</div>{{.Bar}}</div>{{end}}</div>{{end}}
-{{if .Incidents}}<div class="vk-status__group"><h2>Open incidents</h2>{{range .Incidents}}<div class="vk-status__item"><div class="vk-status__line"><span class="vk-status__name">{{.Name}}</span><span class="vk-muted vk-mono">{{.Since}}</span></div></div>{{end}}</div>{{end}}
+{{range .Groups}}<div class="vk-status__group"><h2>{{.Name}}</h2>{{range .Items}}<div class="vk-status__item"><div class="vk-status__line"><span class="vk-status__name">{{.Name}}{{if .Project}} <span class="vk-muted">· {{.Project}}</span>{{end}}</span>{{.Badge}}</div>{{.Bar}}</div>{{end}}</div>{{end}}
+{{if and .ShowOpen .Incidents}}<div class="vk-status__group"><h2>Open incidents</h2>{{range .Incidents}}<div class="vk-status__item"><div class="vk-status__line"><span class="vk-status__name">{{.Name}}{{if .Project}} <span class="vk-muted">· {{.Project}}</span>{{end}}</span><span class="vk-muted vk-mono">{{.Since}}</span></div></div>{{end}}</div>{{end}}
+{{if .ShowPast}}<div class="vk-status__group"><h2>Past incidents</h2>{{range .Past}}<div class="vk-status__item"><div class="vk-status__line"><span class="vk-status__name">{{.Name}}{{if .Project}} <span class="vk-muted">· {{.Project}}</span>{{end}}</span><span class="vk-muted vk-mono">{{.Since}}</span></div></div>{{else}}<div class="vk-status__item"><span class="vk-muted">{{.PastEmpty}}</span></div>{{end}}{{if .PastMore}}<div class="vk-status__item"><span class="vk-muted">{{.PastMore}}</span></div>{{end}}</div>{{end}}
 <div class="vk-status__foot"><span>{{.Updated}}</span><span>powered by <a href="https://github.com/w4jnl/vink">vink</a></span></div></div>
 </body>
 </html>{{end}}

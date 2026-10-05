@@ -61,6 +61,10 @@ type panelData struct {
 	Days       []string
 	Timezones  []ui.Option
 	NextHint   string
+	// Status pages: which incidents; an org page's projects and grouping.
+	IncidentOptions []ui.Option
+	Org             bool
+	ProjectChecks   []ui.CheckboxProps
 }
 
 type keyForm struct{ Values, Errors map[string]string }
@@ -269,7 +273,7 @@ func (h *Web) settingsData(c *reqCtx, tabName string, o settingsOpts) (settingsD
 		}
 	case "pages":
 		for _, p := range pages {
-			d.Pages = append(d.Pages, h.statusPageRow(c, p, root+"pages"))
+			d.Pages = append(d.Pages, h.statusPageRow(c, p, root+"pages", nil))
 		}
 	}
 	return d, nil
@@ -1159,24 +1163,61 @@ func (h *Web) pagePrefix() string {
 	return base + "/s/"
 }
 
-func (h *Web) statusPageRow(c *reqCtx, p *domain.StatusPage, root string) pageRow {
+// incidentOptions are the Incidents select's choices.
+var incidentOptions = []ui.Option{
+	{Value: domain.IncidentsOpen, Label: "Open incidents"},
+	{Value: "7d", Label: "Open and the last 7 days"},
+	{Value: "30d", Label: "Open and the last 30 days"},
+	{Value: "90d", Label: "Open and the last 90 days"},
+	{Value: domain.IncidentsNone, Label: "None"},
+}
+
+// incidentsCell reads a page's incidents setting in a row.
+func incidentsCell(v string) string {
+	switch v {
+	case domain.IncidentsNone:
+		return "no incidents"
+	case "7d", "30d", "90d":
+		return "incidents, " + strings.TrimSuffix(v, "d") + " days"
+	}
+	return "open incidents"
+}
+
+// statusPageRow is a page in a settings list. projectNames names an org
+// page's projects; a project page's row reads its tags instead.
+func (h *Web) statusPageRow(c *reqCtx, p *domain.StatusPage, root string, projectNames map[string]string) pageRow {
 	row := pageRow{Slug: p.Slug, Title: p.Title, Sub: h.pageURL(p.Slug)}
 	access := "public"
 	if p.HasPassword() {
 		access = "password"
 	}
-	var tags strings.Builder
-	for _, t := range p.MatchTags {
-		tags.WriteString(string(ui.Tag(t)))
+	var shows strings.Builder
+	if p.IsOrg() {
+		var names []string
+		for _, id := range p.Projects {
+			if n, ok := projectNames[id]; ok {
+				names = append(names, n)
+			}
+		}
+		if len(names) == 0 {
+			names = []string{"every project"}
+		}
+		shows.WriteString(esc(strings.Join(names, ", ")))
+		if p.GroupBy == domain.GroupByTag {
+			shows.WriteString(" · by tag")
+		}
 	}
-	if tags.Len() == 0 {
-		tags.WriteString("every monitor")
+	for _, t := range p.MatchTags {
+		shows.WriteString(string(ui.Tag(t)))
+	}
+	if shows.Len() == 0 {
+		shows.WriteString("every monitor")
 	}
 	domainText := "no custom domain"
 	if p.CustomDomain != "" {
 		domainText = p.CustomDomain
 	}
-	row.Cells = []ui.Cell{{Text: access, Size: "s"}, {HTML: ui.HTML(tags.String())}, {Text: domainText, Size: "l", Mono: true}}
+	row.Cells = []ui.Cell{{Text: access, Size: "s"}, {HTML: ui.HTML(shows.String())}, {Text: incidentsCell(p.Incidents)}, {Text: domainText, Size: "l", Mono: true}}
 	row.Actions = ui.Button(ui.ButtonProps{Label: "Open", Href: c.href("/s/" + p.Slug)}) + ui.Button(ui.ButtonProps{Label: "Edit", Href: root + "?edit=" + url.QueryEscape(p.Slug)})
 	return row
 }
@@ -1185,12 +1226,13 @@ func (h *Web) statusPagePanel(c *reqCtx, p *domain.StatusPage) *panelData {
 	root := c.projectPath() + "/settings/pages"
 	panel := &panelData{
 		Title: "Add page", Action: root, KindPath: root + "?add=1", CancelPath: root, CSRF: c.csrf(), SubmitLabel: "Save page",
-		Values: map[string]string{"title": "", "slug": "", "match_tags": "", "access": "public", "password": "", "custom_domain": "", "password_placeholder": "only with Password", "prefix": h.pagePrefix()},
-		Errors: map[string]string{}, Repeat: "public",
+		Values: map[string]string{"title": "", "slug": "", "match_tags": "", "incidents": domain.IncidentsOpen, "access": "public", "password": "", "custom_domain": "", "password_placeholder": "only with Password", "prefix": h.pagePrefix()},
+		Errors: map[string]string{}, Repeat: "public", IncidentOptions: incidentOptions,
 	}
 	if p != nil {
 		panel.Title, panel.EditID, panel.Action, panel.DeletePath, panel.KindPath = "Edit page", p.Slug, root+"/"+p.Slug, root+"/"+p.Slug+"/delete", root+"?edit="+url.QueryEscape(p.Slug)
 		panel.Values["title"], panel.Values["slug"], panel.Values["match_tags"], panel.Values["custom_domain"] = p.Title, p.Slug, strings.Join(p.MatchTags, ", "), p.CustomDomain
+		panel.Values["incidents"] = p.Incidents
 		if p.HasPassword() {
 			panel.Values["access"], panel.Repeat = "password", "password"
 			panel.Values["password_placeholder"] = "unchanged"
@@ -1209,7 +1251,18 @@ func (h *Web) parseStatusPage(values map[string][]string, p *panelData) (*domain
 		p.Values[k] = v
 		return v
 	}
-	page := &domain.StatusPage{Title: get("title"), Slug: get("slug"), CustomDomain: get("custom_domain"), Public: true}
+	page := &domain.StatusPage{Title: get("title"), Slug: get("slug"), CustomDomain: get("custom_domain"), Incidents: get("incidents"), Public: true}
+	if p.Org {
+		page.GroupBy = get("group_by")
+		page.Projects = values["projects"]
+		chosen := map[string]bool{}
+		for _, id := range page.Projects {
+			chosen[id] = true
+		}
+		for i := range p.ProjectChecks {
+			p.ProjectChecks[i].Checked = chosen[p.ProjectChecks[i].Value]
+		}
+	}
 	if v := get("match_tags"); v != "" {
 		page.MatchTags = domain.NormalizeTags(strings.Split(v, ","))
 	}
