@@ -243,10 +243,7 @@ func (a *Authenticator) OIDCCallback(w http.ResponseWriter, r *http.Request) (*P
 			return nil, "", err
 		}
 	}
-	if err := a.svc.SyncDerivedMemberships(ctx, user.ID, roles, "oidc"); err != nil {
-		return nil, "", err
-	}
-	if err := a.svc.SetDerivedInstanceAdmin(ctx, user, admin); err != nil {
+	if err := a.applyRoles(ctx, user, "oidc", a.cfg.OIDC.Roles, a.oidcAdmins, roles, admin); err != nil {
 		return nil, "", err
 	}
 	p, err := a.startSession(w, r, user, "oidc", nil)

@@ -404,3 +404,79 @@ func TestProxyRefusals(t *testing.T) {
 		t.Fatalf("middleware: %d %+v %+v", rec.Code, who, seen)
 	}
 }
+
+// TestProxyRoleSources: in groups mode the groups and instance_admins set
+// the stored instance admin flag and the roles on every request; in vink
+// mode the groups are ignored, roles set in vink stay, and a listed name
+// is made instance admin (and stays so when the list changes).
+func TestProxyRoleSources(t *testing.T) {
+	ctx := context.Background()
+	cases := []struct {
+		name      string
+		roles     string
+		admins    []string
+		groups    string
+		wantAdmin bool
+		wantRole  bool // homelab role from the groups
+	}{
+		{"groups, admin group", config.RolesGroups, nil, "vink:admin,vink:homelab:member", true, true},
+		{"groups, listed", config.RolesGroups, []string{"Dave@CORP"}, "vink:homelab:member", true, true},
+		{"groups, neither", config.RolesGroups, nil, "vink:homelab:member", false, true},
+		{"vink, admin group", config.RolesVink, nil, "vink:admin,vink:homelab:member", false, false},
+		{"vink, listed", config.RolesVink, []string{"dave"}, "", true, false},
+		{"vink, neither", config.RolesVink, nil, "vink:homelab:member", false, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			e := newEnv(t)
+			a := proxyAuth(t, e, func(c *config.Auth) { c.Proxy.Roles, c.Proxy.InstanceAdmins = tc.roles, tc.admins })
+			p, err := a.Identify(proxyReq("10.0.0.1:1", "s3cret", "dave", tc.groups))
+			if err != nil || p == nil {
+				t.Fatalf("identify: %+v %v", p, err)
+			}
+			fromGroups := false
+			for _, m := range p.Memberships {
+				fromGroups = fromGroups || (m.OrgID == e.org.ID && m.Source == "header")
+			}
+			if p.InstanceAdmin != tc.wantAdmin || fromGroups != tc.wantRole {
+				t.Fatalf("instance admin %v (want %v), role from groups %v (want %v)", p.InstanceAdmin, tc.wantAdmin, fromGroups, tc.wantRole)
+			}
+			stored, _ := e.svc.UserBySubject(ctx, "dave")
+			if stored.InstanceAdmin != tc.wantAdmin {
+				t.Fatalf("stored flag %v, want %v", stored.InstanceAdmin, tc.wantAdmin)
+			}
+			// the next request without the admin group and off the list
+			b := proxyAuth(t, e, func(c *config.Auth) { c.Proxy.Roles = tc.roles })
+			p, _ = b.Identify(proxyReq("10.0.0.1:1", "s3cret", "dave", "vink:homelab:member"))
+			keep := tc.roles == config.RolesVink && tc.wantAdmin // vink mode: unlisting does not demote
+			if p.InstanceAdmin != keep {
+				t.Fatalf("after the change: instance admin %v, want %v", p.InstanceAdmin, keep)
+			}
+		})
+	}
+	// vink mode: a role set in vink survives requests whatever the groups say
+	e := newEnv(t)
+	a := proxyAuth(t, e, func(c *config.Auth) { c.Proxy.Roles = config.RolesVink })
+	p, _ := a.Identify(proxyReq("10.0.0.1:1", "s3cret", "erin", "vink:homelab:viewer"))
+	if err := e.svc.SetMembership(ctx, domain.Scope{InstanceAdmin: true, Role: domain.RoleOwner, Actor: "test"}, p.User.ID, e.org.ID, domain.RoleAdmin); err != nil {
+		t.Fatal(err)
+	}
+	for range 2 {
+		p, _ = a.Identify(proxyReq("10.0.0.1:1", "s3cret", "erin", "vink:homelab:viewer"))
+		if role, ok := p.RoleIn(e.org.ID); !ok || role != domain.RoleAdmin {
+			t.Fatalf("role set in vink: %v %v", role, ok)
+		}
+	}
+}
+
+// TestPolicyFrom: the policy vink serve applies normalises each list the
+// way its provider normalises names.
+func TestPolicyFrom(t *testing.T) {
+	cfg := config.Default().Auth
+	cfg.Proxy.Enabled, cfg.Proxy.Roles, cfg.Proxy.InstanceAdmins = true, config.RolesVink, []string{"JDoe@CORP.EXAMPLE"}
+	cfg.OIDC.InstanceAdmins = []string{"Ann@Example"}
+	p := PolicyFrom(cfg)
+	if !p.Proxy.Enabled || p.Proxy.Roles != config.RolesVink || !p.Proxy.Listed("jdoe") || p.OIDC.Roles != config.RolesGroups || !p.OIDC.Listed("ann@example") {
+		t.Fatalf("policy: %+v", p)
+	}
+}

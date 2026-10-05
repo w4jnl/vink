@@ -112,7 +112,7 @@ func TestInstanceAdminBySourceAndMode(t *testing.T) {
 				t.Fatal(err)
 			}
 			if tc.listed {
-				if err := f.svc.SetDerivedInstanceAdmin(ctx, bob, true); err != nil {
+				if err := f.svc.SetDerivedInstanceAdmin(ctx, bob, true, "config"); err != nil {
 					t.Fatal(err)
 				}
 			}

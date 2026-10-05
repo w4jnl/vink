@@ -220,3 +220,31 @@ func TestOIDCWithoutLocalAccounts(t *testing.T) {
 		t.Fatalf("password sign-in with local off: %v", err)
 	}
 }
+
+// TestOIDCRoleSources: in vink mode an OIDC sign-in ignores the groups
+// claim for roles and instance admin; a listed name is made instance admin.
+func TestOIDCRoleSources(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		admins    []string
+		wantAdmin bool
+	}{
+		{"not listed", nil, false},
+		{"listed", []string{"alice"}, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			e := newEnv(t)
+			p := oidctest.New(t)
+			p.Claims = map[string]any{"preferred_username": "alice", "groups": []string{"vink:homelab:admin", "vink:admin"}}
+			a := oidcAuth(t, e, p, func(c *config.Auth) { c.OIDC.Roles, c.OIDC.InstanceAdmins = config.RolesVink, tc.admins })
+			to, cookie := start(t, a, "/")
+			principal, _, _, err := callback(a, p.Visit(t, to), cookie)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if principal.InstanceAdmin != tc.wantAdmin || len(principal.Memberships) != 0 {
+				t.Fatalf("instance admin %v (want %v), memberships %+v", principal.InstanceAdmin, tc.wantAdmin, principal.Memberships)
+			}
+		})
+	}
+}

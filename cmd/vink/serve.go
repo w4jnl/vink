@@ -119,6 +119,11 @@ func runServe(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 	sched := engine.NewScheduler(svc, bus, logging.Sub(log, "scheduler"), nil)
 	sched.OnLag = m.LagObserver(m.SchedulerLag)
 	dispatcher := engine.NewDispatcher(svc, logging.Sub(log, "dispatcher"), nil)
+	// where proxy and OIDC people's roles come from; a provider switched to
+	// roles set in vink takes over the roles its groups gave, once
+	if err := svc.ApplyAuthPolicy(ctx, auth.PolicyFrom(cfg.Auth)); err != nil {
+		return fmt.Errorf("apply auth policy: %w", err)
+	}
 	authn, err := auth.New(svc, cfg.Auth, cfg.Server.BaseURL, logging.Sub(log, "auth"))
 	if err != nil {
 		return fmt.Errorf("auth: %w", err)

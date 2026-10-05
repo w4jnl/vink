@@ -395,7 +395,7 @@ func (s *Service) AdoptProviderUser(ctx context.Context, u *domain.User, source 
 
 // SetDerivedInstanceAdmin sets the flag an identity provider's group
 // decides, for proxy and OIDC accounts; a change is logged.
-func (s *Service) SetDerivedInstanceAdmin(ctx context.Context, u *domain.User, admin bool) error {
+func (s *Service) SetDerivedInstanceAdmin(ctx context.Context, u *domain.User, admin bool, why string) error {
 	if u.InstanceAdmin == admin {
 		return nil
 	}
@@ -405,7 +405,7 @@ func (s *Service) SetDerivedInstanceAdmin(ctx context.Context, u *domain.User, a
 			return err
 		}
 		u.InstanceAdmin = admin
-		return s.record(ctx, q, sc, audit.Entry{Action: "user.instance_admin", Target: u.Subject, TargetID: u.ID, Detail: map[string]any{"admin": admin, "group": true}})
+		return s.record(ctx, q, sc, audit.Entry{Action: "user.instance_admin", Target: u.Subject, TargetID: u.ID, Detail: map[string]any{"admin": admin, "source": why}})
 	})
 }
 

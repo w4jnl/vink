@@ -91,10 +91,14 @@ type Authenticator struct {
 	// proxyRules and oidcRules map each provider's groups to roles.
 	proxyRules groupRules
 	oidcRules  groupRules
-	outbound   *outbound.Env
-	oidcMu     sync.Mutex
-	oidc       *oidcState
-	usedStates map[string]time.Time
+	// proxyAdmins and oidcAdmins are auth.<provider>.instance_admins,
+	// normalised.
+	proxyAdmins map[string]bool
+	oidcAdmins  map[string]bool
+	outbound    *outbound.Env
+	oidcMu      sync.Mutex
+	oidc        *oidcState
+	usedStates  map[string]time.Time
 }
 
 // New builds an authenticator. baseURL decides whether cookies are Secure.
@@ -128,6 +132,7 @@ func New(svc *service.Service, cfg config.Auth, baseURL string, log *slog.Logger
 		}
 		a.groupRe = re
 		a.proxyRules = groupRules{re: re, adminGroup: cfg.Proxy.InstanceAdminGroup, groupMap: cfg.Proxy.GroupMap, defaultOrg: cfg.Proxy.DefaultOrg}
+		a.proxyAdmins = adminSet(cfg.Proxy.InstanceAdmins, cfg.Proxy.StripRealm, cfg.Proxy.Lowercase)
 	}
 	// a logout URL without a return address strands people at the provider
 	for _, l := range []struct{ key, url string }{{"auth.proxy.logout_url", cfg.Proxy.LogoutURL}, {"auth.oidc.logout_url", cfg.OIDC.LogoutURL}} {
@@ -141,6 +146,7 @@ func New(svc *service.Service, cfg config.Auth, baseURL string, log *slog.Logger
 			return nil, fmt.Errorf("auth.oidc.group_pattern: %w", err)
 		}
 		a.oidcRules = groupRules{re: re, adminGroup: cfg.OIDC.InstanceAdminGroup, groupMap: cfg.OIDC.GroupMap, defaultOrg: cfg.OIDC.DefaultOrg}
+		a.oidcAdmins = adminSet(cfg.OIDC.InstanceAdmins, cfg.OIDC.StripRealm, cfg.OIDC.Lowercase)
 	}
 	return a, nil
 }
@@ -316,14 +322,63 @@ func (a *Authenticator) fromProxy(r *http.Request) (*Principal, error) {
 		a.log.Info("proxy identity refused: the account is disabled", "subject", subject, "path", r.URL.Path)
 		return nil, &RefusedError{Reason: RefusedDisabled, Subject: subject}
 	}
-	if err := a.svc.SyncHeaderMemberships(ctx, user.ID, roles); err != nil {
+	if err := a.applyRoles(ctx, user, "header", a.cfg.Proxy.Roles, a.proxyAdmins, roles, instanceAdmin); err != nil {
 		return nil, err
 	}
 	memberships, err := a.svc.MembershipsForUser(ctx, user.ID)
 	if err != nil {
 		return nil, err
 	}
-	return &Principal{User: *user, InstanceAdmin: user.InstanceAdmin || instanceAdmin, Memberships: memberships, Source: "proxy", Groups: groups}, nil
+	return &Principal{User: *user, InstanceAdmin: user.InstanceAdmin, Memberships: memberships, Source: "proxy", Groups: groups}, nil
+}
+
+// applyRoles puts a provider's say over a person's roles into vink at a
+// proxy request or an OIDC sign-in. In groups mode the groups set the
+// memberships and, with instance_admins, the stored instance admin flag;
+// in vink mode roles are left to vink and only a listed name is made
+// instance admin. source is the membership source, header or oidc.
+func (a *Authenticator) applyRoles(ctx context.Context, user *domain.User, source, mode string, admins map[string]bool,
+	roles map[string]domain.Role, adminGroup bool) error {
+	listed := admins[user.Subject]
+	if mode == config.RolesVink {
+		if listed {
+			return a.svc.SetDerivedInstanceAdmin(ctx, user, true, "config")
+		}
+		return nil
+	}
+	if err := a.svc.SyncDerivedMemberships(ctx, user.ID, roles, source); err != nil {
+		return err
+	}
+	why := "group"
+	if listed && !adminGroup {
+		why = "config"
+	}
+	return a.svc.SetDerivedInstanceAdmin(ctx, user, adminGroup || listed, why)
+}
+
+// PolicyFrom is the role source vink serve puts in force from config.
+func PolicyFrom(cfg config.Auth) service.AuthPolicy {
+	provider := func(enabled bool, roles string, admins []string, stripRealm, lowercase bool, adminGroup string) service.ProviderPolicy {
+		p := service.ProviderPolicy{Enabled: enabled, Roles: roles, StripRealm: stripRealm, Lowercase: lowercase, AdminGroup: adminGroup}
+		for _, n := range admins {
+			p.InstanceAdmins = append(p.InstanceAdmins, p.Normalize(n))
+		}
+		return p
+	}
+	return service.AuthPolicy{
+		Proxy: provider(cfg.Proxy.Enabled, cfg.Proxy.Roles, cfg.Proxy.InstanceAdmins, cfg.Proxy.StripRealm, cfg.Proxy.Lowercase, cfg.Proxy.InstanceAdminGroup),
+		OIDC:  provider(cfg.OIDC.Enabled, cfg.OIDC.Roles, cfg.OIDC.InstanceAdmins, cfg.OIDC.StripRealm, cfg.OIDC.Lowercase, cfg.OIDC.InstanceAdminGroup),
+	}
+}
+
+// adminSet normalises an instance_admins list the way the provider
+// normalises names.
+func adminSet(names []string, stripRealm, lowercase bool) map[string]bool {
+	out := make(map[string]bool, len(names))
+	for _, n := range names {
+		out[domain.NormalizeSubject(n, stripRealm, lowercase)] = true
+	}
+	return out
 }
 
 func (a *Authenticator) trustedPeer(ip net.IP) bool {
