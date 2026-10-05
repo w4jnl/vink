@@ -92,6 +92,12 @@
           "items": {
             "$ref": "#/$defs/project_entry"
           }
+        },
+        "status_pages": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/org_status_page"
+          }
         }
       }
     },
@@ -590,6 +596,71 @@
         },
         "match_tags": {
           "$ref": "#/$defs/tags"
+        },
+        "incidents": {
+          "description": "open: the open incidents (default); 7d, 30d, 90d: and those resolved in that window, shown as monitor, start and duration; none: neither",
+          "enum": [
+            "open",
+            "7d",
+            "30d",
+            "90d",
+            "none"
+          ]
+        },
+        "public": {
+          "type": "boolean"
+        },
+        "password": {
+          "type": "string"
+        },
+        "custom_domain": {
+          "type": "string"
+        }
+      }
+    },
+    "org_status_page": {
+      "description": "A status page of the org itself: monitors of the org's projects. Pages the file does not name are left alone.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "slug",
+        "title"
+      ],
+      "properties": {
+        "slug": {
+          "$ref": "#/$defs/slug"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "match_tags": {
+          "$ref": "#/$defs/tags"
+        },
+        "projects": {
+          "description": "project slugs, in page order; none shows every project of the org, new ones included",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/slug"
+          }
+        },
+        "group_by": {
+          "description": "one group per project (default) or per tag",
+          "enum": [
+            "project",
+            "tag"
+          ]
+        },
+        "incidents": {
+          "description": "open: the open incidents (default); 7d, 30d, 90d: and those resolved in that window, shown as monitor, start and duration; none: neither",
+          "enum": [
+            "open",
+            "7d",
+            "30d",
+            "90d",
+            "none"
+          ]
         },
         "public": {
           "type": "boolean"

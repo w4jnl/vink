@@ -81,3 +81,41 @@ func TestOrgFileParseEncodeValidate(t *testing.T) {
 		t.Fatalf("project branch: %v", err)
 	}
 }
+
+// TestOrgFileStatusPages: an org file's own pages carry projects and
+// group_by; a project page may not, and incidents takes its five values.
+func TestOrgFileStatusPages(t *testing.T) {
+	src := orgSample + `status_pages:
+  - slug: everything
+    title: Everything
+    projects: [prod, lab]
+    group_by: tag
+    match_tags: [prod]
+    incidents: 30d
+`
+	f, err := ParseOrg([]byte(src), true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(f.StatusPages) != 1 || strings.Join(f.StatusPages[0].Projects, ",") != "prod,lab" || f.StatusPages[0].GroupBy != "tag" || f.StatusPages[0].Incidents != "30d" {
+		t.Fatalf("parsed: %+v", f.StatusPages)
+	}
+	out, err := EncodeOrg(f)
+	if err != nil || !strings.Contains(string(out), "projects: [prod, lab]") {
+		t.Fatalf("encoded: %v\n%s", err, out)
+	}
+	for name, bad := range map[string]string{
+		"unknown incidents":      strings.Replace(src, "incidents: 30d", "incidents: 14d", 1),
+		"unknown grouping":       strings.Replace(src, "group_by: tag", "group_by: team", 1),
+		"projects on a project":  projectSample + "status_pages:\n  - {slug: p, title: P, projects: [prod]}\n",
+		"grouping on a project":  projectSample + "status_pages:\n  - {slug: p, title: P, group_by: project}\n",
+		"a slug that is no slug": strings.Replace(src, "projects: [prod, lab]", "projects: [Prod Lab]", 1),
+	} {
+		if _, _, err := ParseAny([]byte(bad), true); err == nil {
+			t.Errorf("%s: the schema let it through", name)
+		}
+	}
+	if p, _, err := ParseAny([]byte(projectSample+"status_pages:\n  - {slug: p, title: P, incidents: 7d}\n"), true); err != nil || p.StatusPages[0].Incidents != "7d" {
+		t.Fatalf("incidents on a project page: %v", err)
+	}
+}

@@ -560,6 +560,9 @@ type OrgFile struct {
 	Version  int            `json:"version" yaml:"version"`
 	Org      string         `json:"org" yaml:"org"`
 	Projects []ProjectEntry `json:"projects" yaml:"projects"`
+	// StatusPages are the org's own pages, with projects by slug. Pages the
+	// file does not name are left alone, as a project apply leaves its pages.
+	StatusPages []StatusPage `json:"status_pages,omitempty" yaml:"status_pages,omitempty"`
 }
 
 // ProjectEntry is one project inside an org file.
@@ -656,6 +659,8 @@ type OrgDiff struct {
 	DryRun   bool          `json:"dry_run"`
 	Org      string        `json:"org"`
 	Projects []ProjectDiff `json:"projects"`
+	// StatusPages is the org's own pages, when the file names any.
+	StatusPages *Diff `json:"status_pages,omitempty"`
 }
 
 // ProjectDiff is one project's diff inside an org apply; Created says
@@ -674,6 +679,9 @@ func (d *OrgDiff) Changes() int {
 		if p.Created {
 			n++
 		}
+	}
+	if d.StatusPages != nil {
+		n += d.StatusPages.Changes()
 	}
 	return n
 }

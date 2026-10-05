@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -220,7 +221,8 @@ func (s *Service) applyFile(ctx context.Context, sc domain.Scope, f *apply.File,
 		want.Normalize()
 		label := "page " + want.Slug
 		if cur, ok := pageBySlug[want.Slug]; ok {
-			same := cur.Title == want.Title && sameTags(cur.MatchTags, want.MatchTags) && cur.CustomDomain == want.CustomDomain && cur.Public == want.Public
+			same := cur.Title == want.Title && sameTags(cur.MatchTags, want.MatchTags) && cur.CustomDomain == want.CustomDomain && cur.Public == want.Public &&
+				cur.Incidents == want.Incidents
 			if same && password == "" {
 				diff.Unchanged = append(diff.Unchanged, label)
 				continue
@@ -476,14 +478,33 @@ func (s *Service) Export(ctx context.Context, sc domain.Scope, secrets bool) (*a
 		return nil, err
 	}
 	for _, p := range pages {
-		sp := apply.StatusPage{Slug: p.Slug, Title: p.Title, MatchTags: p.MatchTags, CustomDomain: p.CustomDomain}
-		if !p.Public {
-			private := false
-			sp.Public = &private
-		}
-		f.StatusPages = append(f.StatusPages, sp)
+		f.StatusPages = append(f.StatusPages, pageEntry(p, nil))
 	}
 	return f, nil
+}
+
+// pageEntry is a page as an apply file writes it; projectSlugs names an
+// org page's projects. Only non-default incidents and grouping are written.
+func pageEntry(p *domain.StatusPage, projectSlugs map[string]string) apply.StatusPage {
+	sp := apply.StatusPage{Slug: p.Slug, Title: p.Title, MatchTags: p.MatchTags, CustomDomain: p.CustomDomain}
+	if !p.Public {
+		private := false
+		sp.Public = &private
+	}
+	if p.Incidents != "" && p.Incidents != domain.IncidentsOpen {
+		sp.Incidents = p.Incidents
+	}
+	if p.IsOrg() {
+		if p.GroupBy != domain.GroupByProject {
+			sp.GroupBy = p.GroupBy
+		}
+		for _, id := range p.Projects {
+			if slug, ok := projectSlugs[id]; ok {
+				sp.Projects = append(sp.Projects, slug)
+			}
+		}
+	}
+	return sp
 }
 
 func timesEqual(a, b *time.Time) bool {
@@ -537,7 +558,85 @@ func (s *Service) ExportOrg(ctx context.Context, sc domain.Scope, secrets bool) 
 		}
 		out.Projects = append(out.Projects, apply.EntryFrom(f))
 	}
+	pages, err := s.listOrgPagesForFile(ctx, sc)
+	if err != nil {
+		return nil, err
+	}
+	slugs := make(map[string]string, len(projects))
+	for _, p := range projects {
+		slugs[p.ID] = p.Slug
+	}
+	for _, p := range pages {
+		out.StatusPages = append(out.StatusPages, pageEntry(p, slugs))
+	}
 	return out, nil
+}
+
+// listOrgPagesForFile lists the org's own pages for an export: an org
+// key reads them as an admin does.
+func (s *Service) listOrgPagesForFile(ctx context.Context, sc domain.Scope) ([]*domain.StatusPage, error) {
+	rows, err := s.db.Read().ListOrgStatusPages(ctx, sc.OrgID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*domain.StatusPage, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, statusPageFromRow(r))
+	}
+	return out, nil
+}
+
+// applyOrgPages creates or updates the org's own pages the file names,
+// inside the org apply's transaction (so projects it just created count).
+// It never deletes a page.
+func (s *Service) applyOrgPages(ctx context.Context, sc domain.Scope, pages []apply.StatusPage, diff *apply.Diff) error {
+	projects, err := s.ListProjects(ctx, sc)
+	if err != nil {
+		return err
+	}
+	ids := make(map[string]string, len(projects))
+	for _, p := range projects {
+		ids[p.Slug] = p.ID
+	}
+	current, err := s.listOrgPagesForFile(ctx, sc)
+	if err != nil {
+		return err
+	}
+	bySlug := make(map[string]*domain.StatusPage, len(current))
+	for _, p := range current {
+		bySlug[p.Slug] = p
+	}
+	for i, p := range pages {
+		want, password := p.ToDomain()
+		want.OrgID, want.ProjectID = sc.OrgID, ""
+		for _, slug := range p.Projects {
+			id, ok := ids[slug]
+			if !ok {
+				return validation(fmt.Sprintf("status_pages[%d].projects", i), "no project "+slug+" in this org")
+			}
+			want.Projects = append(want.Projects, id)
+		}
+		want.Normalize()
+		label := "page " + want.Slug
+		if cur, ok := bySlug[want.Slug]; ok {
+			same := cur.Title == want.Title && sameTags(cur.MatchTags, want.MatchTags) && slices.Equal(cur.Projects, want.Projects) &&
+				cur.GroupBy == want.GroupBy && cur.Incidents == want.Incidents && cur.CustomDomain == want.CustomDomain && cur.Public == want.Public
+			if same && password == "" {
+				diff.Unchanged = append(diff.Unchanged, label)
+				continue
+			}
+			if _, err := s.UpdateOrgStatusPage(ctx, sc, cur.Slug, want, password); err != nil {
+				return prefixField(err, fmt.Sprintf("status_pages[%d].", i))
+			}
+			diff.Updated = append(diff.Updated, label)
+			continue
+		}
+		if _, err := s.CreateOrgStatusPage(ctx, sc, want, password); err != nil {
+			return prefixField(err, fmt.Sprintf("status_pages[%d].", i))
+		}
+		diff.Created = append(diff.Created, label)
+	}
+	return nil
 }
 
 // ApplyOrg brings every project named in the file to it, in one
@@ -599,6 +698,21 @@ func (s *Service) ApplyOrg(ctx context.Context, sc domain.Scope, f *apply.OrgFil
 				entry.Detail = applyDetail(&pd.Diff, o.Prune)
 				entry.Detail["project_created"] = created
 				if err := s.record(ctx, q, psc, entry); err != nil {
+					return err
+				}
+			}
+		}
+		// the org's own pages, after the projects they may name
+		if len(f.StatusPages) > 0 {
+			pages := apply.Diff{DryRun: o.DryRun, Created: []string{}, Updated: []string{}, Recreated: []string{}, Deleted: []string{}, Unchanged: []string{}}
+			if err := tx.applyOrgPages(ctx, sc, f.StatusPages, &pages); err != nil {
+				return err
+			}
+			diff.StatusPages = &pages
+			if !o.DryRun && pages.Changes() > 0 {
+				entry := orgEntry(sc.OrgID, "apply", "org file", "")
+				entry.Detail = applyDetail(&pages, o.Prune)
+				if err := s.record(ctx, q, sc, entry); err != nil {
 					return err
 				}
 			}

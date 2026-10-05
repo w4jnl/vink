@@ -176,7 +176,21 @@ func printOrgDiff(out io.Writer, diff apply.OrgDiff) {
 		deleted += len(p.Deleted)
 		unchanged += len(p.Unchanged)
 	}
-	summary := fmt.Sprintf("%d projects: %d created, %d updated, %d recreated, %d deleted, %d unchanged", len(diff.Projects), created, updated, recreated, deleted, unchanged)
+	scope := fmt.Sprintf("%d projects", len(diff.Projects))
+	if pages := diff.StatusPages; pages != nil {
+		fmt.Fprintln(out, "status pages of the org")
+		for _, name := range pages.Created {
+			fmt.Fprintf(out, "  + %s\n", name)
+		}
+		for _, name := range pages.Updated {
+			fmt.Fprintf(out, "  ~ %s\n", name)
+		}
+		created += len(pages.Created)
+		updated += len(pages.Updated)
+		unchanged += len(pages.Unchanged)
+		scope += " and the org's pages"
+	}
+	summary := fmt.Sprintf("%s: %d created, %d updated, %d recreated, %d deleted, %d unchanged", scope, created, updated, recreated, deleted, unchanged)
 	if diff.DryRun {
 		summary += " (dry run, nothing applied)"
 	}
