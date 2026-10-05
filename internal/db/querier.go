@@ -248,6 +248,8 @@ type Querier interface {
 	SetInstanceAdmin(ctx context.Context, arg SetInstanceAdminParams) (int64, error)
 	// tenancy: root (instance facts)
 	SetInstanceMeta(ctx context.Context, arg SetInstanceMetaParams) error
+	// changes the role and keeps where it came from
+	SetMembershipRole(ctx context.Context, arg SetMembershipRoleParams) error
 	// tenancy: root (agent gateway)
 	SetMonitorAgent(ctx context.Context, arg SetMonitorAgentParams) error
 	SetMonitorPaused(ctx context.Context, arg SetMonitorPausedParams) error
@@ -280,7 +282,12 @@ type Querier interface {
 	UpdateRoute(ctx context.Context, arg UpdateRouteParams) (Route, error)
 	UpdateStatusPage(ctx context.Context, arg UpdateStatusPageParams) (StatusPage, error)
 	UpdateUserProfile(ctx context.Context, arg UpdateUserProfileParams) error
-	UpsertMembership(ctx context.Context, arg UpsertMembershipParams) error
+	// a role from a provider's groups (source header or oidc): it only ever
+	// updates a row of the same source, never a role set in vink or one from
+	// the other provider
+	UpsertDerivedMembership(ctx context.Context, arg UpsertDerivedMembershipParams) error
+	// a role set in vink: it replaces whatever the user had in the org
+	UpsertLocalMembership(ctx context.Context, arg UpsertLocalMembershipParams) error
 	// tenancy: root (the link's token establishes the org; the row must still be open)
 	UseInvite(ctx context.Context, arg UseInviteParams) (int64, error)
 	UseRecoveryCode(ctx context.Context, arg UseRecoveryCodeParams) (int64, error)

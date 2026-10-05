@@ -99,7 +99,7 @@ func (s *Service) CreateOrgWithOwner(ctx context.Context, sc domain.Scope, slug,
 			org.QuotaMonitors, org.QuotaAgents = quotaMonitors, quotaAgents
 		}
 		if owner != nil {
-			if err := q.UpsertMembership(ctx, db.UpsertMembershipParams{UserID: owner.ID, OrgID: org.ID, Role: string(domain.RoleOwner), Source: "local", CreatedAt: domain.Millis(s.now())}); err != nil {
+			if err := q.UpsertLocalMembership(ctx, db.UpsertLocalMembershipParams{UserID: owner.ID, OrgID: org.ID, Role: string(domain.RoleOwner), CreatedAt: domain.Millis(s.now())}); err != nil {
 				return err
 			}
 			e := orgEntry(org.ID, "member.role", owner.Subject, owner.ID)

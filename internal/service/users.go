@@ -281,7 +281,7 @@ func (s *Service) SetMembership(ctx context.Context, sc domain.Scope, userID, or
 		from = cur.Role
 	}
 	return s.db.Tx(ctx, func(q *db.Queries) error {
-		if err := q.UpsertMembership(ctx, db.UpsertMembershipParams{UserID: userID, OrgID: orgID, Role: string(role), Source: "local", CreatedAt: domain.Millis(s.now())}); err != nil {
+		if err := q.UpsertLocalMembership(ctx, db.UpsertLocalMembershipParams{UserID: userID, OrgID: orgID, Role: string(role), CreatedAt: domain.Millis(s.now())}); err != nil {
 			return err
 		}
 		e := orgEntry(orgID, "member.role", user.Subject, user.ID)
@@ -361,8 +361,9 @@ func (s *Service) MembershipsForUser(ctx context.Context, userID string) ([]doma
 }
 
 // SyncHeaderMemberships makes the user's header-derived memberships equal
-// to roles (org slug to role). Local memberships are untouched. Unknown
-// org slugs are ignored. It writes only when something differs.
+// to roles (org slug to role). A role of another source in the same org
+// (set in vink, or from OIDC) is never replaced. Unknown org slugs are
+// ignored. It writes only when something differs.
 func (s *Service) SyncHeaderMemberships(ctx context.Context, userID string, roles map[string]domain.Role) error {
 	return s.SyncDerivedMemberships(ctx, userID, roles, "header")
 }
@@ -385,6 +386,13 @@ func (s *Service) SyncDerivedMemberships(ctx context.Context, userID string, rol
 		}
 		want[org.ID] = role
 	}
+	// an org where the user holds a role of another source (set in vink,
+	// or from the other provider) stays as it is: groups never override it
+	for _, m := range current {
+		if m.Source != source {
+			delete(want, m.OrgID)
+		}
+	}
 	same := true
 	seen := 0
 	for _, m := range current {
@@ -404,7 +412,7 @@ func (s *Service) SyncDerivedMemberships(ctx context.Context, userID string, rol
 			return err
 		}
 		for orgID, role := range want {
-			if err := q.UpsertMembership(ctx, db.UpsertMembershipParams{UserID: userID, OrgID: orgID, Role: string(role), Source: source, CreatedAt: domain.Millis(s.now())}); err != nil {
+			if err := q.UpsertDerivedMembership(ctx, db.UpsertDerivedMembershipParams{UserID: userID, OrgID: orgID, Role: string(role), Source: source, CreatedAt: domain.Millis(s.now())}); err != nil {
 				return err
 			}
 		}
@@ -463,7 +471,7 @@ func (s *Service) Bootstrap(ctx context.Context, in BootstrapInput) (*BootstrapR
 	if err != nil {
 		return nil, err
 	}
-	if err := s.db.Write().UpsertMembership(ctx, db.UpsertMembershipParams{UserID: res.User.ID, OrgID: res.Org.ID, Role: string(domain.RoleOwner), Source: "local", CreatedAt: domain.Millis(s.now())}); err != nil {
+	if err := s.db.Write().UpsertLocalMembership(ctx, db.UpsertLocalMembershipParams{UserID: res.User.ID, OrgID: res.Org.ID, Role: string(domain.RoleOwner), CreatedAt: domain.Millis(s.now())}); err != nil {
 		return nil, err
 	}
 	res.Project, err = s.CreateProject(ctx, admin, res.Org.ID, in.ProjectSlug, in.ProjectName, in.Timezone)

@@ -287,13 +287,29 @@ func (q *Queries) ListOrgMembers(ctx context.Context, orgID string) ([]ListOrgMe
 	return items, nil
 }
 
-const upsertMembership = `-- name: UpsertMembership :exec
-INSERT INTO memberships (user_id, org_id, role, source, created_at)
-VALUES (?, ?, ?, ?, ?)
-ON CONFLICT (user_id, org_id) DO UPDATE SET role = excluded.role, source = excluded.source
+const setMembershipRole = `-- name: SetMembershipRole :exec
+UPDATE memberships SET role = ? WHERE user_id = ? AND org_id = ?
 `
 
-type UpsertMembershipParams struct {
+type SetMembershipRoleParams struct {
+	Role   string
+	UserID string
+	OrgID  string
+}
+
+// changes the role and keeps where it came from
+func (q *Queries) SetMembershipRole(ctx context.Context, arg SetMembershipRoleParams) error {
+	_, err := q.db.ExecContext(ctx, setMembershipRole, arg.Role, arg.UserID, arg.OrgID)
+	return err
+}
+
+const upsertDerivedMembership = `-- name: UpsertDerivedMembership :exec
+INSERT INTO memberships (user_id, org_id, role, source, created_at)
+VALUES (?, ?, ?, ?, ?)
+ON CONFLICT (user_id, org_id) DO UPDATE SET role = excluded.role WHERE memberships.source = excluded.source
+`
+
+type UpsertDerivedMembershipParams struct {
 	UserID    string
 	OrgID     string
 	Role      string
@@ -301,12 +317,39 @@ type UpsertMembershipParams struct {
 	CreatedAt int64
 }
 
-func (q *Queries) UpsertMembership(ctx context.Context, arg UpsertMembershipParams) error {
-	_, err := q.db.ExecContext(ctx, upsertMembership,
+// a role from a provider's groups (source header or oidc): it only ever
+// updates a row of the same source, never a role set in vink or one from
+// the other provider
+func (q *Queries) UpsertDerivedMembership(ctx context.Context, arg UpsertDerivedMembershipParams) error {
+	_, err := q.db.ExecContext(ctx, upsertDerivedMembership,
 		arg.UserID,
 		arg.OrgID,
 		arg.Role,
 		arg.Source,
+		arg.CreatedAt,
+	)
+	return err
+}
+
+const upsertLocalMembership = `-- name: UpsertLocalMembership :exec
+INSERT INTO memberships (user_id, org_id, role, source, created_at)
+VALUES (?, ?, ?, 'local', ?)
+ON CONFLICT (user_id, org_id) DO UPDATE SET role = excluded.role, source = 'local'
+`
+
+type UpsertLocalMembershipParams struct {
+	UserID    string
+	OrgID     string
+	Role      string
+	CreatedAt int64
+}
+
+// a role set in vink: it replaces whatever the user had in the org
+func (q *Queries) UpsertLocalMembership(ctx context.Context, arg UpsertLocalMembershipParams) error {
+	_, err := q.db.ExecContext(ctx, upsertLocalMembership,
+		arg.UserID,
+		arg.OrgID,
+		arg.Role,
 		arg.CreatedAt,
 	)
 	return err

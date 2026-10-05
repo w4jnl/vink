@@ -192,7 +192,7 @@ func (s *Service) AcceptInvite(ctx context.Context, token, subject, name, passwo
 		if n == 0 {
 			return domain.NotFound("invite")
 		}
-		if err := q.UpsertMembership(ctx, db.UpsertMembershipParams{UserID: u.ID, OrgID: inv.OrgID, Role: string(inv.Role), Source: "local", CreatedAt: domain.Millis(now)}); err != nil {
+		if err := q.UpsertLocalMembership(ctx, db.UpsertLocalMembershipParams{UserID: u.ID, OrgID: inv.OrgID, Role: string(inv.Role), CreatedAt: domain.Millis(now)}); err != nil {
 			return err
 		}
 		out = u
@@ -230,12 +230,12 @@ func (s *Service) TransferOwnership(ctx context.Context, sc domain.Scope, newOwn
 	}
 	now := s.now()
 	return s.db.Tx(ctx, func(q *db.Queries) error {
-		if err := q.UpsertMembership(ctx, db.UpsertMembershipParams{UserID: newOwnerID, OrgID: sc.OrgID, Role: string(domain.RoleOwner), Source: "local", CreatedAt: domain.Millis(now)}); err != nil {
+		if err := q.UpsertLocalMembership(ctx, db.UpsertLocalMembershipParams{UserID: newOwnerID, OrgID: sc.OrgID, Role: string(domain.RoleOwner), CreatedAt: domain.Millis(now)}); err != nil {
 			return err
 		}
 		if sc.UserID != "" {
 			if cur, err := q.GetMembership(ctx, db.GetMembershipParams{UserID: sc.UserID, OrgID: sc.OrgID}); err == nil && cur.Role == string(domain.RoleOwner) {
-				if err := q.UpsertMembership(ctx, db.UpsertMembershipParams{UserID: sc.UserID, OrgID: sc.OrgID, Role: string(domain.RoleAdmin), Source: cur.Source, CreatedAt: cur.CreatedAt}); err != nil {
+				if err := q.SetMembershipRole(ctx, db.SetMembershipRoleParams{Role: string(domain.RoleAdmin), UserID: sc.UserID, OrgID: sc.OrgID}); err != nil {
 					return err
 				}
 			}

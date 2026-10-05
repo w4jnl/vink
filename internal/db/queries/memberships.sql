@@ -1,7 +1,20 @@
--- name: UpsertMembership :exec
+-- name: UpsertLocalMembership :exec
+-- a role set in vink: it replaces whatever the user had in the org
+INSERT INTO memberships (user_id, org_id, role, source, created_at)
+VALUES (?, ?, ?, 'local', ?)
+ON CONFLICT (user_id, org_id) DO UPDATE SET role = excluded.role, source = 'local';
+
+-- name: UpsertDerivedMembership :exec
+-- a role from a provider's groups (source header or oidc): it only ever
+-- updates a row of the same source, never a role set in vink or one from
+-- the other provider
 INSERT INTO memberships (user_id, org_id, role, source, created_at)
 VALUES (?, ?, ?, ?, ?)
-ON CONFLICT (user_id, org_id) DO UPDATE SET role = excluded.role, source = excluded.source;
+ON CONFLICT (user_id, org_id) DO UPDATE SET role = excluded.role WHERE memberships.source = excluded.source;
+
+-- name: SetMembershipRole :exec
+-- changes the role and keeps where it came from
+UPDATE memberships SET role = ? WHERE user_id = ? AND org_id = ?;
 
 -- name: GetMembership :one
 SELECT * FROM memberships WHERE user_id = ? AND org_id = ?;

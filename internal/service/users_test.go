@@ -282,3 +282,70 @@ func TestMembershipsKeepTheLastOwner(t *testing.T) {
 		t.Fatalf("member removing: %v", err)
 	}
 }
+
+// TestGroupSyncKeepsOtherSources: a sync from one provider's groups only
+// ever touches that provider's rows. A role set in vink in the same org,
+// or one from the other provider, stays as it is; the sync's own rows are
+// still added, changed and pruned.
+func TestGroupSyncKeepsOtherSources(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	u, _ := f.svc.EnsureProxyUser(ctx, "alice", "", "")
+	second, _ := f.svc.CreateOrg(ctx, f.admin, "second", "Second")
+	third, _ := f.svc.CreateOrg(ctx, f.admin, "third", "Third")
+	// set in vink: owner of homelab; from OIDC: admin of third
+	if err := f.svc.SetMembership(ctx, f.admin, u.ID, f.org.ID, domain.RoleOwner); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.svc.SyncDerivedMemberships(ctx, u.ID, map[string]domain.Role{"third": domain.RoleAdmin}, "oidc"); err != nil {
+		t.Fatal(err)
+	}
+	roles := func() string {
+		ms, _ := f.svc.MembershipsForUser(ctx, u.ID)
+		var out []string
+		for _, m := range ms {
+			out = append(out, m.OrgSlug+"="+string(m.Role)+"/"+m.Source)
+		}
+		return strings.Join(out, " ")
+	}
+	steps := []struct {
+		name   string
+		groups map[string]domain.Role
+		want   string
+	}{
+		{"groups name every org", map[string]domain.Role{"homelab": domain.RoleViewer, "second": domain.RoleMember, "third": domain.RoleViewer},
+			"homelab=owner/local second=member/header third=admin/oidc"},
+		{"a group role changes", map[string]domain.Role{"homelab": domain.RoleViewer, "second": domain.RoleAdmin},
+			"homelab=owner/local second=admin/header third=admin/oidc"},
+		{"the groups go away", map[string]domain.Role{},
+			"homelab=owner/local third=admin/oidc"},
+	}
+	for _, st := range steps {
+		if err := f.svc.SyncHeaderMemberships(ctx, u.ID, st.groups); err != nil {
+			t.Fatalf("%s: %v", st.name, err)
+		}
+		if got := roles(); got != st.want {
+			t.Fatalf("%s:\n got %s\nwant %s", st.name, got, st.want)
+		}
+	}
+	_ = second
+
+	// an owner whose role came from groups hands the org over and stays
+	// an admin from the same groups
+	owner, _ := f.svc.EnsureProxyUser(ctx, "bob", "", "")
+	other, _ := f.svc.EnsureProxyUser(ctx, "carol", "", "")
+	if err := f.svc.SyncHeaderMemberships(ctx, owner.ID, map[string]domain.Role{"third": domain.RoleOwner}); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.svc.SetMembership(ctx, f.admin, other.ID, third.ID, domain.RoleMember); err != nil {
+		t.Fatal(err)
+	}
+	sc := domain.Scope{OrgID: third.ID, UserID: owner.ID, Role: domain.RoleOwner, Actor: "user:bob"}
+	if err := f.svc.TransferOwnership(ctx, sc, other.ID); err != nil {
+		t.Fatal(err)
+	}
+	ms, _ := f.svc.MembershipsForUser(ctx, owner.ID)
+	if len(ms) != 1 || ms[0].Role != domain.RoleAdmin || ms[0].Source != "header" {
+		t.Fatalf("the old owner: %+v", ms)
+	}
+}
