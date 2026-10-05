@@ -107,6 +107,20 @@ func TestCrossTenantIsolation(t *testing.T) {
 		return tn
 	}
 	a, b := mk("alpha"), mk("beta")
+	// an instance admin with a session, and rw and ro instance admin keys
+	root, _ := svc.CreateLocalUser(ctx, admin, "root", "", "", "correct horse", true)
+	rootSc := domain.Scope{UserID: root.ID, InstanceAdmin: true, Role: domain.RoleOwner, Actor: "user:root"}
+	_, adminRW, err := svc.CreateAdminKey(ctx, rootSc, "admin rw", domain.AccessRW, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, adminRO, _ := svc.CreateAdminKey(ctx, rootSc, "admin ro", domain.AccessRO, 0)
+	rootRec := httptest.NewRecorder()
+	rootP, err := authn.Login(rootRec, httptest.NewRequest("POST", "/login", nil), "root", "correct horse")
+	if err != nil {
+		t.Fatal(err)
+	}
+	rootCookie, rootCSRF := rootRec.Result().Cookies()[0], rootP.CSRF()
 
 	// every route with a path parameter, filled with tenant A's ids
 	fill := func(path string) string {
@@ -135,19 +149,22 @@ func TestCrossTenantIsolation(t *testing.T) {
 	spec.Mount(http.NewServeMux())
 
 	type caller struct {
-		name   string
-		apply  func(r *http.Request)
-		path   func(p string) string
-		ro     bool
-		orgKey bool
+		name     string
+		apply    func(r *http.Request)
+		path     func(p string) string
+		ro       bool
+		orgKey   bool
+		adminKey bool
 	}
 	callers := []caller{
-		{"rw key", func(r *http.Request) { r.Header.Set("Authorization", "Bearer "+b.rw) }, func(p string) string { return "/api/v1" + p }, false, false},
-		{"ro key", func(r *http.Request) { r.Header.Set("Authorization", "Bearer "+b.ro) }, func(p string) string { return "/api/v1" + p }, true, false},
-		{"org rw key", func(r *http.Request) { r.Header.Set("Authorization", "Bearer "+b.orgRW) }, func(p string) string { return "/api/v1" + p }, false, true},
-		{"org ro key", func(r *http.Request) { r.Header.Set("Authorization", "Bearer "+b.orgRO) }, func(p string) string { return "/api/v1" + p }, true, true},
-		{"session", func(r *http.Request) { r.AddCookie(b.cookie); r.Header.Set(auth.CSRFHeader, b.csrf) }, func(p string) string { return "/api/v1/orgs/beta/projects/prod" + p }, false, false},
-		{"session via A's org path", func(r *http.Request) { r.AddCookie(b.cookie); r.Header.Set(auth.CSRFHeader, b.csrf) }, func(p string) string { return "/api/v1/orgs/alpha/projects/prod" + p }, false, false},
+		{"rw key", func(r *http.Request) { r.Header.Set("Authorization", "Bearer "+b.rw) }, func(p string) string { return "/api/v1" + p }, false, false, false},
+		{"ro key", func(r *http.Request) { r.Header.Set("Authorization", "Bearer "+b.ro) }, func(p string) string { return "/api/v1" + p }, true, false, false},
+		{"org rw key", func(r *http.Request) { r.Header.Set("Authorization", "Bearer "+b.orgRW) }, func(p string) string { return "/api/v1" + p }, false, true, false},
+		{"org ro key", func(r *http.Request) { r.Header.Set("Authorization", "Bearer "+b.orgRO) }, func(p string) string { return "/api/v1" + p }, true, true, false},
+		{"session", func(r *http.Request) { r.AddCookie(b.cookie); r.Header.Set(auth.CSRFHeader, b.csrf) }, func(p string) string { return "/api/v1/orgs/beta/projects/prod" + p }, false, false, false},
+		{"session via A's org path", func(r *http.Request) { r.AddCookie(b.cookie); r.Header.Set(auth.CSRFHeader, b.csrf) }, func(p string) string { return "/api/v1/orgs/alpha/projects/prod" + p }, false, false, false},
+		{"admin key", func(r *http.Request) { r.Header.Set("Authorization", "Bearer "+adminRW) }, func(p string) string { return "/api/v1" + p }, false, false, true},
+		{"admin key via A's project path", func(r *http.Request) { r.Header.Set("Authorization", "Bearer "+adminRW) }, func(p string) string { return "/api/v1/orgs/alpha/projects/prod" + p }, false, false, true},
 	}
 	checked := 0
 	for _, route := range spec.Routes {
@@ -169,6 +186,15 @@ func TestCrossTenantIsolation(t *testing.T) {
 				checked++
 				viaAlpha := strings.Contains(c.name, "A's org")
 				switch {
+				case c.adminKey:
+					// an instance admin key sees /me and nothing of any project
+					want := 403
+					if path == "/me" {
+						want = 200
+					}
+					if rec.Code != want || (want == 200 && bytes.Contains(rec.Body.Bytes(), []byte(`"project"`))) {
+						t.Fatalf("admin key on a project route: %d %s", rec.Code, rec.Body.String())
+					}
 				case c.orgKey:
 					// an org key sees /me and nothing of any project
 					want := 403
@@ -228,6 +254,7 @@ func TestCrossTenantIsolation(t *testing.T) {
 			{"ro key", "/api/v1/orgs/alpha", b.ro, 403},
 			{"org rw key, own org", "/api/v1/orgs/beta", b.orgRW, 403},
 			{"org rw key, A's org", "/api/v1/orgs/alpha", b.orgRW, 404},
+			{"admin key", "/api/v1/orgs/alpha", adminRW, 403},
 		} {
 			t.Run(c.name+" "+route, func(t *testing.T) {
 				var body io.Reader
@@ -292,6 +319,67 @@ func TestCrossTenantIsolation(t *testing.T) {
 	h.ServeHTTP(rec, req)
 	if rec.Code != 200 {
 		t.Errorf("own UI page: %d", rec.Code)
+	}
+
+	// instance admin routes, last: an allowed write may change things.
+	// Path values name nothing, so an allowed call ends in 404 or 422.
+	adminFill := strings.NewReplacer("{org}", "no-such-org", "{id}", "no-such-id", "{user}", "no-such-user", "{name}", "no-such-agent")
+	adminChecked := 0
+	for _, route := range spec.AdminRoutes {
+		method, path, _ := strings.Cut(route, " ")
+		for _, c := range []struct {
+			name    string
+			key     string
+			cookie  *http.Cookie
+			csrf    string
+			allowed bool
+		}{
+			{"anonymous", "", nil, "", false},
+			{"project rw key", b.rw, nil, "", false},
+			{"org rw key", b.orgRW, nil, "", false},
+			{"org admin session", "", b.cookie, b.csrf, false},
+			{"admin rw key", adminRW, nil, "", true},
+			{"admin ro key", adminRO, nil, "", method == "GET"},
+			{"instance admin session", "", rootCookie, rootCSRF, true},
+		} {
+			t.Run("admin "+c.name+" "+route, func(t *testing.T) {
+				var body io.Reader
+				if method == "POST" || method == "PUT" || method == "PATCH" {
+					body = bytes.NewReader([]byte(`{}`))
+				}
+				req := httptest.NewRequest(method, "/api/v1/admin"+adminFill.Replace(path), body)
+				if body != nil {
+					req.Header.Set("Content-Type", "application/json")
+				}
+				if c.key != "" {
+					req.Header.Set("Authorization", "Bearer "+c.key)
+				}
+				if c.cookie != nil {
+					req.AddCookie(c.cookie)
+					req.Header.Set(auth.CSRFHeader, c.csrf)
+				}
+				rec := httptest.NewRecorder()
+				h.ServeHTTP(rec, req)
+				adminChecked++
+				switch {
+				case c.name == "anonymous":
+					if rec.Code != 401 {
+						t.Fatalf("%d %s", rec.Code, rec.Body.String())
+					}
+				case !c.allowed:
+					if rec.Code != 403 {
+						t.Fatalf("%d %s", rec.Code, rec.Body.String())
+					}
+				default:
+					if rec.Code == 401 || rec.Code == 403 || rec.Code >= 500 {
+						t.Fatalf("refused: %d %s", rec.Code, rec.Body.String())
+					}
+				}
+			})
+		}
+	}
+	if adminChecked < 14 {
+		t.Fatalf("only %d admin route checks ran", adminChecked)
 	}
 }
 

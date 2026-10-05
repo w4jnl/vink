@@ -55,6 +55,10 @@ func TestOpenAPIMatchesRouter(t *testing.T) {
 		method, path, _ := strings.Cut(r, " ")
 		got = append(got, method+" /orgs/{org}"+path)
 	}
+	for _, r := range a.AdminRoutes {
+		method, path, _ := strings.Cut(r, " ")
+		got = append(got, method+" /admin"+path)
+	}
 	want := specRoutes(t)
 	sort.Strings(got)
 	sort.Strings(want)

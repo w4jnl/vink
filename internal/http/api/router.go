@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -35,6 +36,8 @@ type API struct {
 	Routes []string
 	// OrgRoutes are the org-level routes, mounted under /orgs/{org} for sessions only.
 	OrgRoutes []string
+	// AdminRoutes are the instance admin routes, mounted under /admin.
+	AdminRoutes []string
 }
 
 // scopeMode says how a route finds its scope.
@@ -44,6 +47,7 @@ const (
 	modeProject scopeMode = iota // bearer key, or a session on /orgs/{org}/projects/{project}
 	modeMe                       // a session on /me
 	modeOrg                      // a session on /orgs/{org}, org admins and owners
+	modeAdmin                    // an instance admin key, or an instance admin's session, on /admin
 )
 
 // New builds the API.
@@ -111,6 +115,7 @@ func (a *API) Mount(mux *http.ServeMux) {
 	a.registerOrg(mux, "DELETE", "/agents/{name}", a.deleteAgent, false)
 	a.registerOrg(mux, "PUT", "/apply", a.applyOrg, true)
 	a.registerOrg(mux, "GET", "/export", a.exportOrg, true)
+	a.mountAdmin(mux)
 	mux.HandleFunc("GET "+Prefix+"/openapi.yaml", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/yaml")
 		// the document's servers entry names the API's base under the deployment's path
@@ -145,6 +150,14 @@ func (a *API) registerOrg(mux *http.ServeMux, method, path string, h handlerFunc
 	mux.Handle(method+" "+Prefix+"/orgs/{org}"+path, a.wrap(h, modeOrg, true, orgKeys))
 }
 
+// registerAdmin mounts an instance admin route under /admin. Instance
+// admin keys and instance admins' sessions only; project and org keys
+// get 403.
+func (a *API) registerAdmin(mux *http.ServeMux, method, path string, h handlerFunc) {
+	a.AdminRoutes = append(a.AdminRoutes, method+" "+path)
+	mux.Handle(method+" "+Prefix+"/admin"+path, a.wrap(h, modeAdmin, false, false))
+}
+
 // wrap resolves the caller's scope, applies the rate limit, the read-only
 // and CSRF rules, and turns handler errors into problems.
 func (a *API) wrap(h handlerFunc, mode scopeMode, sessionPath, orgKeys bool) http.Handler {
@@ -160,7 +173,7 @@ func (a *API) wrap(h handlerFunc, mode scopeMode, sessionPath, orgKeys bool) htt
 			err       error
 		)
 		if token, ok := auth.BearerToken(r); ok {
-			sc, err = a.auth.KeyScope(ctx, token)
+			sc, err = a.auth.BearerScope(ctx, token, middleware.ClientIP(r))
 			if err != nil {
 				writeError(w, r, a.log, err)
 				return
@@ -189,6 +202,12 @@ func (a *API) wrap(h handlerFunc, mode scopeMode, sessionPath, orgKeys bool) htt
 				return
 			}
 			switch {
+			case mode == modeAdmin:
+				if !principal.InstanceAdmin {
+					writeError(w, r, a.log, fmt.Errorf("%w: instance admins only", domain.ErrForbidden))
+					return
+				}
+				sc = domain.Scope{UserID: principal.User.ID, InstanceAdmin: true, Role: domain.RoleOwner, Actor: "user:" + principal.User.Subject}
 			case mode == modeOrg:
 				sc, err = a.orgScope(r, principal)
 				if err != nil {
@@ -227,10 +246,20 @@ func (a *API) wrap(h handlerFunc, mode scopeMode, sessionPath, orgKeys bool) htt
 	})
 }
 
-// keyAllowed says whether an API key may call this route: a project key
-// acts as its project and never for the org; an org key may see /me and
-// the org routes marked for it, on its own org only, and nothing else.
+// keyAllowed says whether an API key may call this route: an instance
+// admin key acts on /admin and /me only; a project key acts as its
+// project and never for the org; an org key may see /me and the org
+// routes marked for it, on its own org only, and nothing else.
 func (a *API) keyAllowed(r *http.Request, sc domain.Scope, mode scopeMode, orgKeys bool) error {
+	if sc.IsAdminKey() {
+		if mode == modeAdmin || mode == modeMe {
+			return nil
+		}
+		return fmt.Errorf("%w: an instance admin key acts only on %s/admin; use a project or org key", domain.ErrForbidden, Prefix)
+	}
+	if mode == modeAdmin {
+		return fmt.Errorf("%w: %s/admin takes an instance admin key (vka_…) or an instance admin's session", domain.ErrForbidden, Prefix)
+	}
 	if !sc.IsOrgKey() {
 		if mode == modeOrg {
 			return errors.Join(domain.ErrForbidden, errors.New("a project key acts as its project; org routes take a session or an org key"))

@@ -14,6 +14,7 @@ import (
 	"github.com/w4jnl/vink/internal/auth"
 	"github.com/w4jnl/vink/internal/domain"
 	"github.com/w4jnl/vink/internal/http/middleware"
+	"github.com/w4jnl/vink/internal/service"
 )
 
 const problemBase = "https://github.com/w4jnl/vink/blob/main/docs/errors.md#"
@@ -47,6 +48,10 @@ func writeError(w http.ResponseWriter, r *http.Request, log *slog.Logger, err er
 		var ref *auth.RefusedError
 		if errors.As(err, &ref) {
 			p.Detail = ref.Error() // the proxy's identity was refused: say why
+		}
+		var expired *service.KeyExpiredError
+		if errors.As(err, &expired) {
+			p.Detail = expired.Error()
 		}
 		w.Header().Set("WWW-Authenticate", `Bearer realm="vink"`)
 	case errors.Is(err, domain.ErrForbidden):

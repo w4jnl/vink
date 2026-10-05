@@ -39,6 +39,11 @@ type meUser struct {
 type meKey struct {
 	Prefix string        `json:"prefix"`
 	Access domain.Access `json:"access"`
+	// Kind is project, org or admin (an instance admin key).
+	Kind string `json:"kind"`
+	Name string `json:"name,omitempty"`
+	// ExpiresAt is set for admin keys, which always expire.
+	ExpiresAt *time.Time `json:"expires_at,omitempty"`
 }
 
 type meRef struct {
@@ -65,7 +70,25 @@ func (a *API) me(w http.ResponseWriter, r *http.Request) error {
 		out.Memberships = p.Memberships
 	} else {
 		out.Kind = "key"
-		out.Key = &meKey{Prefix: strings.TrimPrefix(sc.Actor, "key:"), Access: sc.KeyAccess}
+		out.Key = &meKey{Prefix: strings.TrimPrefix(sc.Actor, "key:"), Access: sc.KeyAccess, Name: sc.KeyName}
+		switch {
+		case sc.IsAdminKey():
+			out.Key.Kind = "admin"
+			keys, err := a.svc.ListAdminKeys(ctx, sc)
+			if err != nil {
+				return err
+			}
+			for _, k := range keys {
+				if k.ID == sc.KeyID {
+					at := k.ExpiresAt
+					out.Key.ExpiresAt = &at
+				}
+			}
+		case sc.IsOrgKey():
+			out.Key.Kind = "org"
+		default:
+			out.Key.Kind = "project"
+		}
 	}
 	if sc.ProjectID != "" {
 		project, err := a.svc.Project(ctx, sc)

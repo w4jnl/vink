@@ -95,10 +95,13 @@ type Authenticator struct {
 	// normalised.
 	proxyAdmins map[string]bool
 	oidcAdmins  map[string]bool
-	outbound    *outbound.Env
-	oidcMu      sync.Mutex
-	oidc        *oidcState
-	usedStates  map[string]time.Time
+	// adminNets is auth.admin_keys.allowed_cidrs; empty accepts admin
+	// keys from anywhere.
+	adminNets  []*net.IPNet
+	outbound   *outbound.Env
+	oidcMu     sync.Mutex
+	oidc       *oidcState
+	usedStates map[string]time.Time
 }
 
 // New builds an authenticator. baseURL decides whether cookies are Secure.
@@ -124,6 +127,13 @@ func New(svc *service.Service, cfg config.Auth, baseURL string, log *slog.Logger
 			return nil, err
 		}
 		a.trusted = append(a.trusted, n)
+	}
+	for _, c := range cfg.AdminKeys.AllowedCIDRs {
+		_, n, err := net.ParseCIDR(c)
+		if err != nil {
+			return nil, fmt.Errorf("auth.admin_keys.allowed_cidrs: %w", err)
+		}
+		a.adminNets = append(a.adminNets, n)
 	}
 	if cfg.Proxy.Enabled {
 		re, err := regexp.Compile(cfg.Proxy.GroupPattern)
@@ -585,6 +595,46 @@ func (a *Authenticator) CheckCSRF(r *http.Request, p *Principal) bool {
 		token = r.URL.Query().Get(CSRFField)
 	}
 	return token != "" && subtle.ConstantTimeCompare([]byte(token), []byte(p.Session.CSRF)) == 1
+}
+
+// BearerScope resolves any bearer token. An instance admin key (vka_…) is
+// checked against auth.admin_keys.allowed_cidrs before its hash is, so a
+// caller from elsewhere never costs an argon2 run; other tokens are
+// project or org keys.
+func (a *Authenticator) BearerScope(ctx context.Context, token, clientIP string) (domain.Scope, error) {
+	if !strings.HasPrefix(token, "vka_") {
+		return a.KeyScope(ctx, token)
+	}
+	if !a.AdminKeyNetAllowed(clientIP) {
+		return domain.Scope{}, fmt.Errorf("%w: admin keys are not accepted from %s; auth.admin_keys.allowed_cidrs names the networks they are", domain.ErrForbidden, clientIP)
+	}
+	key, err := a.svc.VerifyAdminKey(ctx, token, clientIP)
+	if err != nil {
+		return domain.Scope{}, err
+	}
+	return service.AdminKeyScope(key), nil
+}
+
+// AdminKeyNetAllowed reports whether admin keys are accepted from ip.
+func (a *Authenticator) AdminKeyNetAllowed(ip string) bool {
+	if len(a.adminNets) == 0 {
+		return true
+	}
+	parsed := net.ParseIP(ip)
+	if parsed == nil {
+		return false
+	}
+	for _, n := range a.adminNets {
+		if n.Contains(parsed) {
+			return true
+		}
+	}
+	return false
+}
+
+// AdminNetworks lists auth.admin_keys.allowed_cidrs, for the UI.
+func (a *Authenticator) AdminNetworks() []string {
+	return append([]string(nil), a.cfg.AdminKeys.AllowedCIDRs...)
 }
 
 // KeyScope resolves a bearer token to a project scope: viewer for ro

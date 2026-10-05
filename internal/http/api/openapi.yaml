@@ -6,6 +6,11 @@ info:
     Heartbeat and uptime monitor. Authenticate with `Authorization: Bearer <api key>`;
     a key is scoped to one project. A browser session may use the same resources under
     `/api/v1/orgs/{org}/projects/{project}/…` with the `X-CSRF-Token` header on writes.
+    Instance administration lives under `/api/v1/admin/…` and takes an instance admin key
+    (`vka_…`, made in the web UI's Instance admin › API keys or with `vink admin key create`
+    on the server host) or an instance admin's session; an admin key reaches nothing else
+    but `/me`, and project and org keys get 403 there. `auth.admin_keys.allowed_cidrs`
+    limits where admin keys are accepted from.
     Errors are RFC 7807 `application/problem+json`. Read-only keys get 403 on any non-GET.
     Every response carries `X-Request-Id`. Rate limit: 600 requests per minute per caller.
 servers:
@@ -344,7 +349,7 @@ paths:
   /me:
     get:
       summary: Caller identity
-      responses: {"200": {description: Key prefix or user, org, project, role.}}
+      responses: {"200": {description: "The user, or the key: prefix, access, kind (project, org or admin), name and, for an admin key, expires_at; with the org, project and role."}}
   /monitors:
     get:
       summary: List monitors sorted by name
@@ -475,6 +480,16 @@ paths:
       summary: Every project of the org as one apply YAML (org key or an org admin's session)
       parameters: [{name: secrets, in: query, schema: {type: string, enum: ["1"]}, description: include channel secrets; needs an rw key}]
       responses: {"200": {description: application/yaml.}, "403": {description: A project key, or secrets asked for without write access.}}
+  /admin/keys:
+    get:
+      summary: Instance admin keys not revoked, newest first, expired ones included (instance admin key or session)
+      description: Admin keys are made only in the web UI or with vink admin key create on the server host, never through the API.
+      responses: {"200": {description: "{items: [AdminKey]}"}, "403": {description: A project or org key, or a session without instance admin.}}
+  /admin/keys/{id}:
+    parameters: [{$ref: "#/components/parameters/id"}]
+    delete:
+      summary: Revoke an instance admin key; it stops working at once
+      responses: {"204": {description: Revoked.}, "403": {description: A read-only key.}, "404": {description: Unknown or already revoked.}}
   /monitors/{slug}/check:
     parameters: [{$ref: "#/components/parameters/slug"}]
     post: {summary: Run a pull monitor's check now and return it, responses: {"200": {description: The monitor after the attempt.}, "422": {description: Not a pull monitor, or paused.}}}
