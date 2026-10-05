@@ -65,6 +65,14 @@ key_file = "/data/secret.key"               # back it up with the database
 - Proxy sign-in (`[auth.proxy]`) and OIDC (`[auth.oidc]`) are described in
   [design.md](design.md); the OIDC redirect URI is `base_url` + `/auth/oidc/callback`, so
   register that at the provider.
+- Instance admin keys (`vka_…`, for `vink admin` through a context) can be limited to the
+  networks people administer from with `[auth.admin_keys] allowed_cidrs`. vink checks the
+  client address, which behind a proxy is only right when `trusted_proxies` names the proxy:
+  without it every request seems to come from the proxy, so either every key is refused or
+  the limit means nothing. `vink serve` warns at start about that combination.
+- With Apache and Kerberos, where the AD groups cannot be shaped for vink, set
+  `[auth.proxy] roles = "vink"` and list the first admins in `instance_admins`; org admins then
+  add people by sign-in name on the Members tab. [design.md](design.md) has the details.
 - Status pages can have their own hostname (`custom_domain` on the page). Route that host to
   vink as a whole; vink serves the page at that host's root whatever path the rest of it lives
   under.
@@ -150,6 +158,8 @@ vink ls
 | Signing in loops back to the form, or "The form expired" after every submit | The cookie is scoped to `base_url`'s path but the browser is on another: the proxy strips the prefix, or `base_url` differs from the public URL | Forward the path unchanged and make `base_url` the address people type |
 | Links in alerts, invites or the ping URL point at the wrong host or path | `base_url` is wrong | Fix it; the Server tab in instance admin shows the value in use |
 | "No identity from the proxy" on every page | `[auth.proxy] trusted_cidrs` does not include the proxy, or the secret differs | Match the proxy's network and the shared secret; `vink serve -d` logs why a header was refused |
+| `vink admin` says "admin keys are not accepted from 172.16.0.2" (the proxy's address) | `allowed_cidrs` is set but `trusted_proxies` does not name the proxy | Set `trusted_proxies`; the address in the message is the one vink checked |
+| `vink admin` says "this context's key is not an instance admin key" | The context holds a project or org key (`vk_…`) | Make an instance admin key in Instance admin › API keys and add it as its own context; `vink ctx ls` shows each context's kind |
 | `vink serve` stops at start with `server.base_url: the path "/api" starts with /api, which is a vink route` | The path shadows a vink route | Choose another path |
 | Pings 404 on a separate ping listener | `ping.base_url` has a path and the proxy or the job does not use it | Use it, or drop the path from `ping.base_url` |
 
@@ -172,6 +182,7 @@ the proxy's user headers there.
 | `/a/{token}` | one-click acknowledgement from an alert | the person who got the alert | signed token, 7 days | no | yes |
 | `/ping/{key}/{slug}[/…]`, `/ping/id/{id}[/…]` | heartbeat pings | jobs | the project's ping key | no | yes |
 | `/api/v1/…` | the API | the CLI, scripts, the UI | bearer API key, or a session with CSRF on the `/orgs/…` and `/me` routes | no | yes |
+| `/api/v1/admin/…` | instance administration | `vink admin` through a context | instance admin key (`vka_…`, optionally from `allowed_cidrs` only), or an instance admin's session with CSRF | no | yes |
 | `/api/v1/openapi.yaml` | the API description | people, tools | none | no | yes |
 | `/agent/v1` | the probe agent gateway, WebSocket | `vink agent` | agent token | no | yes |
 | `/metrics` | Prometheus metrics | the scraper | bearer `metrics.token` when set | no | yes |

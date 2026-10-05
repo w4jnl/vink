@@ -276,6 +276,9 @@ go down for lack of an agent.
 - OpenID Connect uses the authorization-code flow with PKCE, checks the state and the nonce, and
   maps the groups claim to roles the same way proxy mode maps a header: a group `vink:<org>:<role>`
   grants that role, `vink:admin` makes an instance admin.
+- Where groups cannot be shaped, such as AD behind Apache and Kerberos, `roles = "vink"` on the
+  proxy or OIDC sets roles in vink instead: org admins add people by sign-in name, and
+  `instance_admins` names the first instance admins.
 - The audit log per org lists changes with the YAML before and after, access events and every
   state flip, filtered by kind, project, person and period; members see their projects' rows.
   Instance admins have the whole instance at `/admin/audit`. Rows are never edited or pruned.
@@ -290,8 +293,10 @@ bodies after 14; events, incidents and the audit log are kept.
 
 ## CLI
 
-`vink` is one binary: `serve` runs the server, `agent` runs a probe, `admin` works on the
-database file on the server host, and the rest talk to a server through a context, like kubectl.
+`vink` is one binary: `serve` runs the server, `agent` runs a probe, and the rest talk to a
+server through a context, like kubectl. `admin` works on the database file on the server host,
+or anywhere through a context whose key is an instance admin key (`vka_…`, made in Instance
+admin › API keys or with `vink admin key create`).
 
 | Command | What it does |
 | --- | --- |
@@ -299,11 +304,12 @@ database file on the server host, and the rest talk to a server through a contex
 | `vink agent --server … --token …` | runs a probe agent that connects out to the server |
 | `vink admin init --org <slug> --user <name> --password-stdin` | bootstraps an empty database: instance admin, first org, first project, rw API key |
 | `vink admin org create\|ls` · `org key create\|ls\|revoke` | orgs and org keys (export and apply for a whole org) |
-| `vink admin user ls\|create\|promote\|grant\|revoke\|totp-reset\|reset-link` | users, roles in an org, and the break-glass for a lost phone or password |
+| `vink admin user ls\|create\|promote\|demote\|grant\|revoke\|totp-reset\|reset-link` | users, roles in an org, and the break-glass for a lost phone or password; `create --source proxy` makes a proxy account ahead of its first visit |
+| `vink admin key create\|ls\|revoke` | instance admin keys for `vink admin` through a context; `create` runs on the server host |
 | `vink admin agent add\|ls\|revoke` | an org's probe agents |
 | `vink admin backup --out <file>` | a consistent copy of the database with VACUUM INTO |
 | `vink migrate up\|down\|status\|new\|dump` | migrations; `dump` writes `db/schema.sql` |
-| `vink ctx add\|use\|rm\|ls` | contexts: a server URL plus an API key |
+| `vink ctx add\|use\|rm\|ls` | contexts: a server URL plus an API key; `ls` shows each key's kind and scope |
 | `vink ls [--tag] [--state]` · `get <slug>` · `logs <slug> [-n] [--follow]` | monitors, one monitor with its last ten events, observations |
 | `vink pause\|resume\|check <slug>` · `ack <incident id>` | actions |
 | `vink ping <slug> [--start] [--fail] [--exit N] [--log] [--msg …]` | a ping with the project's ping key: `VINK_PING_KEY` and `VINK_PING_URL` on a job host, no API key needed, or looked up through the context's read-write key |

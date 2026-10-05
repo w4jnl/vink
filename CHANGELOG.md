@@ -18,6 +18,47 @@ updates this file first. Dates are the tag dates.
   setting: the open ones (the default, as before), the open ones and those resolved in the last
   7, 30 or 90 days, or none. A past incident shows the monitor, when it started and how long it
   lasted, never the reason. It is in the settings panel, the API and apply files as `incidents`.
+- **`vink admin` through a context.** `vink admin` no longer needs the server host: with an
+  instance admin key in a context it runs through the new `/api/v1/admin` API, which covers
+  orgs, org keys, agents, users and roles. On the host it still runs against the database file.
+  The place is picked in order: `--db`, `--config`, `VINK_DB_PATH` or `VINK_CONFIG_FILE`, then
+  `--context`, then a `./vink.db` here, then the current context. `-d` says which.
+- **Instance admin keys.** Keys (`vka_…`) that act as an instance admin on `/api/v1/admin` and
+  nothing else, read-only or read-write. They always expire, after 30, 90 or 365 days, and are
+  made in a new Instance admin › API keys tab or with `vink admin key create` on the host, never
+  through the API. A revoke holds at once. `[auth.admin_keys] allowed_cidrs` limits where they
+  are accepted from. When their creator stops being instance admin or is disabled, they are
+  revoked too. They cannot reset an instance admin's password or two-factor.
+- **`vink ctx ls` shows what each key is.** New KIND and SCOPE columns: a project key for
+  `homelab/prod`, an org key for `homelab`, or an admin key for the instance with its expiry.
+  `vink ctx add` asks the server once and says what it found.
+- **Roles set in vink.** `auth.proxy.roles` and `auth.oidc.roles` choose where people's roles
+  come from: the provider's groups (`groups`, as before) or vink (`vink`), for a provider whose
+  groups you cannot shape, such as AD behind Apache and Kerberos. In `vink` mode org admins add
+  people by sign-in name on the Members tab, and instance admins use `vink admin user create
+  --source proxy` and `user grant`, ahead of the first visit if need be. Switching to `vink`
+  keeps every role the groups gave, as ordinary ones. `instance_admins` names people who are
+  instance admin on first access. The Server tab shows each provider's role source.
+- **New `vink admin` commands:** `key create|ls|revoke`, `user create --source local|proxy|oidc`,
+  `user demote`, and `org create --owner`.
+- **Changed: `vink admin --json`.** It prints the API's snake_case shapes now, the same on the
+  host and through a context, and lists as `{"items": [...]}`. The org key's plaintext is in
+  `key` (was `token`).
+- **Fixed: a group sync could overwrite a role set in vink.** A role given by hand in an org that
+  the proxy's or OIDC's groups also cover was replaced at the next request or sign-in.
+- **Fixed: the proxy admitted disabled accounts and local accounts.** A disabled account coming
+  through the proxy now gets "This account is disabled"; a local account's name is sent to the
+  sign-in form.
+- **Fixed: member rows said the wrong provider.** A member from OIDC groups read "role from the
+  proxy's groups", and the note under the list showed the default group names instead of the
+  configured pattern or group map.
+- **Fixed: changing a role the groups gave seemed to work.** It was undone at the next sync; it
+  is refused now, with the setting to change instead.
+- **Fixed: an org admin could make anyone, themselves included, an owner.** Only owners and
+  instance admins grant `owner`.
+- **The no-access page says what is missing** for the person's provider: the configured group
+  pattern or group map, a sign-out and in for OIDC, or an org admin to add them when roles are set
+  in vink.
 - **API Location on org routes.** Creating an agent answered with `Location:
   /api/v1/agents/{name}`; it is `/api/v1/orgs/{org}/agents/{name}`, where the agent is.
 
