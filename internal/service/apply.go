@@ -216,6 +216,7 @@ func (s *Service) applyFile(ctx context.Context, sc domain.Scope, f *apply.File,
 	}
 	for i, p := range f.StatusPages {
 		want, password := p.ToDomain()
+		want.OrgID, want.ProjectID = sc.OrgID, sc.ProjectID // the owner decides the defaults
 		want.Normalize()
 		label := "page " + want.Slug
 		if cur, ok := pageBySlug[want.Slug]; ok {

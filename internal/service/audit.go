@@ -128,11 +128,25 @@ func routeSnapshot(r *domain.Route) string {
 
 func maintenanceSnapshot(w *domain.Maintenance) string { return yamlOf(apply.MaintenanceFrom(w)) }
 
-func pageSnapshot(p *domain.StatusPage) string {
+// pageSnapshot is a page as an apply file writes it. projectSlugs names an
+// org page's projects; an id it lacks is shown as it is.
+func pageSnapshot(p *domain.StatusPage, projectSlugs map[string]string) string {
 	sp := apply.StatusPage{Slug: p.Slug, Title: p.Title, MatchTags: p.MatchTags, CustomDomain: p.CustomDomain}
 	if !p.Public {
 		private := false
 		sp.Public = &private
+	}
+	if p.Incidents != "" && p.Incidents != domain.IncidentsOpen {
+		sp.Incidents = p.Incidents
+	}
+	if p.IsOrg() {
+		sp.GroupBy = p.GroupBy
+		for _, id := range p.Projects {
+			if slug, ok := projectSlugs[id]; ok {
+				id = slug
+			}
+			sp.Projects = append(sp.Projects, id)
+		}
 	}
 	return yamlOf(sp)
 }

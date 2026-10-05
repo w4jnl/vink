@@ -69,14 +69,19 @@ func (p *StatusPage) IncidentWindow() (open bool, days int) {
 }
 
 // Normalize trims and lowercases what must be canonical and fills the
-// defaults. Call before Validate.
+// defaults: an org page groups by project, a project page by tag. Set the
+// owner (OrgID, ProjectID) first. Call before Validate.
 func (p *StatusPage) Normalize() {
 	p.Slug = strings.ToLower(strings.TrimSpace(p.Slug))
 	p.Title = strings.TrimSpace(p.Title)
 	p.MatchTags = NormalizeTags(p.MatchTags)
 	p.CustomDomain = strings.ToLower(strings.TrimSpace(p.CustomDomain))
 	p.GroupBy = strings.ToLower(strings.TrimSpace(p.GroupBy))
-	if p.GroupBy == "" {
+	switch {
+	case p.GroupBy != "":
+	case p.IsOrg():
+		p.GroupBy = GroupByProject
+	default:
 		p.GroupBy = GroupByTag
 	}
 	p.Incidents = strings.ToLower(strings.TrimSpace(p.Incidents))

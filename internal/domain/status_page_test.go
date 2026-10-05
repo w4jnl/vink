@@ -17,6 +17,7 @@ func TestStatusPageOwnerRules(t *testing.T) {
 		{"project page with projects", StatusPage{ProjectID: "p", Slug: "home", Title: "Home", Public: true, Projects: []string{"x"}}, "projects"},
 		{"org page by project", StatusPage{OrgID: "o", Slug: "all", Title: "All", Public: true, GroupBy: "Project", Projects: []string{"a", "b", "a", " "}}, ""},
 		{"org page by tag", StatusPage{OrgID: "o", Slug: "all", Title: "All", Public: true, GroupBy: "tag"}, ""},
+		{"org page, defaults", StatusPage{OrgID: "o", Slug: "all", Title: "All", Public: true}, ""},
 		{"unknown grouping", StatusPage{OrgID: "o", Slug: "all", Title: "All", Public: true, GroupBy: "team"}, "group_by"},
 		{"unknown incidents", StatusPage{OrgID: "o", Slug: "all", Title: "All", Public: true, Incidents: "14d"}, "incidents"},
 	}
@@ -37,6 +38,13 @@ func TestStatusPageOwnerRules(t *testing.T) {
 	p.Normalize()
 	if p.GroupBy != GroupByProject || p.Incidents != IncidentsOpen || strings.Join(p.Projects, ",") != "a,b" || !p.IsOrg() {
 		t.Errorf("normalized: %+v", p)
+	}
+	defaults := []StatusPage{{OrgID: "o"}, {OrgID: "o", ProjectID: "p"}}
+	for i, want := range []string{GroupByProject, GroupByTag} {
+		defaults[i].Normalize()
+		if defaults[i].GroupBy != want {
+			t.Errorf("default grouping %d: %s, want %s", i, defaults[i].GroupBy, want)
+		}
 	}
 }
 

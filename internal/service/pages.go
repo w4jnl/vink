@@ -89,7 +89,7 @@ func (s *Service) CreateStatusPage(ctx context.Context, sc domain.Scope, p *doma
 		}
 		out = statusPageFromRow(row)
 		e := projectEntry(sc, "page.create", out.Slug, out.ID)
-		e.After = pageSnapshot(out)
+		e.After = pageSnapshot(out, nil)
 		return s.record(ctx, q, sc, e)
 	})
 	if err != nil {
@@ -157,7 +157,7 @@ func (s *Service) UpdateStatusPage(ctx context.Context, sc domain.Scope, slug st
 		}
 		out = statusPageFromRow(row)
 		e := projectEntry(sc, "page.update", out.Slug, out.ID)
-		e.Before, e.After = pageSnapshot(cur), pageSnapshot(out)
+		e.Before, e.After = pageSnapshot(cur, nil), pageSnapshot(out, nil)
 		e.Detail = map[string]any{"fields": changedFields(e.Before, e.After)}
 		return s.record(ctx, q, sc, e)
 	})
@@ -186,7 +186,7 @@ func (s *Service) DeleteStatusPage(ctx context.Context, sc domain.Scope, slug st
 			return domain.NotFound("status page")
 		}
 		e := projectEntry(sc, "page.delete", cur.Slug, cur.ID)
-		e.Before = pageSnapshot(cur)
+		e.Before = pageSnapshot(cur, nil)
 		return s.record(ctx, q, sc, e)
 	})
 	if err != nil {
@@ -236,48 +236,151 @@ func (s *Service) VerifyStatusToken(p *domain.StatusPage, token string) bool {
 
 // PublicStatus is what a status page shows.
 type PublicStatus struct {
-	Page        *domain.StatusPage
-	Project     *domain.Project
-	Monitors    []*domain.Monitor
-	Groups      []StatusGroup
-	Incidents   []*domain.Incident
-	Maintenance bool
-	Down        int
-	Late        int
-	Events      map[string][]*domain.Event
-	GeneratedAt time.Time
+	Page *domain.StatusPage
+	// Projects are the projects on the page, in page order: a project
+	// page's own, or an org page's chosen ones (all of them by name).
+	Projects []*domain.Project
+	// Location is the page's clock: the project's timezone, or on an org
+	// page the one its projects share, else UTC.
+	Location *time.Location
+	Monitors []*domain.Monitor
+	Groups   []StatusGroup
+	// Incidents are the open ones, newest first. The banner reads them even
+	// when the page does not list them.
+	Incidents []*domain.Incident
+	// PastIncidents were resolved within the page's window, newest first,
+	// at most MaxPastIncidents; PastMore counts the ones left out.
+	PastIncidents []*domain.Incident
+	PastMore      int
+	Maintenance   bool
+	Down          int
+	Late          int
+	Events        map[string][]*domain.Event
+	GeneratedAt   time.Time
+	projectByID   map[string]*domain.Project
 }
 
-// StatusGroup is one tag's monitors, sorted by name.
+// MaxPastIncidents caps the past incidents a page lists.
+const MaxPastIncidents = 50
+
+// StatusGroup is one tag's or one project's monitors, sorted by name.
 type StatusGroup struct {
 	Name     string
 	Monitors []*domain.Monitor
 }
 
-// PublicStatus gathers the page's monitors, their last 90 days of events,
-// the open incidents and whether maintenance covers any of them.
+// ProjectOf returns the project a monitor or incident belongs to.
+func (st *PublicStatus) ProjectOf(projectID string) *domain.Project {
+	return st.projectByID[projectID]
+}
+
+// pageProjects lists the projects a page shows, in page order.
+func (s *Service) pageProjects(ctx context.Context, p *domain.StatusPage) ([]*domain.Project, error) {
+	if !p.IsOrg() {
+		project, err := s.ProjectByID(ctx, p.ProjectID)
+		if err != nil {
+			return nil, err
+		}
+		return []*domain.Project{project}, nil
+	}
+	rows, err := s.db.Read().ListProjects(ctx, p.OrgID)
+	if err != nil {
+		return nil, err
+	}
+	all := make([]*domain.Project, 0, len(rows))
+	byID := make(map[string]*domain.Project, len(rows))
+	for _, r := range rows {
+		pr := projectFromRow(r)
+		all = append(all, pr)
+		byID[pr.ID] = pr
+	}
+	if len(p.Projects) == 0 {
+		sort.SliceStable(all, func(i, j int) bool { return strings.ToLower(all[i].Name) < strings.ToLower(all[j].Name) })
+		return all, nil
+	}
+	out := make([]*domain.Project, 0, len(p.Projects))
+	for _, id := range p.Projects {
+		if pr, ok := byID[id]; ok { // a deleted project drops off the page
+			out = append(out, pr)
+		}
+	}
+	return out, nil
+}
+
+// pageLocation is the timezone a page's projects share, else UTC.
+func pageLocation(projects []*domain.Project) *time.Location {
+	tz := ""
+	for i, pr := range projects {
+		switch {
+		case i == 0:
+			tz = pr.Timezone
+		case pr.Timezone != tz:
+			return time.UTC
+		}
+	}
+	loc, err := time.LoadLocation(tz)
+	if err != nil || tz == "" {
+		return time.UTC
+	}
+	return loc
+}
+
+// PublicStatus gathers the page's monitors from its projects, their last 90
+// days of events, the open incidents, the incidents resolved within the
+// page's window, and whether maintenance covers any of the monitors.
 func (s *Service) PublicStatus(ctx context.Context, p *domain.StatusPage, now time.Time) (*PublicStatus, error) {
-	project, err := s.ProjectByID(ctx, p.ProjectID)
+	projects, err := s.pageProjects(ctx, p)
 	if err != nil {
 		return nil, err
 	}
-	rows, err := s.db.Read().ListMonitors(ctx, p.ProjectID)
-	if err != nil {
-		return nil, err
-	}
-	out := &PublicStatus{Page: p, Project: project, Events: map[string][]*domain.Event{}, GeneratedAt: now}
+	out := &PublicStatus{Page: p, Projects: projects, Location: pageLocation(projects), Events: map[string][]*domain.Event{}, GeneratedAt: now,
+		projectByID: make(map[string]*domain.Project, len(projects))}
+	_, days := p.IncidentWindow()
 	shown := map[string]bool{}
-	groups := map[string]*StatusGroup{}
-	var order []string
+	byProject := map[string][]*domain.Monitor{}
+	for _, pr := range projects {
+		out.projectByID[pr.ID] = pr
+		if err := s.gatherProject(ctx, p, pr, now, days, out, shown, byProject); err != nil {
+			return nil, err
+		}
+	}
+	if p.IsOrg() && p.GroupBy == domain.GroupByProject {
+		for _, pr := range projects {
+			if ms := byProject[pr.ID]; len(ms) > 0 {
+				sortByName(ms)
+				out.Groups = append(out.Groups, StatusGroup{Name: pr.Name, Monitors: ms})
+			}
+		}
+	} else {
+		out.Groups = groupByTag(p, out.Monitors)
+	}
+	sort.SliceStable(out.Incidents, func(i, j int) bool { return out.Incidents[i].OpenedAt.After(out.Incidents[j].OpenedAt) })
+	sort.SliceStable(out.PastIncidents, func(i, j int) bool { return out.PastIncidents[i].OpenedAt.After(out.PastIncidents[j].OpenedAt) })
+	if n := len(out.PastIncidents); n > MaxPastIncidents {
+		out.PastIncidents, out.PastMore = out.PastIncidents[:MaxPastIncidents], n-MaxPastIncidents
+	}
+	return out, nil
+}
+
+// gatherProject adds one project's shown monitors, events, incidents and
+// maintenance to out.
+func (s *Service) gatherProject(ctx context.Context, p *domain.StatusPage, pr *domain.Project, now time.Time, days int,
+	out *PublicStatus, shown map[string]bool, byProject map[string][]*domain.Monitor) error {
+	q := s.db.Read()
+	rows, err := q.ListMonitors(ctx, pr.ID)
+	if err != nil {
+		return err
+	}
+	var mine []*domain.Monitor
 	for _, r := range rows {
 		m, err := monitorFromRow(r)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		if !p.Shows(m) {
 			continue
 		}
-		out.Monitors = append(out.Monitors, m)
+		mine = append(mine, m)
 		shown[m.ID] = true
 		switch m.State {
 		case domain.StateDown:
@@ -285,6 +388,62 @@ func (s *Service) PublicStatus(ctx context.Context, p *domain.StatusPage, now ti
 		case domain.StateLate:
 			out.Late++
 		}
+	}
+	out.Monitors = append(out.Monitors, mine...)
+	byProject[pr.ID] = mine
+	events, err := q.ListProjectEventsSince(ctx, db.ListProjectEventsSinceParams{ProjectID: pr.ID, At: domain.Millis(now.Add(-90 * 24 * time.Hour))})
+	if err != nil {
+		return err
+	}
+	for _, e := range events {
+		if shown[e.MonitorID] {
+			out.Events[e.MonitorID] = append(out.Events[e.MonitorID], eventFromRow(e))
+		}
+	}
+	open, err := q.ListOpenIncidents(ctx, pr.ID)
+	if err != nil {
+		return err
+	}
+	for _, r := range open {
+		if shown[r.MonitorID] {
+			out.Incidents = append(out.Incidents, incidentFrom(incidentRow{r.ID, r.MonitorID, r.ProjectID, r.OpenedAt, r.ResolvedAt, r.AckedBy, r.AckedAt, r.OpenEventID, r.CloseEventID, r.MonitorSlug, r.MonitorName, r.MonitorTags, r.Reason}))
+		}
+	}
+	if days > 0 {
+		since := now.Add(-time.Duration(days) * 24 * time.Hour)
+		recent, err := q.ListIncidents(ctx, db.ListIncidentsParams{ProjectID: pr.ID, Since: ptri(domain.Millis(since)), Limit: 1000})
+		if err != nil {
+			return err
+		}
+		for _, r := range recent {
+			if r.ResolvedAt != nil && shown[r.MonitorID] {
+				out.PastIncidents = append(out.PastIncidents, incidentFrom(incidentRow{r.ID, r.MonitorID, r.ProjectID, r.OpenedAt, r.ResolvedAt, r.AckedBy, r.AckedAt, r.OpenEventID, r.CloseEventID, r.MonitorSlug, r.MonitorName, r.MonitorTags, r.Reason}))
+			}
+		}
+	}
+	windows, err := s.listMaintenance(ctx, q, pr.ID)
+	if err != nil {
+		return err
+	}
+	for _, w := range windows {
+		if _, active := w.ActiveAt(now); !active {
+			continue
+		}
+		for _, m := range mine {
+			if w.Covers(m) {
+				out.Maintenance = true
+			}
+		}
+	}
+	return nil
+}
+
+// groupByTag puts each monitor in its first tag's group, groups in
+// match_tags order, then the rest by name.
+func groupByTag(p *domain.StatusPage, monitors []*domain.Monitor) []StatusGroup {
+	groups := map[string]*StatusGroup{}
+	var order []string
+	for _, m := range monitors {
 		name := p.Group(m)
 		g, ok := groups[name]
 		if !ok {
@@ -294,7 +453,6 @@ func (s *Service) PublicStatus(ctx context.Context, p *domain.StatusPage, now ti
 		}
 		g.Monitors = append(g.Monitors, m)
 	}
-	// groups follow match_tags order, then the rest by name
 	rank := func(name string) int {
 		for i, t := range p.MatchTags {
 			if t == name {
@@ -309,44 +467,17 @@ func (s *Service) PublicStatus(ctx context.Context, p *domain.StatusPage, now ti
 		}
 		return order[i] < order[j]
 	})
+	out := make([]StatusGroup, 0, len(order))
 	for _, name := range order {
 		g := groups[name]
-		sort.SliceStable(g.Monitors, func(i, j int) bool { return strings.ToLower(g.Monitors[i].Name) < strings.ToLower(g.Monitors[j].Name) })
-		out.Groups = append(out.Groups, *g)
+		sortByName(g.Monitors)
+		out = append(out, *g)
 	}
-	events, err := s.db.Read().ListProjectEventsSince(ctx, db.ListProjectEventsSinceParams{ProjectID: p.ProjectID, At: domain.Millis(now.Add(-90 * 24 * time.Hour))})
-	if err != nil {
-		return nil, err
-	}
-	for _, e := range events {
-		if shown[e.MonitorID] {
-			out.Events[e.MonitorID] = append(out.Events[e.MonitorID], eventFromRow(e))
-		}
-	}
-	incRows, err := s.db.Read().ListOpenIncidents(ctx, p.ProjectID)
-	if err != nil {
-		return nil, err
-	}
-	for _, r := range incRows {
-		if shown[r.MonitorID] {
-			out.Incidents = append(out.Incidents, incidentFrom(incidentRow{r.ID, r.MonitorID, r.ProjectID, r.OpenedAt, r.ResolvedAt, r.AckedBy, r.AckedAt, r.OpenEventID, r.CloseEventID, r.MonitorSlug, r.MonitorName, r.MonitorTags, r.Reason}))
-		}
-	}
-	windows, err := s.listMaintenance(ctx, s.db.Read(), p.ProjectID)
-	if err != nil {
-		return nil, err
-	}
-	for _, w := range windows {
-		if _, active := w.ActiveAt(now); !active {
-			continue
-		}
-		for _, m := range out.Monitors {
-			if w.Covers(m) {
-				out.Maintenance = true
-			}
-		}
-	}
-	return out, nil
+	return out
+}
+
+func sortByName(ms []*domain.Monitor) {
+	sort.SliceStable(ms, func(i, j int) bool { return strings.ToLower(ms[i].Name) < strings.ToLower(ms[j].Name) })
 }
 
 // ErrStatusLocked says the visitor has not entered the page's password.

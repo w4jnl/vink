@@ -161,10 +161,7 @@ func (h *Web) renderStatus(w http.ResponseWriter, r *http.Request, page *domain.
 	if err != nil {
 		return err
 	}
-	loc, err := time.LoadLocation(st.Project.Timezone)
-	if err != nil {
-		loc = time.UTC
-	}
+	loc := st.Location
 	d := statusData{Root: middleware.Prefix(r), Title: page.Title, Slug: page.Slug, Down: st.Down > 0, Updated: "updated " + timefmt.Clock(now, loc) + " " + now.In(loc).Format("MST")}
 	d.Banner = statusBanner(st, loc)
 	for _, g := range st.Groups {

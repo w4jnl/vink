@@ -335,17 +335,23 @@ func trimICMP(i *domain.ICMPCheck) *domain.ICMPCheck {
 
 // StatusPage is a page; the password is write-only and never exported.
 type StatusPage struct {
-	Slug         string   `json:"slug" yaml:"slug"`
-	Title        string   `json:"title" yaml:"title"`
-	MatchTags    []string `json:"match_tags,omitempty" yaml:"match_tags,flow,omitempty"`
+	Slug      string   `json:"slug" yaml:"slug"`
+	Title     string   `json:"title" yaml:"title"`
+	MatchTags []string `json:"match_tags,omitempty" yaml:"match_tags,flow,omitempty"`
+	// Projects and GroupBy belong to an org file's pages: the project slugs
+	// shown (none for all) and project or tag.
+	Projects     []string `json:"projects,omitempty" yaml:"projects,flow,omitempty"`
+	GroupBy      string   `json:"group_by,omitempty" yaml:"group_by,omitempty"`
+	Incidents    string   `json:"incidents,omitempty" yaml:"incidents,omitempty"`
 	Public       *bool    `json:"public,omitempty" yaml:"public,omitempty"`
 	Password     string   `json:"password,omitempty" yaml:"password,omitempty"`
 	CustomDomain string   `json:"custom_domain,omitempty" yaml:"custom_domain,omitempty"`
 }
 
-// ToDomain converts a page; the password comes back separately.
+// ToDomain converts a page; the password comes back separately. Projects
+// are slugs here and ids in the domain, so the caller resolves them.
 func (p StatusPage) ToDomain() (*domain.StatusPage, string) {
-	d := &domain.StatusPage{Slug: p.Slug, Title: p.Title, MatchTags: p.MatchTags, CustomDomain: p.CustomDomain, Public: true}
+	d := &domain.StatusPage{Slug: p.Slug, Title: p.Title, MatchTags: p.MatchTags, CustomDomain: p.CustomDomain, Public: true, GroupBy: p.GroupBy, Incidents: p.Incidents}
 	if p.Public != nil {
 		d.Public = *p.Public
 	}
