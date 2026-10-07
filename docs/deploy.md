@@ -62,6 +62,13 @@ key_file = "/data/secret.key"               # back it up with the database
   `ping.base_url`, so a ping hostname can live at the root while the UI lives under a path.
   Pings on the shared listener use the server's path; a different path there is refused at
   start.
+- **Pings around the proxy.** The same listener lets jobs reach vink without the proxy, when the
+  proxy is slow or adds sign-in machinery pings do not need. It serves `/ping/…` and nothing
+  else: no UI, no API, no identity headers, so opening it exposes only what a ping key already
+  allows. Set `ping.listen = ":8081"` and `ping.base_url` to the address jobs use
+  (`http://vink-host.corp.example:8081`), so the ping URLs vink shows point there, and allow the
+  port only from the job hosts in the firewall. Pings there are rate-limited and logged as on
+  the main listener; the client address is the job's own, so `trusted_proxies` is not involved.
 - Proxy sign-in (`[auth.proxy]`) and OIDC (`[auth.oidc]`) are described in
   [design.md](design.md); the OIDC redirect URI is `base_url` + `/auth/oidc/callback`, so
   register that at the provider.
@@ -158,6 +165,7 @@ vink ls
 | Signing in loops back to the form, or "The form expired" after every submit | The cookie is scoped to `base_url`'s path but the browser is on another: the proxy strips the prefix, or `base_url` differs from the public URL | Forward the path unchanged and make `base_url` the address people type |
 | Links in alerts, invites or the ping URL point at the wrong host or path | `base_url` is wrong | Fix it; the Server tab in instance admin shows the value in use |
 | "No identity from the proxy" on every page | `[auth.proxy] trusted_cidrs` does not include the proxy, or the secret differs | Match the proxy's network and the shared secret; `vink serve -d` logs why a header was refused |
+| Behind Apache, requests now and then stall for seconds or answer 502 after a quiet spell | mod_proxy reuses idle connections to vink with no time limit; vink closes them after 120 s idle | Add `ttl=60` to the `ProxyPass` lines (see `docs/deploy/apache-kerberos.conf`); jobs can also ping the ping listener directly |
 | `vink admin` says "admin keys are not accepted from 172.16.0.2" (the proxy's address) | `allowed_cidrs` is set but `trusted_proxies` does not name the proxy | Set `trusted_proxies`; the address in the message is the one vink checked |
 | `vink admin` says "this context's key is not an instance admin key" | The context holds a project or org key (`vk_…`) | Make an instance admin key in Instance admin › API keys and add it as its own context; `vink ctx ls` shows each context's kind |
 | `vink serve` stops at start with `server.base_url: the path "/api" starts with /api, which is a vink route` | The path shadows a vink route | Choose another path |
