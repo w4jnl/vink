@@ -12,6 +12,7 @@ import (
 
 	"github.com/w4jnl/vink/internal/config"
 	"github.com/w4jnl/vink/internal/db/dbtest"
+	"github.com/w4jnl/vink/internal/domain"
 	"github.com/w4jnl/vink/internal/engine"
 	"github.com/w4jnl/vink/internal/metrics"
 	"github.com/w4jnl/vink/internal/service"
@@ -56,11 +57,11 @@ func TestHealthAndReady(t *testing.T) {
 	if rec.Code != 404 || rec.Body.String() != "not found\n" {
 		t.Fatalf("ping mounted: %d %q", rec.Code, rec.Body.String())
 	}
-	// and not when a separate ping listener is configured
+	// and not when ping.main takes them off it
 	rec = httptest.NewRecorder()
 	Handler(d, false).ServeHTTP(rec, httptest.NewRequest("GET", "/ping/nope/x", nil))
 	if rec.Body.String() == "not found\n" {
-		t.Fatal("ping must not be mounted on the main handler when split")
+		t.Fatal("ping must not be mounted on the main handler when ping.main is off")
 	}
 }
 
@@ -153,5 +154,49 @@ func TestMountedUnderAPath(t *testing.T) {
 	ph.ServeHTTP(rec, httptest.NewRequest("GET", "/ping/nope/x", nil))
 	if rec.Code != 404 || rec.Body.String() == "not found\n" {
 		t.Fatalf("split ping at the root must not be served: %d %q", rec.Code, rec.Body.String())
+	}
+}
+
+// TestPingsOnBothListeners: with a ping listener, pings reach the monitor
+// through either port, and one rate limit counts them all.
+func TestPingsOnBothListeners(t *testing.T) {
+	d := testDeps(t)
+	d.Cfg.Ping.Listen = ":0"
+	d.PingMux = NewPingMux(d)
+	ctx := context.Background()
+	admin := domain.Scope{InstanceAdmin: true, Role: domain.RoleOwner}
+	org, _ := d.Svc.CreateOrg(ctx, admin, "o", "O")
+	project, _ := d.Svc.CreateProject(ctx, admin, org.ID, "p", "P", "UTC")
+	main, ping := Handler(d, d.Cfg.PingsOnMain()), PingHandler(d)
+	send := func(h http.Handler) int {
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequest("POST", "/ping/"+project.PingKey+"/job?create=1", nil))
+		return rec.Code
+	}
+	// a monitor may burst 30 pings; half through each port uses it up, then either refuses
+	for i := range 30 {
+		h := main
+		if i%2 == 1 {
+			h = ping
+		}
+		if code := send(h); code != 200 {
+			t.Fatalf("ping %d: %d", i+1, code)
+		}
+	}
+	if a, b := send(main), send(ping); a != 429 || b != 429 {
+		t.Fatalf("over the shared limit: main %d, ping listener %d", a, b)
+	}
+	sc := domain.Scope{OrgID: org.ID, ProjectID: project.ID, Role: domain.RoleMember}
+	obs, err := d.Svc.ListObservations(ctx, sc, "job", service.HistoryPage{Limit: 50})
+	if err != nil || len(obs) != 30 {
+		t.Fatalf("observations: %d %v", len(obs), err)
+	}
+	// ping.main = false: the main listener no longer serves them
+	d.Cfg.Ping.Main = false
+	if d.Cfg.PingsOnMain() {
+		t.Fatal("PingsOnMain with main = false")
+	}
+	if code := send(Handler(d, d.Cfg.PingsOnMain())); code == 200 || code == 429 {
+		t.Fatalf("main listener with ping.main = false: %d", code)
 	}
 }

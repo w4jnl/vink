@@ -130,6 +130,7 @@ func TestValidation(t *testing.T) {
 		"bad base url":      {"VINK_SERVER_BASE_URL": "vink.example.com"},
 		"bad cidr":          {"VINK_SERVER_TRUSTED_PROXIES": "10.0.0.0"},
 		"zero body limit":   {"VINK_PING_BODY_LIMIT": "0"},
+		"pings nowhere":     {"VINK_PING_MAIN": "false"},
 		"no auth":           {"VINK_AUTH_LOCAL_ENABLED": "false"},
 		"proxy no secret":   {"VINK_AUTH_PROXY_ENABLED": "true"},
 		"proxy bad pattern": {"VINK_AUTH_PROXY_ENABLED": "true", "VINK_AUTH_PROXY_SECRET": "x", "VINK_AUTH_PROXY_GROUP_PATTERN": "^vink:(.*)$"},
@@ -311,4 +312,25 @@ func config0Warnings(t *testing.T) []string {
 		t.Fatal(err)
 	}
 	return cfg.Warnings()
+}
+
+// TestPingsOnMain: pings stay on the main listener unless a ping listener
+// is set and ping.main is turned off.
+func TestPingsOnMain(t *testing.T) {
+	for _, tc := range []struct {
+		env  map[string]string
+		want bool
+	}{
+		{map[string]string{}, true},
+		{map[string]string{"VINK_PING_LISTEN": ":8081"}, true},
+		{map[string]string{"VINK_PING_LISTEN": ":8081", "VINK_PING_MAIN": "false"}, false},
+	} {
+		cfg, err := LoadWith("", func(k string) (string, bool) { v, ok := tc.env[k]; return v, ok })
+		if err != nil {
+			t.Fatal(err)
+		}
+		if cfg.PingsOnMain() != tc.want {
+			t.Errorf("%v: PingsOnMain %v", tc.env, cfg.PingsOnMain())
+		}
+	}
 }

@@ -42,16 +42,28 @@ type Deps struct {
 	Gateway *agentgw.Gateway
 	// Mount lets later packages (api, web) register on the main mux.
 	Mount []func(mux *http.ServeMux)
+	// PingMux, when set, is the one ping handler both listeners serve.
+	PingMux http.Handler
 }
 
-// pingMux is the ping ingress without middleware.
-func pingMux(d Deps) *http.ServeMux {
+// NewPingMux is the ping ingress without middleware. Build it once and
+// put it in Deps.PingMux, so the main listener and the ping listener
+// share one handler and one set of rate limits.
+func NewPingMux(d Deps) *http.ServeMux {
 	mux := http.NewServeMux()
 	h := ping.New(d.Svc, d.Log, ping.Options{
 		BodyLimit: int64(d.Cfg.Ping.BodyLimit), RatePerMonitor: d.Cfg.Ping.RatePerMonitor, RatePerIP: d.Cfg.Ping.RatePerIP,
 	})
 	h.Routes(mux)
 	return mux
+}
+
+// pingMux is the shared ping ingress, or a new one when none was built.
+func pingMux(d Deps) http.Handler {
+	if d.PingMux != nil {
+		return d.PingMux
+	}
+	return NewPingMux(d)
 }
 
 // PingHandler is the ping ingress with its own chain, for a separate
@@ -69,8 +81,8 @@ func chain(d Deps, h http.Handler) http.Handler {
 	)
 }
 
-// Handler is the main listener: everything, including pings unless a
-// separate ping listener is configured.
+// Handler is the main listener: everything, including pings unless
+// withPing is false (a ping listener is set and ping.main is off).
 func Handler(d Deps, withPing bool) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {

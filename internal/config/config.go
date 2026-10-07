@@ -47,7 +47,11 @@ type Server struct {
 }
 
 type Ping struct {
-	Listen         string   `toml:"listen"`
+	// Listen is an optional second listener that serves /ping/ alone.
+	Listen string `toml:"listen"`
+	// Main keeps pings on the main listener as well (the default). Set it
+	// to false to take them off there once Listen is set.
+	Main           bool     `toml:"main"`
 	BaseURL        string   `toml:"base_url"`
 	BodyLimit      ByteSize `toml:"body_limit"`
 	RatePerMonitor int      `toml:"rate_per_monitor"`
@@ -206,6 +210,7 @@ func Default() *Config {
 	return &Config{
 		Server: Server{Listen: ":8080", BaseURL: "http://localhost:8080"},
 		Ping: Ping{
+			Main:           true,
 			BodyLimit:      64 * 1024,
 			RatePerMonitor: 10,
 			RatePerIP:      300,
@@ -296,6 +301,10 @@ func (c *Config) SecretKeyFile() string {
 }
 
 // PingBaseURL is the base for ping URLs: ping.base_url or server.base_url.
+// PingsOnMain reports whether the main listener serves /ping/: always
+// without a ping listener, and with one unless ping.main is false.
+func (c *Config) PingsOnMain() bool { return c.Ping.Listen == "" || c.Ping.Main }
+
 func (c *Config) PingBaseURL() string {
 	if c.Ping.BaseURL != "" {
 		return strings.TrimRight(c.Ping.BaseURL, "/")
@@ -372,6 +381,9 @@ func (c *Config) Validate() error {
 		} else if c.Ping.Listen == "" && p != c.PathPrefix() {
 			fail("ping.base_url has the path %q but pings share the main listener, which serves %q; set ping.listen or use the same path", p, c.PathPrefix())
 		}
+	}
+	if !c.Ping.Main && c.Ping.Listen == "" {
+		fail("ping.main = false takes pings off the main listener, but ping.listen is empty: set ping.listen, or pings are served nowhere")
 	}
 	for _, cidr := range c.Server.TrustedProxies {
 		if _, _, err := net.ParseCIDR(cidr); err != nil {

@@ -139,7 +139,9 @@ func runServe(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 	gw := agentgw.New(svc, logging.Sub(log, "agents"))
 	gw.OfflineAfter = cfg.Agents.OfflineAfter.Std()
 	deps := vhttp.Deps{Cfg: cfg, Svc: svc, Auth: authn, Log: log, Sched: sched, Pool: pool, Metrics: m, Gateway: gw, Mount: []func(*http.ServeMux){gw.Mount}}
-	withPing := cfg.Ping.Listen == ""
+	// one ping handler for both listeners, so the rate limits hold across them
+	deps.PingMux = vhttp.NewPingMux(deps)
+	withPing := cfg.PingsOnMain()
 
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -165,7 +167,7 @@ func runServe(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 	run("http", func(ctx context.Context) error {
 		return vhttp.Run(ctx, log, "http", cfg.Server.Listen, vhttp.Handler(deps, withPing))
 	})
-	if !withPing {
+	if cfg.Ping.Listen != "" {
 		run("ping", func(ctx context.Context) error {
 			return vhttp.Run(ctx, log, "ping", cfg.Ping.Listen, vhttp.PingHandler(deps))
 		})

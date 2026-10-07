@@ -97,7 +97,14 @@ func (d Deps) serverFacts(ctx context.Context) web.ServerFacts {
 			agents = strconv.Itoa(d.Gateway.ConnectedCount()) + " of " + strconv.Itoa(total) + " connected"
 		}
 	}
-	f.Network = [][2]string{{"base url", cfg.Server.BaseURL}, {"outbound proxy", outbound}, {"private targets", private}, {"scheduler lag", lag}, {"agents", agents}}
+	pings := "the main listener"
+	switch {
+	case cfg.Ping.Listen != "" && cfg.PingsOnMain():
+		pings = "the main listener and " + cfg.Ping.Listen
+	case cfg.Ping.Listen != "":
+		pings = cfg.Ping.Listen + " only"
+	}
+	f.Network = [][2]string{{"base url", cfg.Server.BaseURL}, {"pings", pings}, {"outbound proxy", outbound}, {"private targets", private}, {"scheduler lag", lag}, {"agents", agents}}
 	return f
 }
 
