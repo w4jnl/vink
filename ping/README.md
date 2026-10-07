@@ -63,7 +63,18 @@ project key. Every call takes options:
 - `ping.ContentType("application/json")` sets the body's type when it is not text.
 - `ping.RunID(id)` pairs a start with its finish by hand. A `Run` does this for you.
 - `ping.Create()` makes the monitor from its first ping, as a heartbeat with a one-day period
-  and a one-hour grace.
+  and a one-hour grace. Options set it up instead: `ping.Name`, `ping.Period` or `ping.Cron`,
+  `ping.Timezone`, `ping.Grace`, `ping.Tolerance`, `ping.MaxRuntime`, `ping.Tags`, and
+  `ping.WasCreated(&created)` to learn whether this ping made it. They apply on create only: a
+  ping never changes a monitor that exists. Settings vink refuses fail the ping with a 400
+  `*StatusError` (not retried), and nothing is recorded.
+
+```go
+err := m.Success(ctx, ping.Create(
+	ping.Cron("0 3 * * *"), ping.Timezone("Europe/Amsterdam"),
+	ping.Grace(30*time.Minute), ping.Tags("backup", "prod"),
+))
+```
 
 Client options: `WithUserAgent("nas-backup")` names the sender in vink's observation panel,
 `WithAttempts`, `WithTimeout`, `WithBodyLimit`, `WithHTTPClient` for a proxy or a private CA,
@@ -153,6 +164,9 @@ case err != nil: // unreachable, 5xx or rate limited after the retries: log and 
 - Put a command's output in `ping.Body`, not `ping.Msg`. The message is one line for the alert,
   and the body is the detail.
 - Never put the ping key in code or in a URL literal. Read it from `VINK_PING_KEY`.
+- When a job makes its own monitor, give `ping.Create` the schedule it really runs on (`Cron`
+  with `Timezone`, or `Period`) and a `Grace` the job can keep. Changing them later is done in
+  vink, not by the ping.
 - `go doc github.com/w4jnl/vink/ping` has the full reference, with runnable examples in
   `example_test.go`.
 
@@ -160,6 +174,7 @@ case err != nil: // unreachable, 5xx or rate limited after the retries: log and 
 
 The module is versioned on its own, with tags named `ping/vX.Y.Z` in the vink repository. It
 works with every vink server from 0.1.0 on. A vink deployed under a path needs a server with path
-support, the first release after 0.1.3. The ping protocol is described in
+support, the first release after 0.1.3. `Create`'s options need a server released after 0.2.1;
+an older one makes the monitor with its defaults and `WasCreated` stays false. The ping protocol is described in
 [docs/heartbeats.md](https://github.com/w4jnl/vink/blob/main/docs/heartbeats.md). MIT
 licensed, like vink.

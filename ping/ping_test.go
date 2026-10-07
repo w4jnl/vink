@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -497,5 +498,54 @@ func TestUserAgent(t *testing.T) {
 	}
 	if ua := f.requests()[0].userAgent; ua != "nas-backup" {
 		t.Fatalf("User-Agent %q", ua)
+	}
+}
+
+// TestCreateSettings: Create's options travel as the query vink reads,
+// WasCreated reports the server's answer, and a 400 is not retried.
+func TestCreateSettings(t *testing.T) {
+	f := newFake(t,
+		answer{status: http.StatusOK, header: map[string]string{"Ping-Monitor": "created"}},
+		answer{status: http.StatusOK, header: map[string]string{"Ping-Monitor": "existing"}},
+		answer{status: http.StatusBadRequest},
+	)
+	c, waits := f.client(t, "k")
+	m := c.Monitor("nightly")
+	ctx := context.Background()
+	var created bool
+	err := m.Success(ctx, Create(Name("Nightly backup"), Cron("0 3 * * *"), Timezone("Europe/Amsterdam"),
+		Grace(30*time.Minute), Tolerance(time.Minute), MaxRuntime(2*time.Hour), Tags("backup", "prod"), WasCreated(&created)))
+	if err != nil || !created {
+		t.Fatalf("first: %v created=%v", err, created)
+	}
+	q, _ := url.ParseQuery(f.requests()[0].query)
+	want := map[string]string{"create": "1", "name": "Nightly backup", "cron": "0 3 * * *", "tz": "Europe/Amsterdam",
+		"grace": "30m0s", "tolerance": "1m0s", "max_runtime": "2h0m0s", "tags": "backup,prod"}
+	for k, v := range want {
+		if q.Get(k) != v {
+			t.Errorf("%s = %q, want %q", k, q.Get(k), v)
+		}
+	}
+	if q.Has("period") {
+		t.Error("period sent without Period")
+	}
+	created = true
+	if err := m.Success(ctx, Create(Period(time.Hour), WasCreated(&created))); err != nil || created {
+		t.Fatalf("existing: %v created=%v", err, created)
+	}
+	if q, _ := url.ParseQuery(f.requests()[1].query); q.Get("period") != "1h0m0s" {
+		t.Errorf("period %q", q.Get("period"))
+	}
+	err = m.Success(ctx, Create(Grace(time.Second)))
+	var se *StatusError
+	if !errors.As(err, &se) || se.StatusCode != http.StatusBadRequest || len(f.requests()) != 3 || len(*waits) != 0 {
+		t.Fatalf("400: %v, %d requests, waits %v", err, len(f.requests()), *waits)
+	}
+	// without options it is the plain create of before
+	if err := m.Success(ctx, Create()); err != nil {
+		t.Fatal(err)
+	}
+	if q := f.requests()[3].query; q != "create=1" {
+		t.Errorf("plain create: %q", q)
 	}
 }

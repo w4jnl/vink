@@ -251,7 +251,14 @@ type request struct {
 	body        []byte
 	contentType string
 	runID       string
-	create      bool
+	create      *createSpec
+}
+
+// createSpec is what a creating ping sends, and where it says whether
+// it made the monitor.
+type createSpec struct {
+	values  url.Values
+	created *bool
 }
 
 // Msg attaches a short message, shown on the observation's row and, on a
@@ -274,12 +281,68 @@ func ContentType(ct string) PingOption { return func(r *request) { r.contentType
 func RunID(id string) PingOption { return func(r *request) { r.runID = id } }
 
 // Create makes the monitor from this ping when the project has none with
-// this slug: a heartbeat with a one-day period and a one-hour grace, to
-// adjust in vink later. The slug must be one vink accepts (up to 64
-// lowercase letters, digits and inner dashes); otherwise the answer is
-// [ErrNotFound].
+// this slug: a heartbeat with a one-day period and a one-hour grace,
+// unless [CreateOption]s set it up otherwise. The slug must be one vink
+// accepts (up to 64 lowercase letters, digits and inner dashes);
+// otherwise the answer is [ErrNotFound].
+//
+// The options apply on create only: a ping never changes a monitor that
+// exists, and its ping goes through as usual. [WasCreated] tells the two
+// apart. Settings vink refuses (a grace shorter than its tolerance, an
+// unknown timezone) make the ping fail with a 400 [StatusError] that is
+// not retried, and nothing is recorded.
 // Pings by id cannot create.
-func Create() PingOption { return func(r *request) { r.create = true } }
+func Create(opts ...CreateOption) PingOption {
+	return func(r *request) {
+		c := &createSpec{values: url.Values{}}
+		for _, o := range opts {
+			o(c)
+		}
+		r.create = c
+	}
+}
+
+// CreateOption sets up the monitor a [Create] ping makes.
+type CreateOption func(*createSpec)
+
+// Name is the monitor's display name; the slug otherwise.
+func Name(name string) CreateOption { return func(c *createSpec) { c.values.Set("name", name) } }
+
+// Period expects a ping every d. Give Period or [Cron], not both.
+func Period(d time.Duration) CreateOption { return dur("period", d) }
+
+// Cron expects a ping at each time of a cron expression ("0 3 * * *"),
+// in [Timezone].
+func Cron(expr string) CreateOption { return func(c *createSpec) { c.values.Set("cron", expr) } }
+
+// Timezone is the IANA name ("Europe/Amsterdam") the schedule is read
+// in; the project's otherwise.
+func Timezone(tz string) CreateOption { return func(c *createSpec) { c.values.Set("tz", tz) } }
+
+// Grace is how long after the expected time a missing ping turns the
+// monitor down.
+func Grace(d time.Duration) CreateOption { return dur("grace", d) }
+
+// Tolerance is how long after the expected time a ping still counts as on
+// time; late starts when it runs out. At most the grace.
+func Tolerance(d time.Duration) CreateOption { return dur("tolerance", d) }
+
+// MaxRuntime fails a run whose finish has not come d after its start.
+func MaxRuntime(d time.Duration) CreateOption { return dur("max_runtime", d) }
+
+// Tags labels the monitor, for routes, filters and status pages.
+func Tags(tags ...string) CreateOption {
+	return func(c *createSpec) { c.values.Set("tags", strings.Join(tags, ",")) }
+}
+
+// WasCreated sets *created, after a ping that went through, to whether
+// that ping made the monitor (true) or found it already there (false,
+// and the other options were not used).
+func WasCreated(created *bool) CreateOption { return func(c *createSpec) { c.created = created } }
+
+func dur(key string, d time.Duration) CreateOption {
+	return func(c *createSpec) { c.values.Set(key, d.String()) }
+}
 
 func build(opts []PingOption) request {
 	var r request
@@ -343,7 +406,7 @@ func (m *Monitor) send(ctx context.Context, signal string, r request) error {
 	if m.err != nil {
 		return m.err
 	}
-	if r.create && !m.bySlug {
+	if r.create != nil && !m.bySlug {
 		return errors.New("ping: Create works on pings by slug, not by id")
 	}
 	u := m.c.base + m.path
@@ -357,8 +420,15 @@ func (m *Monitor) send(ctx context.Context, signal string, r request) error {
 	if r.runID != "" {
 		q.Set("rid", r.runID)
 	}
-	if r.create {
+	var onOK func(http.Header)
+	if r.create != nil {
 		q.Set("create", "1")
+		for k, v := range r.create.values {
+			q[k] = v
+		}
+		if p := r.create.created; p != nil {
+			onOK = func(h http.Header) { *p = h.Get("Ping-Monitor") == "created" }
+		}
 	}
 	if len(q) > 0 {
 		u += "?" + q.Encode()
@@ -368,16 +438,16 @@ func (m *Monitor) send(ctx context.Context, signal string, r request) error {
 		ct = "text/plain; charset=utf-8"
 	}
 	hide := func(s string) string { return strings.Replace(s, m.secret, m.shown, 1) }
-	return m.c.do(ctx, u, hide, keepTail(r.body, m.c.bodyLimit, ct), ct)
+	return m.c.do(ctx, u, hide, keepTail(r.body, m.c.bodyLimit, ct), ct, onOK)
 }
 
 // do sends one ping, retrying what a retry can fix: no answer, a 5xx, a
 // 429 after its Retry-After, and a 413 once, with the body cut to the
 // limit the server named.
-func (c *Client) do(ctx context.Context, u string, hide func(string) string, body []byte, ct string) error {
+func (c *Client) do(ctx context.Context, u string, hide func(string) string, body []byte, ct string, onOK func(http.Header)) error {
 	shrunk := false
 	for attempt := 1; ; attempt++ {
-		err := c.once(ctx, u, hide, body, ct)
+		err := c.once(ctx, u, hide, body, ct, onOK)
 		if err == nil || ctx.Err() != nil {
 			return err
 		}
@@ -409,7 +479,7 @@ func (c *Client) do(ctx context.Context, u string, hide func(string) string, bod
 
 // once sends one attempt. hide takes the key or id out of a URL, since a
 // transport error quotes it and the caller will likely log the error.
-func (c *Client) once(ctx context.Context, u string, hide func(string) string, body []byte, ct string) error {
+func (c *Client) once(ctx context.Context, u string, hide func(string) string, body []byte, ct string, onOK func(http.Header)) error {
 	if c.timeout > 0 {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, c.timeout)
@@ -438,6 +508,9 @@ func (c *Client) once(ctx context.Context, u string, hide func(string) string, b
 	defer func() { _ = resp.Body.Close() }()
 	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
 	if resp.StatusCode == http.StatusOK {
+		if onOK != nil {
+			onOK(resp.Header)
+		}
 		return nil
 	}
 	se := &StatusError{StatusCode: resp.StatusCode, Status: resp.Status}

@@ -48,7 +48,8 @@
 // Every method takes options: [Msg] for a line shown on the observation and
 // in alerts, [Body] for a stored body such as a command's output (with
 // [ContentType] when it is not text), [RunID] to pair a start with its
-// finish, and [Create] to make the monitor from its first ping.
+// finish, and [Create] to make the monitor from its first ping, set up by
+// [CreateOption]s such as [Cron], [Grace] and [Tags] (on create only).
 //
 // # Runs
 //

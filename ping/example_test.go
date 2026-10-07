@@ -108,10 +108,17 @@ func ExampleMonitor_Log() {
 }
 
 // Create makes the monitor from its first ping, so a new job needs no
-// setup in vink first.
+// setup in vink first. Its options set the monitor up; they are used on
+// create only and never change a monitor that exists.
 func ExampleCreate() {
 	c, _ := ping.FromEnv()
 	_ = c.Monitor("cache-warmup").Success(context.Background(), ping.Create())
+
+	var created bool
+	_ = c.Monitor("nightly-backup").Success(context.Background(), ping.Create(
+		ping.Cron("0 3 * * *"), ping.Timezone("Europe/Amsterdam"),
+		ping.Grace(30*time.Minute), ping.Tags("backup"), ping.WasCreated(&created),
+	))
 }
 
 // A ping by id needs no project key: the id alone lets its holder ping
