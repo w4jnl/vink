@@ -17,6 +17,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/w4jnl/vink/internal/cli"
+	"github.com/w4jnl/vink/internal/domain"
 	"github.com/w4jnl/vink/ping"
 )
 
@@ -131,9 +132,90 @@ func firstSet(values ...string) string {
 	return ""
 }
 
+// createFlags make the monitor from the ping, set up as the job runs.
+// The settings apply on create only: a monitor that exists is left as it is.
+type createFlags struct {
+	create                                               bool
+	name, period, cron, tz, grace, tolerance, maxRuntime string
+	tags                                                 []string
+	created                                              bool
+}
+
+var createSettings = []string{"name", "period", "cron", "tz", "grace", "tolerance", "max-runtime", "tag"}
+
+func (c *createFlags) add(cmd *cobra.Command) {
+	fl := cmd.Flags()
+	fl.BoolVar(&c.create, "create", false, "create the monitor on first ping, set up by the flags below")
+	fl.StringVar(&c.name, "name", "", "with --create: the monitor's name (default: the slug)")
+	fl.StringVar(&c.period, "period", "", "with --create: a ping expected every period, like 1h or 1d (default 1d)")
+	fl.StringVar(&c.cron, "cron", "", `with --create: pings expected on a cron schedule, like "0 3 * * *"`)
+	fl.StringVar(&c.tz, "tz", "", "with --create: the schedule's IANA timezone (default: the project's)")
+	fl.StringVar(&c.grace, "grace", "", "with --create: how late a ping may be before the monitor is down (default 1h)")
+	fl.StringVar(&c.tolerance, "tolerance", "", "with --create: how late a ping still counts as on time")
+	fl.StringVar(&c.maxRuntime, "max-runtime", "", "with --create: fail a run whose finish has not come by then")
+	fl.StringArrayVar(&c.tags, "tag", nil, "with --create: a tag; repeat for more")
+	cmd.MarkFlagsMutuallyExclusive("period", "cron")
+}
+
+// option is the Create option for the pings, or nil without --create.
+func (c *createFlags) option(cmd *cobra.Command) (ping.PingOption, error) {
+	given := false
+	for _, n := range createSettings {
+		given = given || cmd.Flags().Changed(n)
+	}
+	if !c.create {
+		if given {
+			return nil, cli.UserError("--name, --period, --cron, --tz, --grace, --tolerance, --max-runtime and --tag set up a new monitor: add --create")
+		}
+		return nil, nil
+	}
+	opts := []ping.CreateOption{ping.WasCreated(&c.created)}
+	if c.name != "" {
+		opts = append(opts, ping.Name(c.name))
+	}
+	if c.cron != "" {
+		opts = append(opts, ping.Cron(c.cron))
+	}
+	if c.tz != "" {
+		opts = append(opts, ping.Timezone(c.tz))
+	}
+	for _, d := range []struct {
+		flag, value string
+		opt         func(time.Duration) ping.CreateOption
+	}{{"period", c.period, ping.Period}, {"grace", c.grace, ping.Grace}, {"tolerance", c.tolerance, ping.Tolerance}, {"max-runtime", c.maxRuntime, ping.MaxRuntime}} {
+		if d.value == "" {
+			continue
+		}
+		v, err := domain.ParseDuration(d.value)
+		if err != nil || v <= 0 {
+			return nil, cli.UserError("--%s: %q is not a duration like 90s, 30m, 2h or 1d", d.flag, d.value)
+		}
+		opts = append(opts, d.opt(v.Std()))
+	}
+	if len(c.tags) > 0 {
+		opts = append(opts, ping.Tags(c.tags...))
+	}
+	return ping.Create(opts...), nil
+}
+
+// noteExisting says, when settings were given, that the monitor was there
+// already and kept its own.
+func (c *createFlags) noteExisting(cmd *cobra.Command, slug string) {
+	if !c.create || c.created {
+		return
+	}
+	for _, n := range createSettings {
+		if cmd.Flags().Changed(n) {
+			fmt.Fprintf(cmd.ErrOrStderr(), "note: monitor %s exists; the create settings were not applied (change it in vink)\n", slug)
+			return
+		}
+	}
+}
+
 func newPingCmd(g *globals) *cobra.Command {
 	f := &pingFlags{clientFlags: clientFlags{g: g}}
-	var start, fail, logNote, create bool
+	cf := &createFlags{}
+	var start, fail, logNote bool
 	var exitCode int
 	var msg, rid string
 	var bodyFrom string
@@ -148,11 +230,20 @@ With --ping-key or VINK_PING_KEY it
 needs no API key: the ping goes to --ping-url or VINK_PING_URL (a ping URL
 up to the key, ending in /ping/), else to VINK_SERVER or the context's
 server. Without a ping key, the context's API key looks the ping key up
-once; that needs a read-write key.`,
+once; that needs a read-write key.
+
+--create makes the monitor from this ping when it does not exist yet,
+set up by --name, --period or --cron, --tz, --grace, --tolerance,
+--max-runtime and --tag. They apply on create only: a monitor that
+exists keeps its own settings.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if logNote && msg == "" && bodyFrom != "-" {
 				return cli.UserError("--log sends a note: add --msg or --body -")
+			}
+			create, err := cf.option(cmd)
+			if err != nil {
+				return err
 			}
 			base, key, err := pingTarget(cmd, f)
 			if err != nil {
@@ -169,8 +260,8 @@ once; that needs a read-write key.`,
 			if rid != "" {
 				opts = append(opts, ping.RunID(rid))
 			}
-			if create {
-				opts = append(opts, ping.Create())
+			if create != nil {
+				opts = append(opts, create)
 			}
 			if bodyFrom == "-" {
 				// the end of a log says why it failed: keep the last bytes
@@ -196,6 +287,7 @@ once; that needs a read-write key.`,
 			if err != nil {
 				return cli.PingError(err)
 			}
+			cf.noteExisting(cmd, args[0])
 			if !f.quiet {
 				fmt.Fprintln(cmd.OutOrStdout(), "ok")
 			}
@@ -209,7 +301,7 @@ once; that needs a read-write key.`,
 	cmd.Flags().BoolVar(&logNote, "log", false, "send a progress note (--msg or --body -) that changes no state")
 	cmd.Flags().StringVar(&msg, "msg", "", "a short message stored with the ping")
 	cmd.Flags().StringVar(&rid, "rid", "", "run id pairing a start with its finish")
-	cmd.Flags().BoolVar(&create, "create", false, "create the monitor on first ping")
+	cf.add(cmd)
 	cmd.Flags().StringVar(&bodyFrom, "body", "", "read the body from stdin with --body -, keeping its last 64 kB")
 	cmd.MarkFlagsMutuallyExclusive("start", "fail", "exit", "log")
 	return cmd
@@ -243,6 +335,7 @@ func (t *tailWriter) Bytes() []byte {
 
 func newRunCmd(g *globals) *cobra.Command {
 	f := &pingFlags{clientFlags: clientFlags{g: g}}
+	cf := &createFlags{}
 	var tail int
 	cmd := &cobra.Command{
 		Use:   "run <slug> -- <command> [args…]",
@@ -252,9 +345,18 @@ stderr passed through, then sends /<exit code> with the last bytes of
 output as the body, and exits with the command's exit code. When the
 server cannot be reached the command still runs. It finds the ping key
 and the address as vink ping does: --ping-key or VINK_PING_KEY with
---ping-url or VINK_PING_URL needs no API key.`,
+--ping-url or VINK_PING_URL needs no API key. --create and its settings
+make the monitor as vink ping does.`,
 		Args: cobra.MinimumNArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			create, err := cf.option(cmd)
+			if err != nil {
+				return err
+			}
+			var withCreate []ping.PingOption
+			if create != nil {
+				withCreate = append(withCreate, create)
+			}
 			base, key, err := pingTarget(cmd, f)
 			if err != nil {
 				return err
@@ -279,7 +381,11 @@ and the address as vink ping does: --ping-key or VINK_PING_KEY with
 					fmt.Fprintf(cmd.ErrOrStderr(), "warning: %s ping failed: %v\n", what, cli.PingError(err))
 				}
 			}
-			warn("start", starter.Monitor(args[0]).Start(ctx, ping.RunID(run.ID())))
+			startErr := starter.Monitor(args[0]).Start(ctx, append([]ping.PingOption{ping.RunID(run.ID())}, withCreate...)...)
+			warn("start", startErr)
+			if startErr == nil {
+				cf.noteExisting(cmd, args[0])
+			}
 			tw := &tailWriter{n: tail}
 			// a context that cancellation does not reach: a cancelled ctx
 			// would kill the command outright, while the signal passed on
@@ -321,7 +427,9 @@ and the address as vink ping does: --ping-key or VINK_PING_KEY with
 			} else if waitErr != nil {
 				code = 1
 			}
-			warn("finish", run.Exit(after, code, ping.Body(tw.Bytes())))
+			// with --create the finish makes the monitor too, when the
+			// start could not
+			warn("finish", run.Exit(after, code, append([]ping.PingOption{ping.Body(tw.Bytes())}, withCreate...)...))
 			if code != 0 {
 				return &cli.ExitError{Code: code, Err: fmt.Errorf("%s exited with %d", args[1], code)}
 			}
@@ -329,6 +437,7 @@ and the address as vink ping does: --ping-key or VINK_PING_KEY with
 		},
 	}
 	f.add(cmd)
+	cf.add(cmd)
 	cmd.Flags().IntVar(&tail, "tail", 16*1024, "bytes of output to send as the body")
 	return cmd
 }

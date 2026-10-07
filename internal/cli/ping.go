@@ -47,6 +47,8 @@ func PingError(err error) error {
 		return ServerError(errors.New("ping rate limited (429)"))
 	case errors.As(err, &se) && se.StatusCode >= 500:
 		return ServerError(fmt.Errorf("ping failed: %s", se.Status))
+	case errors.As(err, &se) && se.Detail != "":
+		return UserError("ping rejected (%d): %s", se.StatusCode, se.Detail)
 	case errors.As(err, &se):
 		return UserError("ping rejected: %s", se.Status)
 	case errors.As(err, &ue), errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
