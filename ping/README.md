@@ -39,7 +39,9 @@ Three things identify a monitor:
 | Slug | the last part of the monitor's ping URL | `nightly-backup` |
 
 Pass the URL and the key in the environment (`VINK_PING_URL`, `VINK_PING_KEY`), the same
-variables the vink CLI reads, or to `ping.New(url, key)`. Keep the key out of source code: it
+variables the vink CLI reads, or to `ping.New(url, key)`. When vink runs a ping listener
+(`ping.listen`), a job can skip the proxy by pointing the URL at it, such as
+`http://vink-host:8081/ping/`; the key and the slug stay the same. Keep the key out of source code: it
 lets anyone ping every monitor of the project.
 
 ## API at a glance

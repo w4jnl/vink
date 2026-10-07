@@ -10,8 +10,9 @@ base_url = "http://localhost:8080"     # the public address: ping URLs, links, c
 trusted_proxies = []                   # CIDRs whose X-Forwarded-For is honoured, e.g. ["10.0.0.0/8"]
 
 [ping]
-listen = ""                            # optional second listener for pings only, e.g. ":8081"
-base_url = ""                          # optional separate hostname for ping URLs
+listen = ""                            # optional second listener, plain HTTP, serving /ping/ alone, e.g. ":8081"
+main = true                            # pings stay on the main listener too; false serves them on ping.listen only
+base_url = ""                          # optional: the address ping URLs show (default: server.base_url)
 body_limit = "64KB"
 rate_per_monitor = 10                  # pings per minute
 rate_per_ip = 300

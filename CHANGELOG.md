@@ -15,8 +15,11 @@ updates this file first. Dates are the tag dates.
   `--max-runtime` and `--tag`. The Go module (`ping/v0.2.1`, `ping.Create(ping.Cron(…), …)`)
   and the Python package (`ping-py/v0.2.1`, `create=Create(…)`) send them too and report the
   reason of a refusal.
-- **Pings around the proxy.** The deploy guide shows how jobs can ping vink's own ping listener
-  (`ping.listen`), which serves `/ping/` and nothing else, when the proxy is in the way.
+- **Pings on both listeners.** With `ping.listen` set, pings are now served on the main listener
+  as well as on the ping listener, by one handler, so a monitor's rate limit counts them all.
+  Jobs can ping around a slow proxy at `http://vink-host:8081/ping/…` while everything else keeps
+  its https address, with no extra proxy rule. `ping.main = false` restores the old behaviour
+  of pings on the ping listener only. The Server tab says where pings are served.
 - **Fixed in the Apache example: stalls after a quiet spell.** mod_proxy reused connections vink
   had closed after 120 s idle. The example sets `ttl=60` on its `ProxyPass` lines; set it on yours.
 

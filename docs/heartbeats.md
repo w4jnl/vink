@@ -180,7 +180,8 @@ With a ping key the CLI only sends pings and never calls the API, so the host ho
 curl line would not. The address is found in this order:
 
 1. `--ping-url` or `VINK_PING_URL`, a ping URL up to the key. Set it when pings have their own
-   address (`ping.base_url`).
+   address (`ping.base_url`), or to ping the ping listener directly, around the proxy:
+   `VINK_PING_URL=http://vink-host:8081/ping/`.
 2. `VINK_SERVER` or the context's server, with `/ping/` added.
 
 `--ping-key` and `--ping-url` set the same per command. Without a ping key, the context's API key

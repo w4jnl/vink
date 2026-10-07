@@ -58,17 +58,21 @@ key_file = "/data/secret.key"               # back it up with the database
   network is the Docker host itself: a job on that host that pings a published port arrives
   from there, and no hop can recover more. Name such jobs in the ping instead (`curl -A
   nas-backup …`).
-- A separate ping listener (`ping.listen`) serves `/ping/…` on its own port under the path of
-  `ping.base_url`, so a ping hostname can live at the root while the UI lives under a path.
-  Pings on the shared listener use the server's path; a different path there is refused at
-  start.
-- **Pings around the proxy.** The same listener lets jobs reach vink without the proxy, when the
+- A ping listener (`ping.listen`, plain HTTP) serves `/ping/…` on a port of its own, under the
+  path of `ping.base_url` (or of `server.base_url` when that is unset), so a ping hostname can
+  live at the root while the UI lives under a path. The main listener keeps serving pings too,
+  under the server's path; `ping.main = false` takes them off it. One handler serves both ports,
+  so a monitor's rate limit counts its pings wherever they arrive. Without a ping listener,
+  `ping.base_url` must have the server's path.
+- **Pings around the proxy.** The ping listener lets jobs reach vink without the proxy, when the
   proxy is slow or adds sign-in machinery pings do not need. It serves `/ping/…` and nothing
   else: no UI, no API, no identity headers, so opening it exposes only what a ping key already
-  allows. Set `ping.listen = ":8081"` and `ping.base_url` to the address jobs use
-  (`http://vink-host.corp.example:8081`), so the ping URLs vink shows point there, and allow the
-  port only from the job hosts in the firewall. Pings there are rate-limited and logged as on
-  the main listener; the client address is the job's own, so `trusted_proxies` is not involved.
+  allows. `ping.listen = ":8081"` is all it takes: pings then work both through the proxy
+  (`https://vink.example.com/ping/…`) and directly (`http://vink-host:8081/ping/…`), and a job
+  picks the address with `VINK_PING_URL` or its curl line. Set `ping.base_url` only to make the
+  ping URLs vink shows point at the direct address. Allow the port only from the job hosts in
+  the firewall; the key travels unencrypted there. Pings on it are rate-limited and logged as
+  on the main listener, with the job's own address, so `trusted_proxies` is not involved.
 - Proxy sign-in (`[auth.proxy]`) and OIDC (`[auth.oidc]`) are described in
   [design.md](design.md); the OIDC redirect URI is `base_url` + `/auth/oidc/callback`, so
   register that at the provider.
@@ -169,6 +173,7 @@ vink ls
 | `vink admin` says "admin keys are not accepted from 172.16.0.2" (the proxy's address) | `allowed_cidrs` is set but `trusted_proxies` does not name the proxy | Set `trusted_proxies`; the address in the message is the one vink checked |
 | `vink admin` says "this context's key is not an instance admin key" | The context holds a project or org key (`vk_…`) | Make an instance admin key in Instance admin › API keys and add it as its own context; `vink ctx ls` shows each context's kind |
 | `vink serve` stops at start with `server.base_url: the path "/api" starts with /api, which is a vink route` | The path shadows a vink route | Choose another path |
+| Pings 404 on the main address after setting `ping.main = false` | Pings are served on `ping.listen` only | Point jobs at the ping listener, or drop `ping.main = false` |
 | Pings 404 on a separate ping listener | `ping.base_url` has a path and the proxy or the job does not use it | Use it, or drop the path from `ping.base_url` |
 
 ## 6. URL map

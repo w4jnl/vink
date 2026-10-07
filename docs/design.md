@@ -181,7 +181,7 @@ Each attempt produces one observation with `latency_ms` and `detail`; the state 
 
 Pings are unauthenticated beyond the project ping key, so the ingress is a separate handler group with its own rate limits and no session, CSRF or HTML anywhere on the path.
 
-**URL forms** (all under `/ping/`, optionally served on a second listener or hostname via `ping.listen`):
+**URL forms** (all under `/ping/`, on the main listener and, with `ping.listen`, on a second plain-HTTP listener that serves pings alone; both share one handler and its rate limits, and `ping.main = false` takes pings off the main listener):
 
 | Form | Example | Notes |
 | --- | --- | --- |
