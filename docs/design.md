@@ -187,7 +187,7 @@ Pings are unauthenticated beyond the project ping key, so the ingress is a separ
 | --- | --- | --- |
 | slug | `/ping/{ping_key}/{monitor_slug}` | the canonical form; readable in crontabs |
 | slug + signal | `/ping/{ping_key}/{slug}/start` · `/fail` · `/log` · `/{exit_code}` | `/0` = ok, any other integer = fail with `exit_code` stored |
-| auto-create | `/ping/{ping_key}/{slug}?create=1` | creates a `heartbeat` monitor with project defaults (`period: 1d`, `grace: 1h`) if the slug is unknown; otherwise 404 |
+| auto-create | `/ping/{ping_key}/{slug}?create=1` | creates a `heartbeat` monitor if the slug is unknown: `period: 1d`, `grace: 1h`, unless `name`, `period` or `cron`, `tz`, `grace`, `tolerance`, `max_runtime` and `tags` (comma-separated) in the query set it up. The settings apply on create only; an existing monitor is never changed by a ping. Settings that do not make a valid monitor get 400 with one `create: <param>: <reason>` line each, after the key checked out. The answer carries `Ping-Monitor: created` or `existing` |
 | run id | `?rid={ulid}` on `/start` and the completing ping | pairs start and finish for overlapping runs; duration is stored on the completing observation |
 | by id | `/ping/id/{monitor_id}` | for tooling that stores ids; same signals |
 
@@ -335,8 +335,8 @@ One binary, three personalities: `vink serve` runs the server, `vink agent` runs
 | `vink apply -f vink.yaml [--dry-run] [--prune]` | declarative config; prints the diff; exit 1 on validation error, 2 on server error |
 | `vink export [-o vink.yaml] [--org slug]` | round-trips with apply; `--org` writes every project of the org as one file and needs a context with an org key |
 | `vink admin org key create --org slug [--name n] [--access ro\|rw]` · `key ls` · `key revoke <id>` | org keys, issued on the server host; the key is printed once with the `vink ctx add` line to run next |
-| `vink ping <slug> [--start] [--fail] [--exit N] [--log] [--msg …]` | sends a ping with the project's ping key; `--log` a progress note, with `--msg` or `--body -` — for shell scripts on hosts with the CLI. `--ping-key`/`VINK_PING_KEY` with `--ping-url`/`VINK_PING_URL` (a ping URL up to the key; default `VINK_SERVER` or the context's server + `/ping/`) needs no API key and never calls the API; otherwise the context's read-write key fetches the ping key once from `/me` and the context caches it |
-| `vink run <slug> -- <command…>` | wraps a command: `/start`, then `/{exit}` with captured stdout+stderr tail as body; exits with the command's code; the Cronitor-CLI/runitor pattern; same ping key and address flags as `vink ping` |
+| `vink ping <slug> [--start] [--fail] [--exit N] [--log] [--msg …] [--create [--period\|--cron …] [--tz …] [--grace …] [--tolerance …] [--max-runtime …] [--name …] [--tag …]]` | sends a ping with the project's ping key; `--log` a progress note, with `--msg` or `--body -` — for shell scripts on hosts with the CLI. `--ping-key`/`VINK_PING_KEY` with `--ping-url`/`VINK_PING_URL` (a ping URL up to the key; default `VINK_SERVER` or the context's server + `/ping/`) needs no API key and never calls the API; otherwise the context's read-write key fetches the ping key once from `/me` and the context caches it |
+| `vink run <slug> -- <command…>` | wraps a command: `/start`, then `/{exit}` with captured stdout+stderr tail as body; exits with the command's code; the Cronitor-CLI/runitor pattern; same ping key, address and `--create` flags as `vink ping` |
 | `vink status` | project summary: counts per state, open incidents |
 | `vink version` | build version, commit, Go version; `--check-server` compares with the server |
 | `vink completion bash` · `zsh` · `fish` · `powershell` | the shell's completion script; monitor slugs, open incidents, tags and context names complete from the current context's server or the config file, enumerated flags from their values; the release archives ship the scripts |

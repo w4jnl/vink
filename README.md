@@ -202,7 +202,9 @@ event; a monitor inside an active maintenance window records observations but ne
 | `/ping/<key>/<slug>/log` | store a message without touching the state |
 | `/ping/id/<monitor id>` | the same forms by id |
 
-`?create=1` creates an unknown slug as a heartbeat with a one-day period and a one-hour grace.
+`?create=1` creates an unknown slug as a heartbeat, with a one-day period and a one-hour grace
+unless the query sets it up (`&cron=0+3+*+*+*&tz=Europe/Amsterdam&grace=30m&tags=backup`, on
+create only; see [docs/heartbeats.md](docs/heartbeats.md)).
 `?msg=` stores a short message for clients that cannot send a body. Unknown keys and slugs get
 the same 404. Pings are limited to 10 a minute per monitor and 300 a minute per address, and the
 ping key is an address, not a secret: rotate it from the project's keys tab when it leaks.

@@ -229,7 +229,9 @@ One of `--start`, `--fail`, `--exit` and `--log` at a time. Each goes with these
 - `--msg "…"` adds a line for the observation's row and the alert.
 - `--body -` reads the body from stdin and sends its last 64 kB, where a log says why it failed.
 - `--rid ID` pairs a start with its finish.
-- `--create` makes the monitor from its first ping.
+- `--create` makes the monitor from its first ping, set up by `--name`, `--period` or `--cron`,
+  `--tz`, `--grace`, `--tolerance`, `--max-runtime` and `--tag` (repeat it). See
+  [Creating a monitor from the first ping](#creating-a-monitor-from-the-first-ping).
 - `--quiet` prints nothing on success.
 
 `vink ping` tries up to three times when vink cannot be reached, answers with a server error or
@@ -315,7 +317,7 @@ library, for Python 3.9 and later. It is not on PyPI: pip, uv and Poetry install
 repository, or the file is copied into the project.
 
 ```sh
-pip install "vink-ping @ git+ssh://git@github.com/w4jnl/vink.git@ping-py/v0.1.0#subdirectory=ping-py"
+pip install "vink-ping @ git+ssh://git@github.com/w4jnl/vink.git@ping-py/v0.2.1#subdirectory=ping-py"
 ```
 
 ```python
@@ -344,15 +346,44 @@ traceback. Its [README](../ping-py/README.md) and `help(vink_ping)` cover every 
 
 ## Creating a monitor from the first ping
 
-`?create=1` on the plain URL creates an unknown slug as a heartbeat with a one-day period and
-a one-hour grace, then records the ping:
+`?create=1` on any ping URL by slug creates an unknown slug as a heartbeat, then records the
+ping. Without more it has a one-day period and a one-hour grace:
 
 ```cron
 0 3 * * * backup.sh && curl -fsS https://vink.w4j.nl/ping/<key>/nightly-backup?create=1
 ```
 
-This is the quickest way to cover many jobs; edit the schedule afterwards in the drawer. A slug
-is lower-case letters, digits and dashes.
+The same query can set the monitor up, so it is right from its first ping:
+
+| Parameter | Sets | Example |
+| --- | --- | --- |
+| `name` | the display name (default: the slug) | `name=Nightly+backup` |
+| `period` | a ping expected every period | `period=6h` |
+| `cron` | pings expected on a cron schedule (`period` or `cron`, not both) | `cron=0+3+*+*+*` |
+| `tz` | the schedule's IANA timezone (default: the project's) | `tz=Europe/Amsterdam` |
+| `grace` | how late a ping may be before the monitor is down | `grace=30m` |
+| `tolerance` | how late a ping still counts as on time | `tolerance=1m` |
+| `max_runtime` | fails a run whose finish has not come by then | `max_runtime=2h` |
+| `tags` | tags, comma-separated | `tags=backup,prod` |
+
+```sh
+curl -fsS "https://vink.w4j.nl/ping/<key>/nightly-backup?create=1&cron=0+3+*+*+*&tz=Europe/Amsterdam&grace=30m&tags=backup"
+vink ping nightly-backup --create --cron "0 3 * * *" --tz Europe/Amsterdam --grace 30m --tag backup
+```
+
+- **On create only.** The settings are used when the ping makes the monitor. A monitor that
+  exists is never changed by a ping, so whoever holds the ping key cannot loosen its grace;
+  change it in the drawer, the API or an apply file. Its pings go through as usual.
+- **The answer says which.** Every ping with `create=1` answers `Ping-Monitor: created` or
+  `Ping-Monitor: existing`; `vink ping` notes on stderr when settings were not applied.
+- **Mistakes are refused.** Settings that do not make a valid monitor (a grace shorter than the
+  tolerance, an unknown timezone, a cron that does not parse) get `400` with one line per
+  problem, such as `create: grace: must be at least 60s`, and the ping is not recorded. A wrong
+  key or an invalid slug is still a plain `404`.
+- The Go module (`ping.Create(ping.Cron(…), ping.Grace(…))`) and the Python package
+  (`create=Create(cron=…, grace=…)`) send the same settings.
+
+This is the quickest way to cover many jobs. A slug is lower-case letters, digits and dashes.
 
 ## Schedules, tolerance, grace and the states
 

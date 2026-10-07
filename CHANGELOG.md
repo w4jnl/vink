@@ -4,6 +4,22 @@ User-facing changes per release, newest first. `scripts/release.sh` refuses to t
 that has no section here and uses the section as the GitHub release notes, so every release
 updates this file first. Dates are the tag dates.
 
+## Unreleased
+
+- **Set a monitor up from its first ping.** `?create=1` takes `name`, `period` or `cron`, `tz`,
+  `grace`, `tolerance`, `max_runtime` and `tags`, so a job's first ping makes the monitor it
+  needs. The settings apply on create only; a ping never changes a monitor that exists, and the
+  answer's `Ping-Monitor` header says `created` or `existing`. Settings vink refuses get `400`
+  with the reason, and the ping is not recorded. `vink ping` and `vink run` take them as
+  `--create` with `--name`, `--period`, `--cron`, `--tz`, `--grace`, `--tolerance`,
+  `--max-runtime` and `--tag`. The Go module (`ping/v0.2.1`, `ping.Create(ping.Cron(…), …)`)
+  and the Python package (`ping-py/v0.2.1`, `create=Create(…)`) send them too and report the
+  reason of a refusal.
+- **Pings around the proxy.** The deploy guide shows how jobs can ping vink's own ping listener
+  (`ping.listen`), which serves `/ping/` and nothing else, when the proxy is in the way.
+- **Fixed in the Apache example: stalls after a quiet spell.** mod_proxy reused connections vink
+  had closed after 120 s idle. The example sets `ttl=60` on its `ProxyPass` lines; set it on yours.
+
 ## 0.2.1 (2026-10-06)
 
 - **Fixed: you could not see which option was selected** in a segmented control: Access and
