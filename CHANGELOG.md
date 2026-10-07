@@ -4,7 +4,7 @@ User-facing changes per release, newest first. `scripts/release.sh` refuses to t
 that has no section here and uses the section as the GitHub release notes, so every release
 updates this file first. Dates are the tag dates.
 
-## Unreleased
+## 0.2.2 (2026-10-07)
 
 - **Set a monitor up from its first ping.** `?create=1` takes `name`, `period` or `cron`, `tz`,
   `grace`, `tolerance`, `max_runtime` and `tags`, so a job's first ping makes the monitor it
