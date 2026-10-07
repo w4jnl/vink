@@ -96,21 +96,33 @@ func (h *Handler) handle(w http.ResponseWriter, r *http.Request, key, slug, id s
 		return
 	}
 	q := r.URL.Query()
-	create := q.Get("create") == "1" || q.Get("create") == "true"
-	target, err := h.svc.ResolvePing(r.Context(), key, slug, id, create)
+	var create *domain.MonitorTemplate
+	if c := q.Get("create"); c == "1" || c == "true" {
+		create = domain.TemplateFromQuery(q)
+	}
+	target, err := h.svc.ResolvePingCreate(r.Context(), key, slug, id, create)
 	if err != nil {
 		if errors.Is(err, domain.ErrNotFound) {
 			h.notFound(w)
 			return
 		}
 		if ve, isVal := domain.AsValidation(err); isVal {
-			// create=1 with a slug that cannot be a monitor
+			// the key checked out, so say what is wrong with the settings;
+			// nothing is recorded
 			h.log.Debug("ping auto-create rejected", "slug", slug, "err", ve)
-			h.notFound(w)
+			h.badCreate(w, ve)
 			return
 		}
 		h.fail(w, r, err)
 		return
+	}
+	if create != nil {
+		// tell the client whether its settings made the monitor
+		state := "existing"
+		if target.Created {
+			state = "created"
+		}
+		w.Header().Set("Ping-Monitor", state)
 	}
 	m := target.Monitor
 	middleware.AddLogFields(r.Context(), slog.String("project_id", m.ProjectID), slog.String("monitor", m.Slug))
@@ -168,6 +180,16 @@ func (h *Handler) handle(w http.ResponseWriter, r *http.Request, key, slug, id s
 	w.WriteHeader(http.StatusOK)
 	if r.Method != http.MethodHead {
 		_, _ = io.WriteString(w, "OK\n")
+	}
+}
+
+// badCreate answers a create whose settings do not make a monitor: 400,
+// one line per problem, named by parameter.
+func (h *Handler) badCreate(w http.ResponseWriter, ve *domain.ValidationError) {
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.WriteHeader(http.StatusBadRequest)
+	for _, fe := range ve.Errors {
+		_, _ = fmt.Fprintf(w, "create: %s: %s\n", fe.Field, fe.Msg)
 	}
 }
 

@@ -26,6 +26,20 @@ type PingTarget struct {
 // a heartbeat monitor with the instance defaults. The id form needs no
 // key: a ULID's 80 random bits are the capability.
 func (s *Service) ResolvePing(ctx context.Context, key, slug, monitorID string, create bool) (*PingTarget, error) {
+	var tmpl *domain.MonitorTemplate
+	if create {
+		tmpl = &domain.MonitorTemplate{}
+	}
+	return s.ResolvePingCreate(ctx, key, slug, monitorID, tmpl)
+}
+
+// ResolvePingCreate is ResolvePing whose create carries settings: a
+// non-nil template creates an unknown slug from it, the instance
+// defaults filling what it leaves out. An existing monitor is returned
+// as it is, whatever the template says. A template that does not make a
+// valid monitor is a ValidationError, given only after the key checked
+// out.
+func (s *Service) ResolvePingCreate(ctx context.Context, key, slug, monitorID string, create *domain.MonitorTemplate) (*PingTarget, error) {
 	if monitorID != "" {
 		row, err := s.db.Read().GetMonitorByID(ctx, monitorID)
 		if err != nil {
@@ -56,14 +70,15 @@ func (s *Service) ResolvePing(ctx context.Context, key, slug, monitorID string, 
 	if !db.IsNotFound(err) {
 		return nil, err
 	}
-	if !create || !domain.ValidSlug(slug) {
+	if create == nil || !domain.ValidSlug(slug) {
 		return nil, domain.NotFound("monitor")
 	}
+	want, err := create.Monitor(slug, s.cfg.AutoCreatePeriod, s.cfg.AutoCreateGrace)
+	if err != nil {
+		return nil, err
+	}
 	sc := domain.Scope{OrgID: project.OrgID, ProjectID: project.ID, Role: domain.RoleMember, Actor: "ping:create"}
-	m, err := s.CreateMonitor(ctx, sc, &domain.Monitor{
-		Slug: slug, Name: slug, Kind: domain.KindHeartbeat,
-		Heartbeat: &domain.HeartbeatSpec{Schedule: domain.Schedule{Period: s.cfg.AutoCreatePeriod}, Grace: s.cfg.AutoCreateGrace},
-	})
+	m, err := s.CreateMonitor(ctx, sc, want)
 	if err != nil {
 		if errors.Is(err, domain.ErrConflict) {
 			// Raced with another auto-create; read it back.

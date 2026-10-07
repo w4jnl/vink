@@ -2,6 +2,7 @@ package ping
 
 import (
 	"context"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -307,4 +308,107 @@ func TestTrustedProxyAddress(t *testing.T) {
 	if obs := e.lastObs(t, "job"); obs.RemoteAddr != "198.51.100.42" || obs.Detail["via"] != "10.1.2.3" {
 		t.Fatalf("remote addr = %s", obs.RemoteAddr)
 	}
+}
+
+// TestAutoCreateWithSettings: a creating ping sets the monitor up from
+// its query; the defaults fill the rest; bad settings are a 400 that
+// says why and records nothing; an existing monitor is never changed.
+func TestAutoCreateWithSettings(t *testing.T) {
+	ctx := context.Background()
+	cases := []struct {
+		name  string
+		query string
+		check func(t *testing.T, m *domain.Monitor)
+	}{
+		{"defaults", "", func(t *testing.T, m *domain.Monitor) {
+			if m.Name != "job" || m.Heartbeat.Schedule.Period != domain.MustDuration("1d") || m.Heartbeat.Grace != domain.MustDuration("1h") || len(m.Tags) != 0 {
+				t.Errorf("%+v %+v", m, m.Heartbeat)
+			}
+		}},
+		{"every setting", "&name=Nightly+backup&period=6h&grace=30m&tolerance=2m&max_runtime=2h&tz=Europe/Amsterdam&tags=Backup,prod,%23nas",
+			func(t *testing.T, m *domain.Monitor) {
+				hb := m.Heartbeat
+				if m.Name != "Nightly backup" || hb.Schedule.Period != domain.MustDuration("6h") || hb.Grace != domain.MustDuration("30m") ||
+					hb.Tolerance != domain.MustDuration("2m") || hb.MaxRuntime != domain.MustDuration("2h") || hb.Timezone != "Europe/Amsterdam" ||
+					strings.Join(m.Tags, ",") != "backup,prod,nas" {
+					t.Errorf("%+v %+v", m, hb)
+				}
+			}},
+		{"cron", "&cron=0+3+*+*+*&grace=1d12h", func(t *testing.T, m *domain.Monitor) {
+			if m.Heartbeat.Schedule.Cron != "0 3 * * *" || m.Heartbeat.Schedule.Period != 0 || m.Heartbeat.Grace != domain.MustDuration("1d12h") {
+				t.Errorf("%+v", m.Heartbeat)
+			}
+		}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			e := newEnv(t)
+			rec := e.do("GET", "/ping/"+e.project.PingKey+"/job?create=1"+tc.query, "", nil)
+			if rec.Code != 200 || rec.Header().Get("Ping-Monitor") != "created" {
+				t.Fatalf("%d %q %s", rec.Code, rec.Header().Get("Ping-Monitor"), rec.Body.String())
+			}
+			m, err := e.svc.MonitorBySlug(ctx, e.scope, "job")
+			if err != nil {
+				t.Fatal(err)
+			}
+			tc.check(t, m)
+		})
+	}
+
+	t.Run("bad settings", func(t *testing.T) {
+		e := newEnv(t)
+		for _, tc := range []struct{ query, want string }{
+			{"&grace=soon", "create: grace: must be a duration"},
+			{"&period=1h&cron=0+3+*+*+*", "create: cron: give period or cron, not both"},
+			{"&cron=every+day", "create: "},
+			{"&tz=Mars/Olympus", "create: "},
+			{"&grace=5m&tolerance=10m", "create: "},
+			{"&tags=no+spaces+please", "create: tags"},
+		} {
+			rec := e.do("GET", "/ping/"+e.project.PingKey+"/job?create=1"+tc.query, "", nil)
+			if rec.Code != 400 || !strings.Contains(rec.Body.String(), tc.want) {
+				t.Errorf("%s: %d %s", tc.query, rec.Code, rec.Body.String())
+			}
+		}
+		if _, err := e.svc.MonitorBySlug(ctx, e.scope, "job"); !errors.Is(err, domain.ErrNotFound) {
+			t.Fatalf("a refused create made the monitor: %v", err)
+		}
+		// a wrong key says nothing about the settings
+		if rec := e.do("GET", "/ping/wrongkey/job?create=1&grace=soon", "", nil); rec.Code != 404 {
+			t.Fatalf("bad key: %d", rec.Code)
+		}
+	})
+
+	t.Run("existing monitor", func(t *testing.T) {
+		e := newEnv(t)
+		e.monitor(t, "job", &domain.HeartbeatSpec{Schedule: domain.Schedule{Period: domain.MustDuration("1h")}, Grace: domain.MustDuration("10m")})
+		// settings, even wrong ones, do not get in the way of a monitor that exists
+		for _, q := range []string{"&grace=30m&period=1d", "&grace=soon"} {
+			rec := e.do("GET", "/ping/"+e.project.PingKey+"/job?create=1"+q, "", nil)
+			if rec.Code != 200 || rec.Header().Get("Ping-Monitor") != "existing" {
+				t.Fatalf("%s: %d %q", q, rec.Code, rec.Header().Get("Ping-Monitor"))
+			}
+		}
+		m, _ := e.svc.MonitorBySlug(ctx, e.scope, "job")
+		if m.Heartbeat.Grace != domain.MustDuration("10m") || m.Heartbeat.Schedule.Period != domain.MustDuration("1h") {
+			t.Fatalf("an existing monitor changed: %+v", m.Heartbeat)
+		}
+		if rec := e.do("GET", "/ping/"+e.project.PingKey+"/job?grace=30m", "", nil); rec.Header().Get("Ping-Monitor") != "" {
+			t.Error("Ping-Monitor without create")
+		}
+	})
+
+	t.Run("audited as the ping", func(t *testing.T) {
+		e := newEnv(t)
+		if rec := e.do("GET", "/ping/"+e.project.PingKey+"/job?create=1&grace=30m", "", nil); rec.Code != 200 {
+			t.Fatal(rec.Code)
+		}
+		var actor, after string
+		if err := e.svc.DB().Reader.QueryRowContext(ctx, `SELECT actor, spec_after FROM audit WHERE act = 'monitor.create'`).Scan(&actor, &after); err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(actor, "ping") || !strings.Contains(after, "grace: 30m") {
+			t.Errorf("audit %q:\n%s", actor, after)
+		}
+	})
 }
