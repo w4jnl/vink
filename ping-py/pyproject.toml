@@ -9,7 +9,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "vink-ping"
-version = "0.1.0"
+version = "0.2.0"
 description = "Send heartbeat pings to a vink server: start, success, failure, exit codes, progress notes and runs."
 readme = "README.md"
 requires-python = ">=3.9"

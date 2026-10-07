@@ -12,17 +12,17 @@ library, works with Python 3.9 and later, and needs the project's ping key, neve
 It is not on PyPI. Install it from the vink repository, pinned to a tag:
 
 ```sh
-pip install "vink-ping @ git+ssh://git@github.com/w4jnl/vink.git@ping-py/v0.1.0#subdirectory=ping-py"
+pip install "vink-ping @ git+ssh://git@github.com/w4jnl/vink.git@ping-py/v0.2.0#subdirectory=ping-py"
 ```
 
 The same requirement works elsewhere:
 
 | Where | How |
 | --- | --- |
-| `requirements.txt` | `vink-ping @ git+ssh://git@github.com/w4jnl/vink.git@ping-py/v0.1.0#subdirectory=ping-py` |
+| `requirements.txt` | `vink-ping @ git+ssh://git@github.com/w4jnl/vink.git@ping-py/v0.2.0#subdirectory=ping-py` |
 | `pyproject.toml` | the same string in `dependencies` |
-| uv | `uv add "vink-ping @ git+ssh://git@github.com/w4jnl/vink.git@ping-py/v0.1.0#subdirectory=ping-py"` |
-| Poetry | `poetry add "git+ssh://git@github.com/w4jnl/vink.git@ping-py/v0.1.0#subdirectory=ping-py"` |
+| uv | `uv add "vink-ping @ git+ssh://git@github.com/w4jnl/vink.git@ping-py/v0.2.0#subdirectory=ping-py"` |
+| Poetry | `poetry add "git+ssh://git@github.com/w4jnl/vink.git@ping-py/v0.2.0#subdirectory=ping-py"` |
 
 The repository is public, so `git+https://github.com/w4jnl/vink.git@…` works too, on hosts without
 a GitHub key. Installing builds the package with setuptools, which pip and uv fetch for the build
@@ -82,7 +82,17 @@ project key. Every signal takes keyword arguments:
 - `content_type="application/json"` sets the body's type when it is not text.
 - `run_id=...` pairs a start with its finish by hand. A run does this for you.
 - `create=True` makes the monitor from its first ping, as a heartbeat with a one-day period and a
-  one-hour grace.
+  one-hour grace. `create=Create(...)` sets it up instead: `name`, `period` or `cron`, `tz`,
+  `grace`, `tolerance`, `max_runtime` (a `timedelta` or a string like `"30m"`) and `tags`. With
+  `create`, a signal returns `True` when it made the monitor and `False` when it was already
+  there; the settings apply on create only, and a ping never changes a monitor that exists.
+  Settings vink refuses raise a `StatusError` with status 400, and nothing is recorded.
+
+```python
+from vink_ping import Create
+
+m.success(create=Create(cron="0 3 * * *", tz="Europe/Amsterdam", grace="30m", tags=["backup"]))
+```
 
 `run.finish(exc)` and the `with` block report how a run ended:
 
@@ -188,13 +198,17 @@ except vink_ping.PingError:
 - Put a command's output in `body`, not `msg`. The message is one line for the alert, and the
   body is the detail.
 - Never put the ping key in code or in a URL literal. Read it from `VINK_PING_KEY`.
+- When a job makes its own monitor, give `Create` the schedule it really runs on (`cron` with
+  `tz`, or `period`) and a `grace` the job can keep. Changing them later is done in vink, not by
+  the ping.
 - `help(vink_ping)` and the docstrings are the full reference.
 
 ## Versions
 
 The package is versioned on its own, with tags named `ping-py/vX.Y.Z` in the vink repository. It
 works with every vink server from 0.1.0 on. A vink deployed under a path needs a server with path
-support, the first release after 0.1.3. The tests run against a fake endpoint and against a real
+support, the first release after 0.1.3. `Create(...)` settings need a server released after
+0.2.1; an older one makes the monitor with its defaults and the signal returns `False`. The tests run against a fake endpoint and against a real
 vink binary, on Python 3.9 and the current Python. The ping protocol is described in
 [docs/heartbeats.md](https://github.com/w4jnl/vink/blob/main/docs/heartbeats.md). MIT licensed,
 like vink.

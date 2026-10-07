@@ -16,7 +16,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import vink_ping
-from vink_ping import Client, NotFound, PingError, RateLimited, StatusError, Unreachable
+from vink_ping import Client, Create, NotFound, PingError, RateLimited, StatusError, Unreachable
 
 
 class Fake:
@@ -277,6 +277,64 @@ class TestLimits(FakeTest):
         c.monitor("job").fail(msg="a" * (vink_ping.MAX_MSG_LEN - 1) + "é and more")
         sent = urllib.parse.parse_qs(f.requests[0]["query"])["msg"][0]
         self.assertEqual(sent, "a" * (vink_ping.MAX_MSG_LEN - 1))
+
+
+class TestCreate(FakeTest):
+    def test_settings_travel_and_the_answer_is_returned(self) -> None:
+        from datetime import timedelta
+
+        f = self.fake((200, {"Ping-Monitor": "created"}), (200, {"Ping-Monitor": "existing"}), (400, {}))
+        c, waits = f.client()
+        m = c.monitor("job")
+        made = m.success(
+            create=Create(
+                name="Nightly backup",
+                cron="0 3 * * *",
+                tz="Europe/Amsterdam",
+                grace="30m",
+                tolerance=timedelta(minutes=1),
+                max_runtime=timedelta(hours=2),
+                tags=["backup", "prod"],
+            )
+        )
+        self.assertIs(made, True)
+        self.assertEqual(
+            query(f.requests[0]),
+            {
+                "create": "1",
+                "name": "Nightly backup",
+                "cron": "0 3 * * *",
+                "tz": "Europe/Amsterdam",
+                "grace": "30m",
+                "tolerance": "60s",
+                "max_runtime": "7200s",
+                "tags": "backup,prod",
+            },
+        )
+        self.assertIs(m.start(create=Create(period="1h")), False)
+        self.assertEqual(query(f.requests[1])["period"], "1h")
+        with self.assertRaises(StatusError) as cm:
+            m.success(create=Create(grace="1s"))
+        self.assertEqual(cm.exception.status, 400)
+        self.assertEqual((len(f.requests), waits), (3, []))
+        # create=True is the plain create of before; without create, None
+        self.assertIs(m.success(create=True), False)
+        self.assertEqual(f.requests[3]["query"], "create=1")
+        self.assertIsNone(m.success())
+
+    def test_refused_before_sending(self) -> None:
+        f = self.fake()
+        c, _ = f.client()
+        for create, want in [
+            (Create(period="1h", cron="0 3 * * *"), "not both"),
+            (Create(tags="backup"), "list of strings"),  # type: ignore[arg-type]
+            (Create(grace=""), "timedelta or a string"),
+            ("yes", "True or a Create"),
+        ]:
+            with self.assertRaises(ValueError) as cm:
+                c.monitor("job").success(create=create)  # type: ignore[arg-type]
+            self.assertIn(want, str(cm.exception))
+        self.assertEqual(f.requests, [])
 
 
 def signals(f: Fake) -> list[str]:

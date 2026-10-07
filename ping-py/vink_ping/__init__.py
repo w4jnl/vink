@@ -16,7 +16,8 @@ What you need:
   ``/ping/`` in any of the project's ping URLs. Keep it out of source code
   and pass it in the environment.
 - The monitor's slug: the last part of its ping URL. With ``create=True``
-  the first ping makes the monitor.
+  the first ping makes the monitor; ``create=Create(cron="0 3 * * *",
+  grace="30m")`` also sets it up (on create only).
 
 Quick start::
 
@@ -42,7 +43,9 @@ Signals, one ping each::
 
 Every signal takes ``msg`` (a line shown on the observation and in alerts),
 ``body`` (stored detail such as a command's output, ``str`` or ``bytes``),
-``content_type``, ``run_id`` and ``create``.
+``content_type``, ``run_id`` and ``create``. With ``create``, a signal returns
+whether this ping made the monitor (``True``) or found it there (``False``,
+and the :class:`Create` settings were not used).
 
 Errors: a ping that could not be recorded raises a :class:`PingError`:
 :class:`NotFound` for a wrong key, slug or id, :class:`RateLimited`,
@@ -63,7 +66,9 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import uuid
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, field
+from datetime import timedelta
 from types import TracebackType
 from typing import Any, Callable, Optional, TypeVar, Union
 
@@ -73,6 +78,7 @@ __all__ = [
     "DEFAULT_TIMEOUT",
     "MAX_MSG_LEN",
     "Client",
+    "Create",
     "Monitor",
     "NotFound",
     "PingError",
@@ -82,7 +88,7 @@ __all__ = [
     "Unreachable",
 ]
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 #: The body size a vink server keeps unless its operator changed
 #: ``ping.body_limit``. A longer body is cut to its last bytes.
@@ -104,7 +110,64 @@ _MAX_RETRY_WAIT = 30.0
 _KEY_FORBIDDEN = set("/?#%& \t\r\n")
 
 Body = Union[str, bytes, None]
+Duration = Union[str, timedelta, None]
 F = TypeVar("F", bound=Callable[..., object])
+
+
+@dataclass(frozen=True)
+class Create:
+    """How the monitor a creating ping makes is set up. Pass it as
+    ``create=``; ``create=True`` is the same as ``Create()``: a heartbeat
+    with a one-day period and an hour of grace.
+
+    Durations are a :class:`datetime.timedelta` or a vink string such as
+    ``"90s"``, ``"30m"``, ``"2h"``, ``"1d"`` or ``"1d12h"``. Give ``period``
+    or ``cron``, not both; ``tz`` is an IANA name and the project's when
+    left out. The settings apply on create only: a ping never changes a
+    monitor that exists. Settings vink refuses (a grace shorter than the
+    tolerance, an unknown timezone) raise a :class:`StatusError` with
+    status 400, and nothing is recorded."""
+
+    name: Optional[str] = None
+    period: Duration = None
+    cron: Optional[str] = None
+    tz: Optional[str] = None
+    grace: Duration = None
+    tolerance: Duration = None
+    max_runtime: Duration = None
+    tags: Sequence[str] = field(default_factory=tuple)
+
+    def query(self) -> list[tuple[str, str]]:
+        if self.period is not None and self.cron:
+            raise ValueError("give period or cron, not both")
+        if isinstance(self.tags, str):
+            raise ValueError("tags is a list of strings, like ['backup', 'prod']")
+        q: list[tuple[str, str]] = []
+        for key, value in (("name", self.name), ("cron", self.cron), ("tz", self.tz)):
+            if value:
+                q.append((key, value))
+        for key, d in (
+            ("period", self.period),
+            ("grace", self.grace),
+            ("tolerance", self.tolerance),
+            ("max_runtime", self.max_runtime),
+        ):
+            if d is not None:
+                q.append((key, _duration(key, d)))
+        if self.tags:
+            q.append(("tags", ",".join(self.tags)))
+        return q
+
+
+def _duration(key: str, d: Union[str, timedelta]) -> str:
+    if isinstance(d, timedelta):
+        seconds = int(d.total_seconds())
+        if seconds <= 0:
+            raise ValueError(f"{key} must be at least a second")
+        return f"{seconds}s"
+    if not isinstance(d, str) or not d.strip():
+        raise ValueError(f"{key} is a timedelta or a string like '30m'")
+    return d.strip()
 
 
 class PingError(Exception):
@@ -261,7 +324,9 @@ class Client:
         escaped = urllib.parse.quote(monitor_id, safe="")
         return Monitor(self, "id/" + escaped, escaped, "<id>", by_slug=False)
 
-    def _send(self, url: str, secret: str, shown: str, body: bytes, content_type: str) -> None:
+    def _send(self, url: str, secret: str, shown: str, body: bytes, content_type: str) -> str:
+        """Sends one ping with retries; returns the Ping-Monitor answer."""
+
         def hide(text: str) -> str:
             return text.replace(secret, shown) if secret else text
 
@@ -270,8 +335,7 @@ class Client:
         while True:
             attempt += 1
             try:
-                self._once(url, body, content_type)
-                return
+                return self._once(url, body, content_type)
             except StatusError as e:
                 err: PingError = e
                 if e.status == 413 and not shrunk and e.body_limit and e.body_limit < len(body):
@@ -296,7 +360,7 @@ class Client:
                 raise err
             self._sleep(wait)
 
-    def _once(self, url: str, body: bytes, content_type: str) -> None:
+    def _once(self, url: str, body: bytes, content_type: str) -> str:
         # no data at all for an empty body: urllib labels any data, even
         # b"", as a form post
         req = urllib.request.Request(url, data=body or None, method="POST")
@@ -308,7 +372,7 @@ class Client:
                 resp.read(4096)
                 status = resp.status
                 if status == 200:
-                    return
+                    return resp.headers.get("Ping-Monitor") or ""
                 raise StatusError(status, resp.reason or "")
         except urllib.error.HTTPError as e:
             with e:
@@ -355,11 +419,11 @@ class Monitor:
         body: Body = None,
         content_type: Optional[str] = None,
         run_id: Optional[str] = None,
-        create: bool = False,
-    ) -> None:
+        create: Union[bool, Create] = False,
+    ) -> Optional[bool]:
         """The job ran and succeeded: the monitor goes up and the next
         deadline counts from now."""
-        self._send("", msg, body, content_type, run_id, create)
+        return self._send("", msg, body, content_type, run_id, create)
 
     def start(
         self,
@@ -368,12 +432,12 @@ class Monitor:
         body: Body = None,
         content_type: Optional[str] = None,
         run_id: Optional[str] = None,
-        create: bool = False,
-    ) -> None:
+        create: Union[bool, Create] = False,
+    ) -> Optional[bool]:
         """The job began. vink shows it running, measures its duration when
         the finish arrives, and fails it when the monitor's max_runtime
         passes first. It changes no state."""
-        self._send("start", msg, body, content_type, run_id, create)
+        return self._send("start", msg, body, content_type, run_id, create)
 
     def fail(
         self,
@@ -382,11 +446,11 @@ class Monitor:
         body: Body = None,
         content_type: Optional[str] = None,
         run_id: Optional[str] = None,
-        create: bool = False,
-    ) -> None:
+        create: Union[bool, Create] = False,
+    ) -> Optional[bool]:
         """The job failed: the monitor goes down once its failure threshold
         is reached (one failure by default) and alerts go out."""
-        self._send("fail", msg, body, content_type, run_id, create)
+        return self._send("fail", msg, body, content_type, run_id, create)
 
     def exit(
         self,
@@ -396,13 +460,13 @@ class Monitor:
         body: Body = None,
         content_type: Optional[str] = None,
         run_id: Optional[str] = None,
-        create: bool = False,
-    ) -> None:
+        create: Union[bool, Create] = False,
+    ) -> Optional[bool]:
         """A process's exit code: 0 is a success, anything else a failure
         that carries the code into the alert."""
         if isinstance(code, bool) or not isinstance(code, int) or not 0 <= code <= 2**31 - 1:
             raise ValueError(f"exit code {code!r} is outside 0 to {2**31 - 1}")
-        self._send(str(code), msg, body, content_type, run_id, create)
+        return self._send(str(code), msg, body, content_type, run_id, create)
 
     def log(
         self,
@@ -411,14 +475,14 @@ class Monitor:
         body: Body = None,
         content_type: Optional[str] = None,
         run_id: Optional[str] = None,
-        create: bool = False,
-    ) -> None:
+        create: Union[bool, Create] = False,
+    ) -> Optional[bool]:
         """A progress note in the monitor's history. It changes nothing
         else: no state, no deadline, and an open run stays open. ``msg`` is
         the note's line; ``body`` can carry more, alone or with it."""
         if not msg and not body:
             raise ValueError("a log ping needs a message or a body")
-        self._send("log", msg, body, content_type, run_id, create)
+        return self._send("log", msg, body, content_type, run_id, create)
 
     def new_run(self, run_id: Optional[str] = None) -> Run:
         """Prepares a run: pings that share one run id, so vink pairs the
@@ -457,8 +521,20 @@ class Monitor:
         return wrapper  # type: ignore[return-value]
 
     def _send(
-        self, signal: str, msg: Optional[str], body: Body, content_type: Optional[str], run_id: Optional[str], create: bool
-    ) -> None:
+        self,
+        signal: str,
+        msg: Optional[str],
+        body: Body,
+        content_type: Optional[str],
+        run_id: Optional[str],
+        create: Union[bool, Create],
+    ) -> Optional[bool]:
+        if create is True:
+            create = Create()
+        elif create is False:
+            create = None  # type: ignore[assignment]
+        elif not isinstance(create, Create):
+            raise ValueError("create is True or a Create(...)")
         if create and not self._by_slug:
             raise ValueError("create works on pings by slug, not by id")
         c = self._client
@@ -470,11 +546,13 @@ class Monitor:
             query.append(("rid", run_id))
         if create:
             query.append(("create", "1"))
+            query.extend(create.query())
         if query:
             url += "?" + urllib.parse.urlencode(query)
         raw = body.encode("utf-8") if isinstance(body, str) else (body or b"")
         ctype = content_type or ("text/plain; charset=utf-8" if raw else "")
-        c._send(url, self._secret, self._shown, _keep_tail(raw, c._body_limit, ctype), ctype)
+        state = c._send(url, self._secret, self._shown, _keep_tail(raw, c._body_limit, ctype), ctype)
+        return state == "created" if create else None
 
 
 class Run:

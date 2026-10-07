@@ -21,7 +21,7 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import vink_ping
-from vink_ping import Client, NotFound
+from vink_ping import Client, Create, NotFound, StatusError
 
 BINARY = os.environ.get("VINK_TEST_BINARY", "")
 
@@ -154,6 +154,22 @@ class TestAgainstVink(unittest.TestCase):
         urllib.request.urlopen(req, timeout=5).close()
         self.client().monitor("py-small").fail(body="x" * 100 + "...the end of it")
         self.assertTrue(self.observations("py-small")[-1]["has_body"])
+
+    def test_create_with_settings(self) -> None:
+        m = self.client().monitor("py-create")
+        made = m.success(create=Create(name="Py create", cron="0 3 * * *", tz="Europe/Amsterdam", grace="30m", tags=["py"]))
+        self.assertIs(made, True)
+        got = self.api("/monitors/py-create")
+        self.assertEqual(
+            (got["name"], got["schedule"]["cron"], got["timezone"], got["grace"], got["tags"]),
+            ("Py create", "0 3 * * *", "Europe/Amsterdam", "30m", ["py"]),
+        )
+        # a later ping finds it and changes nothing
+        self.assertIs(m.success(create=Create(grace="2h")), False)
+        self.assertEqual(self.api("/monitors/py-create")["grace"], "30m")
+        with self.assertRaises(StatusError) as cm:
+            self.client().monitor("py-bad").success(create=Create(grace="5m", tolerance="10m"))
+        self.assertEqual(cm.exception.status, 400)
 
     def test_version_is_sent(self) -> None:
         Client(self.base + "/ping/", self.ping_key).monitor("py-ua").success(create=True)
