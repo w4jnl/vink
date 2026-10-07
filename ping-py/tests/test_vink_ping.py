@@ -44,12 +44,15 @@ class Fake:
                     }
                 )
                 status, headers = fake.answers.pop(0) if fake.answers else (200, {})
+                headers = dict(headers)
+                # a "_body" entry is the answer's body instead of OK
+                answer = headers.pop("_body", "OK\n").encode()
                 self.send_response(status)
                 for k, v in headers.items():
                     self.send_header(k, v)
-                self.send_header("Content-Length", "3")
+                self.send_header("Content-Length", str(len(answer)))
                 self.end_headers()
-                self.wfile.write(b"OK\n")
+                self.wfile.write(answer)
 
             def log_message(self, *args: object) -> None:
                 pass
@@ -283,7 +286,11 @@ class TestCreate(FakeTest):
     def test_settings_travel_and_the_answer_is_returned(self) -> None:
         from datetime import timedelta
 
-        f = self.fake((200, {"Ping-Monitor": "created"}), (200, {"Ping-Monitor": "existing"}), (400, {}))
+        f = self.fake(
+            (200, {"Ping-Monitor": "created"}),
+            (200, {"Ping-Monitor": "existing"}),
+            (400, {"_body": "create: grace: must be at least 60s\ncreate: tags: bad\n"}),
+        )
         c, waits = f.client()
         m = c.monitor("job")
         made = m.success(
@@ -316,6 +323,8 @@ class TestCreate(FakeTest):
         with self.assertRaises(StatusError) as cm:
             m.success(create=Create(grace="1s"))
         self.assertEqual(cm.exception.status, 400)
+        self.assertEqual(cm.exception.detail, "create: grace: must be at least 60s; create: tags: bad")
+        self.assertTrue(str(cm.exception).endswith("400 Bad Request: " + cm.exception.detail))
         self.assertEqual((len(f.requests), waits), (3, []))
         # create=True is the plain create of before; without create, None
         self.assertIs(m.success(create=True), False)

@@ -170,6 +170,7 @@ class TestAgainstVink(unittest.TestCase):
         with self.assertRaises(StatusError) as cm:
             self.client().monitor("py-bad").success(create=Create(grace="5m", tolerance="10m"))
         self.assertEqual(cm.exception.status, 400)
+        self.assertIn("tolerance", cm.exception.detail)
 
     def test_version_is_sent(self) -> None:
         Client(self.base + "/ping/", self.ping_key).monitor("py-ua").success(create=True)

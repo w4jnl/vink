@@ -64,9 +64,17 @@ type StatusError struct {
 	Status     string        // the status line, such as "404 Not Found"
 	RetryAfter time.Duration // from Retry-After, on a 429
 	BodyLimit  int           // from Ping-Body-Limit, the body size the monitor accepts
+	// Detail is the server's reason on a 400, such as why it refused the
+	// settings of a [Create]: "create: grace: must be at least 60s".
+	Detail string
 }
 
-func (e *StatusError) Error() string { return "ping: the server answered " + e.Status }
+func (e *StatusError) Error() string {
+	if e.Detail != "" {
+		return "ping: the server answered " + e.Status + ": " + e.Detail
+	}
+	return "ping: the server answered " + e.Status
+}
 
 // Is reports whether the answer means target.
 func (e *StatusError) Is(target error) bool {
@@ -290,7 +298,7 @@ func RunID(id string) PingOption { return func(r *request) { r.runID = id } }
 // exists, and its ping goes through as usual. [WasCreated] tells the two
 // apart. Settings vink refuses (a grace shorter than its tolerance, an
 // unknown timezone) make the ping fail with a 400 [StatusError] that is
-// not retried, and nothing is recorded.
+// not retried and whose Detail says why, and nothing is recorded.
 // Pings by id cannot create.
 func Create(opts ...CreateOption) PingOption {
 	return func(r *request) {
@@ -506,7 +514,7 @@ func (c *Client) once(ctx context.Context, u string, hide func(string) string, b
 		return fmt.Errorf("ping: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
-	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
+	answer, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 	if resp.StatusCode == http.StatusOK {
 		if onOK != nil {
 			onOK(resp.Header)
@@ -514,6 +522,9 @@ func (c *Client) once(ctx context.Context, u string, hide func(string) string, b
 		return nil
 	}
 	se := &StatusError{StatusCode: resp.StatusCode, Status: resp.Status}
+	if resp.StatusCode == http.StatusBadRequest {
+		se.Detail = detail(answer)
+	}
 	if s, err := strconv.Atoi(resp.Header.Get("Retry-After")); err == nil && s > 0 {
 		se.RetryAfter = time.Duration(s) * time.Second
 	}
@@ -521,6 +532,25 @@ func (c *Client) once(ctx context.Context, u string, hide func(string) string, b
 		se.BodyLimit = n
 	}
 	return se
+}
+
+// detail turns a plain-text answer into one line: its lines joined by "; ",
+// at most 500 bytes.
+func detail(b []byte) string {
+	var lines []string
+	for _, l := range strings.Split(string(b), "\n") {
+		if l = strings.TrimSpace(l); l != "" && utf8.ValidString(l) {
+			lines = append(lines, l)
+		}
+	}
+	s := strings.Join(lines, "; ")
+	if len(s) > 500 {
+		s = s[:500]
+		for len(s) > 0 && !utf8.ValidString(s) {
+			s = s[:len(s)-1]
+		}
+	}
+	return s
 }
 
 // backoff is the pause before retry n: 0.5 s, 1 s, 2 s, up to 5 s, with

@@ -88,7 +88,7 @@ __all__ = [
     "Unreachable",
 ]
 
-__version__ = "0.2.0"
+__version__ = "0.2.1"
 
 #: The body size a vink server keeps unless its operator changed
 #: ``ping.body_limit``. A longer body is cut to its last bytes.
@@ -178,8 +178,16 @@ class PingError(Exception):
 class StatusError(PingError):
     """vink answered with a status other than 200."""
 
-    def __init__(self, status: int, reason: str, retry_after: Optional[float] = None, body_limit: Optional[int] = None):
-        super().__init__(f"vink answered {status} {reason}".rstrip())
+    def __init__(
+        self,
+        status: int,
+        reason: str,
+        retry_after: Optional[float] = None,
+        body_limit: Optional[int] = None,
+        detail: str = "",
+    ):
+        message = f"vink answered {status} {reason}".rstrip()
+        super().__init__(f"{message}: {detail}" if detail else message)
         #: The HTTP status, such as 404.
         self.status = status
         #: The reason phrase, such as "Not Found".
@@ -188,6 +196,9 @@ class StatusError(PingError):
         self.retry_after = retry_after
         #: The body size the monitor accepts, from Ping-Body-Limit.
         self.body_limit = body_limit
+        #: vink's reason on a 400, such as why it refused the settings of a
+        #: :class:`Create`: "create: grace: must be at least 60s".
+        self.detail = detail
 
 
 class NotFound(StatusError):
@@ -378,12 +389,20 @@ class Client:
             with e:
                 retry_after = _number(e.headers.get("Retry-After"))
                 body_limit = _number(e.headers.get("Ping-Body-Limit"))
-                args = (e.code, e.reason or "", retry_after, int(body_limit) if body_limit else None)
+                detail = _detail(e.read(4096)) if e.code == 400 else ""
+                args = (e.code, e.reason or "", retry_after, int(body_limit) if body_limit else None, detail)
             if e.code == 404:
                 raise NotFound(*args) from None
             if e.code == 429:
                 raise RateLimited(*args) from None
             raise StatusError(*args) from None
+
+
+def _detail(raw: bytes) -> str:
+    """A plain-text answer as one line: its lines joined by "; ", at most
+    500 characters."""
+    text = raw.decode("utf-8", "replace")
+    return "; ".join(line.strip() for line in text.splitlines() if line.strip())[:500]
 
 
 def _number(v: Optional[str]) -> Optional[float]:

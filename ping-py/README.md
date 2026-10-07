@@ -12,17 +12,17 @@ library, works with Python 3.9 and later, and needs the project's ping key, neve
 It is not on PyPI. Install it from the vink repository, pinned to a tag:
 
 ```sh
-pip install "vink-ping @ git+ssh://git@github.com/w4jnl/vink.git@ping-py/v0.2.0#subdirectory=ping-py"
+pip install "vink-ping @ git+ssh://git@github.com/w4jnl/vink.git@ping-py/v0.2.1#subdirectory=ping-py"
 ```
 
 The same requirement works elsewhere:
 
 | Where | How |
 | --- | --- |
-| `requirements.txt` | `vink-ping @ git+ssh://git@github.com/w4jnl/vink.git@ping-py/v0.2.0#subdirectory=ping-py` |
+| `requirements.txt` | `vink-ping @ git+ssh://git@github.com/w4jnl/vink.git@ping-py/v0.2.1#subdirectory=ping-py` |
 | `pyproject.toml` | the same string in `dependencies` |
-| uv | `uv add "vink-ping @ git+ssh://git@github.com/w4jnl/vink.git@ping-py/v0.2.0#subdirectory=ping-py"` |
-| Poetry | `poetry add "git+ssh://git@github.com/w4jnl/vink.git@ping-py/v0.2.0#subdirectory=ping-py"` |
+| uv | `uv add "vink-ping @ git+ssh://git@github.com/w4jnl/vink.git@ping-py/v0.2.1#subdirectory=ping-py"` |
+| Poetry | `poetry add "git+ssh://git@github.com/w4jnl/vink.git@ping-py/v0.2.1#subdirectory=ping-py"` |
 
 The repository is public, so `git+https://github.com/w4jnl/vink.git@…` works too, on hosts without
 a GitHub key. Installing builds the package with setuptools, which pip and uv fetch for the build
@@ -86,7 +86,8 @@ project key. Every signal takes keyword arguments:
   `grace`, `tolerance`, `max_runtime` (a `timedelta` or a string like `"30m"`) and `tags`. With
   `create`, a signal returns `True` when it made the monitor and `False` when it was already
   there; the settings apply on create only, and a ping never changes a monitor that exists.
-  Settings vink refuses raise a `StatusError` with status 400, and nothing is recorded.
+  Settings vink refuses raise a `StatusError` with status 400 whose `detail` says why, and
+  nothing is recorded.
 
 ```python
 from vink_ping import Create

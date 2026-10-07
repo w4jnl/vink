@@ -32,6 +32,7 @@ type fake struct {
 type answer struct {
 	status int
 	header map[string]string
+	body   string
 }
 
 func newFake(t *testing.T, answers ...answer) *fake {
@@ -50,6 +51,7 @@ func newFake(t *testing.T, answers ...answer) *fake {
 			w.Header().Set(k, v)
 		}
 		w.WriteHeader(a.status)
+		_, _ = io.WriteString(w, a.body)
 	}))
 	t.Cleanup(f.srv.Close)
 	return f
@@ -507,7 +509,7 @@ func TestCreateSettings(t *testing.T) {
 	f := newFake(t,
 		answer{status: http.StatusOK, header: map[string]string{"Ping-Monitor": "created"}},
 		answer{status: http.StatusOK, header: map[string]string{"Ping-Monitor": "existing"}},
-		answer{status: http.StatusBadRequest},
+		answer{status: http.StatusBadRequest, body: "create: grace: must be at least 60s\ncreate: tags: bad\n"},
 	)
 	c, waits := f.client(t, "k")
 	m := c.Monitor("nightly")
@@ -540,6 +542,9 @@ func TestCreateSettings(t *testing.T) {
 	var se *StatusError
 	if !errors.As(err, &se) || se.StatusCode != http.StatusBadRequest || len(f.requests()) != 3 || len(*waits) != 0 {
 		t.Fatalf("400: %v, %d requests, waits %v", err, len(f.requests()), *waits)
+	}
+	if se.Detail != "create: grace: must be at least 60s; create: tags: bad" || !strings.HasSuffix(err.Error(), "400 Bad Request: "+se.Detail) {
+		t.Errorf("detail %q, error %q", se.Detail, err)
 	}
 	// without options it is the plain create of before
 	if err := m.Success(ctx, Create()); err != nil {

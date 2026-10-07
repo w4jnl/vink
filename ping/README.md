@@ -67,7 +67,7 @@ project key. Every call takes options:
   `ping.Timezone`, `ping.Grace`, `ping.Tolerance`, `ping.MaxRuntime`, `ping.Tags`, and
   `ping.WasCreated(&created)` to learn whether this ping made it. They apply on create only: a
   ping never changes a monitor that exists. Settings vink refuses fail the ping with a 400
-  `*StatusError` (not retried), and nothing is recorded.
+  `*StatusError` (not retried) whose `Detail` says why, and nothing is recorded.
 
 ```go
 err := m.Success(ctx, ping.Create(
