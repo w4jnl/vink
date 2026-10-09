@@ -1189,6 +1189,116 @@ func TestOrgStatusPages(t *testing.T) {
 	}
 }
 
+// TestOrgChannelsRoutes: the org's Channels and Routes tabs manage channels
+// only org routes use, and routes that cover chosen projects or all.
+func TestOrgChannelsRoutes(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	root := "/o/homelab/admin"
+	admin := domain.Scope{InstanceAdmin: true, Role: domain.RoleOwner}
+	staging, err := e.svc.CreateProject(ctx, admin, e.org.ID, "staging", "Staging", "UTC")
+	if err != nil {
+		t.Fatal(err)
+	}
+	orgSc := domain.Scope{OrgID: e.org.ID, Role: domain.RoleAdmin, Actor: "test"}
+
+	tab := e.get(root+"/channels", false)
+	tab.has(t, `aria-current="page">Channels<span class="vk-tab__n">0</span>`, `href="/o/homelab/admin/routes">Routes<span class="vk-tab__n">0</span></a>`,
+		"No org channels yet", `href="/o/homelab/admin/channels?add=1">Add channel</a>`)
+	e.get(root+"/channels?add=1", false).has(t, `id="channel-panel"`, `action="/o/homelab/admin/channels"`, `form="channel-form"`, `>Send test<`)
+	if p := e.get(root+"/channels?add=1&kind=ntfy&name=phone", true); !strings.Contains(p.body, `for="topic"`) || !strings.Contains(p.body, `value="phone"`) || strings.Contains(p.body, "<html") {
+		t.Fatalf("kind switch: %d %s", p.code, p.body)
+	}
+	if bad := e.post(root+"/channels", url.Values{"name": {"oncall"}, "kind": {"webhook"}, "url": {"ftp://x"}}, false); bad.code != 422 || !strings.Contains(bad.body, "vk-field--error") {
+		t.Fatalf("bad channel: %d %s", bad.code, bad.body)
+	}
+	var hits int
+	hook := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { hits++; w.WriteHeader(200) }))
+	defer hook.Close()
+	created := e.post(root+"/channels", url.Values{"name": {"oncall"}, "kind": {"webhook"}, "url": {hook.URL + "/org"}}, false)
+	if created.code != 303 || created.hdr.Get("Location") != root+"/channels" {
+		t.Fatalf("create channel: %d %s", created.code, created.body)
+	}
+	if dup := e.post(root+"/channels", url.Values{"name": {"oncall"}, "kind": {"webhook"}, "url": {hook.URL + "/dup"}}, false); dup.code != 422 || !strings.Contains(dup.body, "A channel with this name exists.") {
+		t.Fatalf("duplicate: %d %s", dup.code, dup.body)
+	}
+	channels, err := e.svc.ListOrgChannels(ctx, orgSc)
+	if err != nil || len(channels) != 1 {
+		t.Fatalf("org channels: %v %d", err, len(channels))
+	}
+	id := channels[0].ID
+	// no default route at org level, and the project's tabs do not list it
+	e.get(root+"/channels", false).has(t, "oncall", hook.URL+"/org", "no routes", "never sent", `aria-checked="true"`)
+	if strings.Contains(e.get(projPath+"/settings/channels", false).body, "oncall") {
+		t.Error("an org channel in a project's list")
+	}
+	if p := e.get(projPath+"/settings/routes?add=1", false); strings.Contains(p.body, id) {
+		t.Error("a project route cannot pick an org channel")
+	}
+	if off := e.post(root+"/channels/"+id+"/toggle", nil, true); off.code != 200 || !strings.Contains(off.body, `aria-checked="false"`) || strings.Contains(off.body, "<html") {
+		t.Fatalf("toggle: %d %s", off.code, off.body)
+	}
+	if on := e.post(root+"/channels/"+id+"/toggle", nil, false); on.code != 303 {
+		t.Fatalf("toggle back: %d", on.code)
+	}
+	if sent := e.post(root+"/channels/"+id+"/test", nil, true); sent.code != 200 || !strings.Contains(sent.body, "Test sent.") || hits != 1 {
+		t.Fatalf("test: %d hits=%d %s", sent.code, hits, sent.body)
+	}
+	if dead := e.post(root+"/channels", url.Values{"name": {"dead"}, "kind": {"webhook"}, "url": {"http://127.0.0.1:1/x"}, "action": {"test"}}, true); dead.code != 200 || !strings.Contains(dead.body, "Test failed.") {
+		t.Fatalf("panel test: %d %s", dead.code, dead.body)
+	}
+	e.get(root+"/channels?edit="+id, false).has(t, `value="oncall"`, "Delete channel", `action="/o/homelab/admin/channels/`+id+`"`)
+
+	// routes: the panel offers the org's channels and projects
+	e.get(root+"/routes", false).has(t, "No org routes yet", `href="/o/homelab/admin/routes?add=1">Add route</a>`)
+	e.get(root+"/routes?add=1", false).has(t, `id="route-panel"`, ">Projects<", `name="projects" value="`+e.project.ID+`"`, `name="projects" value="`+staging.ID+`"`, ">Staging<",
+		"None ticked covers every project", `name="channels" value="`+id+`"`, `form="route-form"`)
+	if bad := e.post(root+"/routes", url.Values{"channels": {id}, "on": {"down"}, "projects": {"01NOTAPROJECT"}}, false); bad.code != 422 || !strings.Contains(bad.body, "not a project of this org") {
+		t.Fatalf("unknown project: %d %s", bad.code, bad.body)
+	}
+	if bad := e.post(root+"/routes", url.Values{"on": {"down"}}, false); bad.code != 422 || !strings.Contains(bad.body, "Pick at least one channel.") {
+		t.Fatalf("no channel: %d %s", bad.code, bad.body)
+	}
+	if p := e.post(root+"/routes", url.Values{"channels": {id}, "on": {"down", "up"}}, false); p.code != 303 {
+		t.Fatalf("every project: %d %s", p.code, p.body)
+	}
+	if p := e.post(root+"/routes", url.Values{"channels": {id}, "on": {"down"}, "match_tags": {"db"}, "projects": {staging.ID}}, false); p.code != 303 {
+		t.Fatalf("staging only: %d %s", p.code, p.body)
+	}
+	e.get(root+"/routes", false).has(t, `Routes<span class="vk-tab__n">2</span>`, "every project → oncall", "Staging → oncall", `<span class="vk-tag">db</span>`)
+	e.get(root+"/channels", false).has(t, "2 routes")
+	routes, _ := e.svc.ListOrgRoutes(ctx, orgSc)
+	var rid string
+	for _, r := range routes {
+		if len(r.MatchTags) == 1 {
+			rid = r.ID
+		}
+	}
+	e.get(root+"/routes?edit="+rid, false).has(t, `value="`+staging.ID+`" checked`, `value="db"`, "Delete route")
+	if p := e.post(root+"/routes/"+rid, url.Values{"channels": {id}, "on": {"down"}, "match_tags": {"db"}, "projects": {staging.ID, e.project.ID}}, false); p.code != 303 {
+		t.Fatalf("edit route: %d %s", p.code, p.body)
+	}
+	if r, err := e.svc.OrgRoute(ctx, orgSc, rid); err != nil || len(r.Projects) != 2 {
+		t.Fatalf("edited route: %v %+v", err, r)
+	}
+	if p := e.post(root+"/routes/"+rid+"/delete", nil, false); p.code != 303 {
+		t.Fatalf("delete route: %d", p.code)
+	}
+	// a channel's delete takes the routes it leaves without channels
+	if p := e.post(root+"/channels/"+id+"/delete", nil, false); p.code != 303 {
+		t.Fatalf("delete channel: %d", p.code)
+	}
+	if left, _ := e.svc.ListOrgRoutes(ctx, orgSc); len(left) != 0 {
+		t.Fatalf("routes left without channels: %d", len(left))
+	}
+	if p := e.get(root+"/routes?edit=nope", false); p.code != 404 {
+		t.Fatalf("unknown route: %d", p.code)
+	}
+	if p := e.get("/o/acme/admin/channels", false); p.code != 404 {
+		t.Fatalf("another org: %d", p.code)
+	}
+}
+
 func TestForeignProjectIs404AndStatic(t *testing.T) {
 	e := newEnv(t)
 	if p := e.get("/o/acme/p/prod", false); p.code != 404 || !strings.Contains(p.body, "Not found") {
@@ -2411,7 +2521,7 @@ func TestDeployedUnderAPath(t *testing.T) {
 		"/o/homelab/p/prod", "/o/homelab/p/prod/m/nightly", "/o/homelab/p/prod/m/new", "/o/homelab/p/prod/m/new?kind=http", "/o/homelab/p/prod/m/nightly/edit",
 		"/o/homelab/p/prod/m/nightly/history", "/o/homelab/p/prod/incidents",
 		"/o/homelab/p/prod/settings/channels", "/o/homelab/p/prod/settings/channels?add=1", "/o/homelab/p/prod/settings/routes", "/o/homelab/p/prod/settings/maintenance", "/o/homelab/p/prod/settings/pages", "/o/homelab/p/prod/settings/keys",
-		"/o/homelab/admin/members", "/o/homelab/admin/projects", "/o/homelab/admin/pages", "/o/homelab/admin/pages?add=1", "/o/homelab/admin/agents", "/o/homelab/admin/agents/dc2-probe", "/o/homelab/admin/audit",
+		"/o/homelab/admin/members", "/o/homelab/admin/projects", "/o/homelab/admin/pages", "/o/homelab/admin/pages?add=1", "/o/homelab/admin/channels", "/o/homelab/admin/channels?add=1", "/o/homelab/admin/routes", "/o/homelab/admin/routes?add=1", "/o/homelab/admin/agents", "/o/homelab/admin/agents/dc2-probe", "/o/homelab/admin/audit",
 		"/admin/orgs", "/admin/orgs?add=1", "/admin/users", "/admin/keys", "/admin/server", "/admin/audit", "/account", "/account?setup=1", "/account?off=1", "/projects", "/s/homelab", "/s/office", "/nope",
 	}
 	for _, p := range pages {

@@ -17,7 +17,7 @@ RETURNING id, project_id, org_id, name, kind, config, enabled, created_at, updat
 
 type CreateChannelParams struct {
 	ID        string
-	ProjectID string
+	ProjectID *string
 	OrgID     string
 	Name      string
 	Kind      string
@@ -59,7 +59,7 @@ DELETE FROM channels WHERE project_id = ? AND id = ?
 `
 
 type DeleteChannelParams struct {
-	ProjectID string
+	ProjectID *string
 	ID        string
 }
 
@@ -71,12 +71,30 @@ func (q *Queries) DeleteChannel(ctx context.Context, arg DeleteChannelParams) (i
 	return result.RowsAffected()
 }
 
+const deleteOrgChannel = `-- name: DeleteOrgChannel :execrows
+DELETE FROM channels WHERE org_id = ? AND project_id IS NULL AND id = ?
+`
+
+type DeleteOrgChannelParams struct {
+	OrgID string
+	ID    string
+}
+
+// tenancy: org
+func (q *Queries) DeleteOrgChannel(ctx context.Context, arg DeleteOrgChannelParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, deleteOrgChannel, arg.OrgID, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const getChannel = `-- name: GetChannel :one
 SELECT id, project_id, org_id, name, kind, config, enabled, created_at, updated_at FROM channels WHERE project_id = ? AND id = ?
 `
 
 type GetChannelParams struct {
-	ProjectID string
+	ProjectID *string
 	ID        string
 }
 
@@ -102,7 +120,7 @@ SELECT id, project_id, org_id, name, kind, config, enabled, created_at, updated_
 `
 
 type GetChannelByNameParams struct {
-	ProjectID string
+	ProjectID *string
 	Name      string
 }
 
@@ -123,12 +141,77 @@ func (q *Queries) GetChannelByName(ctx context.Context, arg GetChannelByNamePara
 	return i, err
 }
 
+const getOrgChannel = `-- name: GetOrgChannel :one
+SELECT id, project_id, org_id, name, kind, config, enabled, created_at, updated_at FROM channels WHERE org_id = ? AND project_id IS NULL AND id = ?
+`
+
+type GetOrgChannelParams struct {
+	OrgID string
+	ID    string
+}
+
+// tenancy: org (a channel of the org itself, project_id NULL)
+func (q *Queries) GetOrgChannel(ctx context.Context, arg GetOrgChannelParams) (Channel, error) {
+	row := q.db.QueryRowContext(ctx, getOrgChannel, arg.OrgID, arg.ID)
+	var i Channel
+	err := row.Scan(
+		&i.ID,
+		&i.ProjectID,
+		&i.OrgID,
+		&i.Name,
+		&i.Kind,
+		&i.Config,
+		&i.Enabled,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const listChannels = `-- name: ListChannels :many
 SELECT id, project_id, org_id, name, kind, config, enabled, created_at, updated_at FROM channels WHERE project_id = ? ORDER BY name
 `
 
-func (q *Queries) ListChannels(ctx context.Context, projectID string) ([]Channel, error) {
+func (q *Queries) ListChannels(ctx context.Context, projectID *string) ([]Channel, error) {
 	rows, err := q.db.QueryContext(ctx, listChannels, projectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Channel
+	for rows.Next() {
+		var i Channel
+		if err := rows.Scan(
+			&i.ID,
+			&i.ProjectID,
+			&i.OrgID,
+			&i.Name,
+			&i.Kind,
+			&i.Config,
+			&i.Enabled,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listOrgChannels = `-- name: ListOrgChannels :many
+SELECT id, project_id, org_id, name, kind, config, enabled, created_at, updated_at FROM channels WHERE org_id = ? AND project_id IS NULL ORDER BY name
+`
+
+// tenancy: org
+func (q *Queries) ListOrgChannels(ctx context.Context, orgID string) ([]Channel, error) {
+	rows, err := q.db.QueryContext(ctx, listOrgChannels, orgID)
 	if err != nil {
 		return nil, err
 	}
@@ -170,7 +253,7 @@ RETURNING id, project_id, org_id, name, kind, config, enabled, created_at, updat
 type SetChannelEnabledParams struct {
 	Enabled   bool
 	UpdatedAt int64
-	ProjectID string
+	ProjectID *string
 	ID        string
 }
 
@@ -179,6 +262,43 @@ func (q *Queries) SetChannelEnabled(ctx context.Context, arg SetChannelEnabledPa
 		arg.Enabled,
 		arg.UpdatedAt,
 		arg.ProjectID,
+		arg.ID,
+	)
+	var i Channel
+	err := row.Scan(
+		&i.ID,
+		&i.ProjectID,
+		&i.OrgID,
+		&i.Name,
+		&i.Kind,
+		&i.Config,
+		&i.Enabled,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const setOrgChannelEnabled = `-- name: SetOrgChannelEnabled :one
+UPDATE channels
+SET enabled = ?, updated_at = ?
+WHERE org_id = ? AND project_id IS NULL AND id = ?
+RETURNING id, project_id, org_id, name, kind, config, enabled, created_at, updated_at
+`
+
+type SetOrgChannelEnabledParams struct {
+	Enabled   bool
+	UpdatedAt int64
+	OrgID     string
+	ID        string
+}
+
+// tenancy: org
+func (q *Queries) SetOrgChannelEnabled(ctx context.Context, arg SetOrgChannelEnabledParams) (Channel, error) {
+	row := q.db.QueryRowContext(ctx, setOrgChannelEnabled,
+		arg.Enabled,
+		arg.UpdatedAt,
+		arg.OrgID,
 		arg.ID,
 	)
 	var i Channel
@@ -209,7 +329,7 @@ type UpdateChannelParams struct {
 	Config    string
 	Enabled   bool
 	UpdatedAt int64
-	ProjectID string
+	ProjectID *string
 	ID        string
 }
 
@@ -221,6 +341,49 @@ func (q *Queries) UpdateChannel(ctx context.Context, arg UpdateChannelParams) (C
 		arg.Enabled,
 		arg.UpdatedAt,
 		arg.ProjectID,
+		arg.ID,
+	)
+	var i Channel
+	err := row.Scan(
+		&i.ID,
+		&i.ProjectID,
+		&i.OrgID,
+		&i.Name,
+		&i.Kind,
+		&i.Config,
+		&i.Enabled,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const updateOrgChannel = `-- name: UpdateOrgChannel :one
+UPDATE channels
+SET name = ?, kind = ?, config = ?, enabled = ?, updated_at = ?
+WHERE org_id = ? AND project_id IS NULL AND id = ?
+RETURNING id, project_id, org_id, name, kind, config, enabled, created_at, updated_at
+`
+
+type UpdateOrgChannelParams struct {
+	Name      string
+	Kind      string
+	Config    string
+	Enabled   bool
+	UpdatedAt int64
+	OrgID     string
+	ID        string
+}
+
+// tenancy: org
+func (q *Queries) UpdateOrgChannel(ctx context.Context, arg UpdateOrgChannelParams) (Channel, error) {
+	row := q.db.QueryRowContext(ctx, updateOrgChannel,
+		arg.Name,
+		arg.Kind,
+		arg.Config,
+		arg.Enabled,
+		arg.UpdatedAt,
+		arg.OrgID,
 		arg.ID,
 	)
 	var i Channel

@@ -74,7 +74,7 @@ type Body struct {
 
 type Channel struct {
 	ID        string
-	ProjectID string
+	ProjectID *string
 	OrgID     string
 	Name      string
 	Kind      string
@@ -229,6 +229,24 @@ type Org struct {
 	QuotaMonitors *int64
 	QuotaAgents   *int64
 	CreatedAt     int64
+}
+
+type OrgRoute struct {
+	ID           string
+	OrgID        string
+	Projects     string
+	MatchTags    string
+	OnStates     string
+	RepeatEveryS int64
+	Priority     int64
+	CreatedAt    int64
+	UpdatedAt    int64
+}
+
+type OrgRouteChannel struct {
+	RouteID   string
+	ChannelID string
+	OrgID     string
 }
 
 type Project struct {

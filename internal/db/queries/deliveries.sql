@@ -40,6 +40,12 @@ SELECT * FROM deliveries WHERE project_id = ? AND event_id = ? ORDER BY created_
 SELECT CAST(COALESCE(MAX(delivered_at), 0) AS INTEGER) AS last_sent
 FROM deliveries WHERE project_id = ? AND channel_id = ? AND delivered_at IS NOT NULL;
 
+-- name: LastSentForOrgChannel :one
+-- tenancy: org (deliveries of an org channel span the org's projects)
+SELECT CAST(COALESCE(MAX(d.delivered_at), 0) AS INTEGER) AS last_sent
+FROM deliveries d JOIN channels c ON c.id = d.channel_id
+WHERE c.org_id = ? AND c.project_id IS NULL AND d.channel_id = ? AND d.delivered_at IS NOT NULL;
+
 -- name: ListRecentDeliveries :many
 SELECT d.*, c.name AS channel_name, c.kind AS channel_kind
 FROM deliveries d JOIN channels c ON c.id = d.channel_id

@@ -370,9 +370,10 @@ func (s *Service) persistDecision(ctx context.Context, q *db.Queries, m *domain.
 	return s.enqueueDeliveries(ctx, q, m, eventID, d.To, now)
 }
 
-// enqueueDeliveries inserts one outbox row per matching, enabled route.
+// enqueueDeliveries inserts one outbox row per channel of every matching
+// route, the project's own and the org's that cover the project.
 func (s *Service) enqueueDeliveries(ctx context.Context, q *db.Queries, m *domain.Monitor, eventID string, to domain.State, now time.Time) error {
-	routes, err := s.listRoutes(ctx, q, m.ProjectID)
+	routes, err := s.routesFor(ctx, q, m.ProjectID)
 	if err != nil {
 		return err
 	}

@@ -438,18 +438,7 @@ func (s *Service) Export(ctx context.Context, sc domain.Scope, secrets bool) (*a
 		return nil, err
 	}
 	for _, c := range channels {
-		cfg := c.Config
-		if !secrets {
-			cfg = RedactConfig(c.Kind, c.Config)
-		}
-		var m map[string]any
-		_ = json.Unmarshal(cfg, &m)
-		ch := apply.Channel{Name: c.Name, Kind: string(c.Kind), Config: m}
-		if !c.Enabled {
-			off := false
-			ch.Enabled = &off
-		}
-		f.Channels = append(f.Channels, ch)
+		f.Channels = append(f.Channels, channelEntry(c, secrets))
 	}
 	routes, err := s.ListRoutes(ctx, sc)
 	if err != nil {
@@ -481,6 +470,23 @@ func (s *Service) Export(ctx context.Context, sc domain.Scope, secrets bool) (*a
 		f.StatusPages = append(f.StatusPages, pageEntry(p, nil))
 	}
 	return f, nil
+}
+
+// channelEntry is a channel as an apply file writes it, secrets redacted
+// unless asked for.
+func channelEntry(c *domain.Channel, secrets bool) apply.Channel {
+	cfg := c.Config
+	if !secrets {
+		cfg = RedactConfig(c.Kind, c.Config)
+	}
+	var m map[string]any
+	_ = json.Unmarshal(cfg, &m)
+	ch := apply.Channel{Name: c.Name, Kind: string(c.Kind), Config: m}
+	if !c.Enabled {
+		off := false
+		ch.Enabled = &off
+	}
+	return ch
 }
 
 // pageEntry is a page as an apply file writes it; projectSlugs names an
@@ -569,7 +575,40 @@ func (s *Service) ExportOrg(ctx context.Context, sc domain.Scope, secrets bool) 
 	for _, p := range pages {
 		out.StatusPages = append(out.StatusPages, pageEntry(p, slugs))
 	}
+	channels, routes, err := s.listOrgAlertsForFile(ctx, sc)
+	if err != nil {
+		return nil, err
+	}
+	for _, c := range channels {
+		out.Channels = append(out.Channels, channelEntry(c, secrets))
+	}
+	for _, r := range routes {
+		out.Routes = append(out.Routes, orgRouteEntry(r, slugs))
+	}
 	return out, nil
+}
+
+// listOrgAlertsForFile lists the org's own channels and routes for an
+// export or apply: an org key reads them as an admin does.
+func (s *Service) listOrgAlertsForFile(ctx context.Context, sc domain.Scope) ([]*domain.Channel, []*domain.Route, error) {
+	q := s.db.Read()
+	rows, err := q.ListOrgChannels(ctx, sc.OrgID)
+	if err != nil {
+		return nil, nil, err
+	}
+	channels := make([]*domain.Channel, 0, len(rows))
+	for _, r := range rows {
+		c, err := s.channelFromRow(r)
+		if err != nil {
+			return nil, nil, err
+		}
+		channels = append(channels, c)
+	}
+	routes, err := s.listOrgRoutes(ctx, q, sc.OrgID)
+	if err != nil {
+		return nil, nil, err
+	}
+	return channels, routes, nil
 }
 
 // listOrgPagesForFile lists the org's own pages for an export: an org
@@ -639,6 +678,144 @@ func (s *Service) applyOrgPages(ctx context.Context, sc domain.Scope, pages []ap
 	return nil
 }
 
+// applyOrgAlerts brings the org's own channels and routes to the file,
+// inside the org apply's transaction. As in a project file, what the file
+// does not name is deleted only with prune; a file with neither a channels
+// nor a routes key leaves the org's alerting alone.
+func (s *Service) applyOrgAlerts(ctx context.Context, sc domain.Scope, f *apply.OrgFile, prune bool, diff *apply.Diff) error {
+	projects, err := s.ListProjects(ctx, sc)
+	if err != nil {
+		return err
+	}
+	projectIDs := make(map[string]string, len(projects))
+	for _, p := range projects {
+		projectIDs[p.Slug] = p.ID
+	}
+	channels, routes, err := s.listOrgAlertsForFile(ctx, sc)
+	if err != nil {
+		return err
+	}
+	byName := map[string]*domain.Channel{}
+	for _, c := range channels {
+		byName[c.Name] = c
+	}
+	keep := map[string]bool{}
+	for i, c := range f.Channels {
+		if c.Name == "" {
+			return validation(fmt.Sprintf("channels[%d].name", i), "must not be empty")
+		}
+		cfg, err := c.ConfigJSON()
+		if err != nil {
+			return err
+		}
+		enabled := c.Enabled == nil || *c.Enabled
+		want := &domain.Channel{Name: c.Name, Kind: domain.ChannelKind(c.Kind), Config: cfg, Enabled: enabled}
+		label := "channel " + c.Name
+		keep[c.Name] = true
+		if cur, ok := byName[c.Name]; ok {
+			if cur.Kind == want.Kind && cur.Enabled == enabled && configMatches(cur.Config, cfg) {
+				diff.Unchanged = append(diff.Unchanged, label)
+				continue
+			}
+			if _, err := s.UpdateOrgChannel(ctx, sc, cur.ID, want); err != nil {
+				return prefixField(err, fmt.Sprintf("channels[%d].", i))
+			}
+			diff.Updated = append(diff.Updated, label)
+			continue
+		}
+		created, err := s.CreateOrgChannel(ctx, sc, want)
+		if err != nil {
+			return prefixField(err, fmt.Sprintf("channels[%d].", i))
+		}
+		byName[c.Name] = created
+		diff.Created = append(diff.Created, label)
+	}
+	byKey := map[string]*domain.Route{}
+	for _, r := range routes {
+		byKey[routeKey(r.MatchTags, r.ChannelNames())] = r
+	}
+	keepRoutes := map[string]bool{}
+	for i, r := range f.Routes {
+		ids := make([]string, 0, len(r.Channels))
+		for _, name := range r.Channels {
+			ch, ok := byName[name]
+			if !ok {
+				return validation(fmt.Sprintf("routes[%d].channels", i), "unknown channel "+name)
+			}
+			ids = append(ids, ch.ID)
+		}
+		covered := make([]string, 0, len(r.Projects))
+		for _, slug := range r.Projects {
+			id, ok := projectIDs[slug]
+			if !ok {
+				return validation(fmt.Sprintf("routes[%d].projects", i), "no project "+slug+" in this org")
+			}
+			covered = append(covered, id)
+		}
+		covered = uniqueIDs(covered)
+		sort.Strings(covered)
+		on := r.On
+		if len(on) == 0 {
+			on = []domain.State{domain.StateDown, domain.StateUp}
+		}
+		want := &domain.Route{Projects: covered, MatchTags: domain.NormalizeTags(r.MatchTags), ChannelIDs: ids, On: on, RepeatEvery: r.RepeatEvery.Std(), Priority: r.Priority}
+		key := routeKey(want.MatchTags, r.Channels)
+		label := "route " + routeLabel(want.MatchTags, r.Channels)
+		keepRoutes[key] = true
+		if cur, ok := byKey[key]; ok {
+			if sameStates(cur.On, on) && cur.RepeatEvery == want.RepeatEvery && cur.Priority == want.Priority && slices.Equal(cur.Projects, covered) {
+				diff.Unchanged = append(diff.Unchanged, label)
+				continue
+			}
+			if _, err := s.UpdateOrgRoute(ctx, sc, cur.ID, want); err != nil {
+				return prefixField(err, fmt.Sprintf("routes[%d].", i))
+			}
+			diff.Updated = append(diff.Updated, label)
+			continue
+		}
+		if _, err := s.CreateOrgRoute(ctx, sc, want); err != nil {
+			return prefixField(err, fmt.Sprintf("routes[%d].", i))
+		}
+		diff.Created = append(diff.Created, label)
+	}
+	if !prune {
+		return nil
+	}
+	for _, r := range routes {
+		if !keepRoutes[routeKey(r.MatchTags, r.ChannelNames())] {
+			if err := s.DeleteOrgRoute(ctx, sc, r.ID); err != nil && !errors.Is(err, domain.ErrNotFound) {
+				return err
+			}
+			diff.Deleted = append(diff.Deleted, "route "+routeLabel(r.MatchTags, r.ChannelNames()))
+		}
+	}
+	for _, c := range channels {
+		if !keep[c.Name] {
+			if err := s.DeleteOrgChannel(ctx, sc, c.ID); err != nil && !errors.Is(err, domain.ErrNotFound) {
+				return err
+			}
+			diff.Deleted = append(diff.Deleted, "channel "+c.Name)
+		}
+	}
+	return nil
+}
+
+// orgLevel joins the org's own diffs into one, for its audit row.
+func orgLevel(parts ...*apply.Diff) *apply.Diff {
+	out := &apply.Diff{}
+	for _, d := range parts {
+		if d == nil {
+			continue
+		}
+		out.Created = append(out.Created, d.Created...)
+		out.Updated = append(out.Updated, d.Updated...)
+		out.Recreated = append(out.Recreated, d.Recreated...)
+		out.Deleted = append(out.Deleted, d.Deleted...)
+		out.Unchanged = append(out.Unchanged, d.Unchanged...)
+	}
+	return out
+}
+
 // ApplyOrg brings every project named in the file to it, in one
 // transaction: a project that does not exist is created, projects the
 // file does not name are left alone, and no project is ever deleted.
@@ -702,19 +879,26 @@ func (s *Service) ApplyOrg(ctx context.Context, sc domain.Scope, f *apply.OrgFil
 				}
 			}
 		}
-		// the org's own pages, after the projects they may name
+		// the org's own pages and alerting, after the projects they may name
 		if len(f.StatusPages) > 0 {
 			pages := apply.Diff{DryRun: o.DryRun, Created: []string{}, Updated: []string{}, Recreated: []string{}, Deleted: []string{}, Unchanged: []string{}}
 			if err := tx.applyOrgPages(ctx, sc, f.StatusPages, &pages); err != nil {
 				return err
 			}
 			diff.StatusPages = &pages
-			if !o.DryRun && pages.Changes() > 0 {
-				entry := orgEntry(sc.OrgID, "apply", "org file", "")
-				entry.Detail = applyDetail(&pages, o.Prune)
-				if err := s.record(ctx, q, sc, entry); err != nil {
-					return err
-				}
+		}
+		if f.Channels != nil || f.Routes != nil {
+			alerts := apply.Diff{DryRun: o.DryRun, Created: []string{}, Updated: []string{}, Recreated: []string{}, Deleted: []string{}, Unchanged: []string{}}
+			if err := tx.applyOrgAlerts(ctx, sc, f, o.Prune, &alerts); err != nil {
+				return err
+			}
+			diff.Alerts = &alerts
+		}
+		if own := orgLevel(diff.StatusPages, diff.Alerts); !o.DryRun && own.Changes() > 0 {
+			entry := orgEntry(sc.OrgID, "apply", "org file", "")
+			entry.Detail = applyDetail(own, o.Prune)
+			if err := s.record(ctx, q, sc, entry); err != nil {
+				return err
 			}
 		}
 		if o.DryRun {

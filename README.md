@@ -235,7 +235,9 @@ stays unacknowledged. Channels are `smtp`, `webhook` (a Go template over the not
 2 min, 10 min, 30 min and 2 h, in order per monitor. A `down` caused by a ping carries the
 ping's message (`?msg=` or the tail of its body) and exit code, so the alert says why. Every
 notification carries a signed acknowledgement link that works for seven days without a sign-in. Maintenance windows, one-off
-or weekly with a timezone, hold alerts back for the monitors that carry their tags.
+or weekly with a timezone, hold alerts back for the monitors that carry their tags. An org's
+admins can also keep channels and routes in org settings: an org route covers a chosen few of
+the org's projects or all of them, new ones included, and fires beside each project's own routes.
 
 ### Status pages and badges
 
@@ -265,7 +267,7 @@ go down for lack of an agent.
 - Orgs hold projects; a membership gives one of four roles in every project of the org: viewer
   (read), member (edit monitors, channels, routes, maintenance and pages, acknowledge, see the
   ping key, make read-only API keys), admin (rotate the ping key, read-write keys, projects,
-  members, agents) and owner (transfer or delete the org). Instance admins see every org and set
+  members, agents, org channels, routes and pages) and owner (transfer or delete the org). Instance admins see every org and set
   quotas. A request for another tenant's resource is a 404.
 - Invites are one-time links that expire after seven days and create a local account with its
   membership; owners invite owners.

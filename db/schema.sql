@@ -118,18 +118,6 @@ CREATE TABLE incidents (
 );
 CREATE INDEX incidents_project_open ON incidents(project_id, resolved_at, opened_at DESC);
 CREATE INDEX incidents_monitor ON incidents(monitor_id);
-CREATE TABLE channels (
-  id TEXT PRIMARY KEY,
-  project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-  org_id TEXT NOT NULL REFERENCES orgs(id) ON DELETE CASCADE,
-  name TEXT NOT NULL,
-  kind TEXT NOT NULL CHECK (kind IN ('smtp', 'webhook', 'ntfy', 'gotify', 'matrix', 'slackhook', 'alertmanager')),
-  config TEXT NOT NULL,
-  enabled BOOLEAN NOT NULL DEFAULT 1,
-  created_at INTEGER NOT NULL,
-  updated_at INTEGER NOT NULL,
-  UNIQUE (project_id, name)
-);
 CREATE TABLE deliveries (
   id TEXT PRIMARY KEY,
   event_id TEXT NOT NULL REFERENCES events(id) ON DELETE CASCADE,
@@ -324,6 +312,40 @@ CREATE TABLE admin_keys (
   revoked_at INTEGER
 );
 CREATE INDEX admin_keys_prefix ON admin_keys(prefix);
+CREATE TABLE "channels" (
+  id TEXT PRIMARY KEY,
+  project_id TEXT REFERENCES projects(id) ON DELETE CASCADE,
+  org_id TEXT NOT NULL REFERENCES orgs(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  kind TEXT NOT NULL CHECK (kind IN ('smtp', 'webhook', 'ntfy', 'gotify', 'matrix', 'slackhook', 'alertmanager')),
+  config TEXT NOT NULL,
+  enabled BOOLEAN NOT NULL DEFAULT 1,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  UNIQUE (project_id, name)
+);
+CREATE UNIQUE INDEX channels_org_name ON channels(org_id, name) WHERE project_id IS NULL;
+CREATE TABLE org_routes (
+  id TEXT PRIMARY KEY,
+  org_id TEXT NOT NULL REFERENCES orgs(id) ON DELETE CASCADE,
+  -- project ids the route covers; [] covers every project of the org
+  projects TEXT NOT NULL DEFAULT '[]',
+  match_tags TEXT NOT NULL DEFAULT '[]',
+  on_states TEXT NOT NULL DEFAULT '["down","up"]',
+  repeat_every_s INTEGER NOT NULL DEFAULT 0,
+  priority INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+CREATE INDEX org_routes_org ON org_routes(org_id, priority DESC);
+CREATE TABLE org_route_channels (
+  route_id TEXT NOT NULL REFERENCES org_routes(id) ON DELETE CASCADE,
+  channel_id TEXT NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
+  org_id TEXT NOT NULL,
+  PRIMARY KEY (route_id, channel_id)
+);
+CREATE INDEX org_route_channels_channel ON org_route_channels(channel_id);
+CREATE INDEX org_route_channels_org ON org_route_channels(org_id);
 -- Dbmate schema migrations
 INSERT INTO "schema_migrations" (version) VALUES
   ('20260927000000'),
@@ -334,4 +356,5 @@ INSERT INTO "schema_migrations" (version) VALUES
   ('20261004000000'),
   ('20261005000000'),
   ('20261006000000'),
-  ('20261007000000');
+  ('20261007000000'),
+  ('20261009000000');

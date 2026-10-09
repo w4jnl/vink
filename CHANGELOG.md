@@ -6,8 +6,13 @@ updates this file first. Dates are the tag dates.
 
 ## Unreleased
 
-- **Built with Go 1.27.2**, which fixes security issues in the standard library's `net/http`
-  (HTTP/2) and `html/template`.
+- **Org channels and routes.** Org admins and owners can set up alert channels and routes once
+  for the whole org, under Org settings › Channels and Routes. An org route picks the projects it
+  covers; with none ticked it covers every project, new ones included. Org routes fire alongside
+  each project's own routes and send only to org channels. The API has them at
+  `/api/v1/orgs/{org}/channels` and `…/routes`. In the org file they are top-level `channels`
+  and `routes`, with a route's `projects` given by slug; `vink apply --prune` with an org file
+  deletes the ones it leaves out, and a file without those keys leaves them alone.
 - **Fixed: tags in the monitor list were cut off.** The tags column is wider (200px) and shows
   whole tags only; those that don't fit are left out, and hovering the cell lists them all.
 - **The drawer stays beside the list on wide screens.** It docks right after the list's 1120px
@@ -18,6 +23,8 @@ updates this file first. Dates are the tag dates.
 - **Status pages use wide screens.** The page grows to 1480px and each group's monitors flow
   into columns (at least 440px each), so a long page is much shorter; narrow screens and phones
   keep one column.
+- **Built with Go 1.27.2**, which fixes security issues in the standard library's `net/http`
+  (HTTP/2) and `html/template`.
 
 ## 0.2.2 (2026-10-07)
 

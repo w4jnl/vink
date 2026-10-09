@@ -87,7 +87,7 @@ func (f *fixture) channelAndRoute(t *testing.T, on []domain.State, tags ...strin
 	ctx := context.Background()
 	now := domain.Millis(f.clock.Now())
 	ch, err := f.svc.DB().Write().CreateChannel(ctx, db.CreateChannelParams{
-		ID: domain.NewID(), ProjectID: f.project.ID, OrgID: f.org.ID, Name: "hook", Kind: "webhook", Config: `{"url":"http://example.invalid"}`, Enabled: true, CreatedAt: now, UpdatedAt: now,
+		ID: domain.NewID(), ProjectID: &f.project.ID, OrgID: f.org.ID, Name: "hook", Kind: "webhook", Config: `{"url":"http://example.invalid"}`, Enabled: true, CreatedAt: now, UpdatedAt: now,
 	})
 	if err != nil {
 		t.Fatal(err)

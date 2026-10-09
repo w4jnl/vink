@@ -11,7 +11,7 @@ dir="$(dirname "$0")/../internal/db/queries"
 [ -d "$dir" ] || exit 0
 
 project_tables="monitors observations bodies events incidents channels routes route_channels deliveries api_keys maintenance status_pages"
-org_tables="projects agents invites"
+org_tables="projects agents invites org_routes org_route_channels"
 status=0
 
 check() {

@@ -111,10 +111,12 @@ Twenty-five tables; every row below `projects` carries `project_id`, every row b
 | `bodies` | `observation_id`, `content` (blob ≤ `ping.body_limit`, default 64 kB), `content_type` | separate table so list queries never touch blobs; optional S3 later |
 | `events` | `id`, `monitor_id`, `project_id`, `at`, `from_state`, `to_state`, `reason`, `observation_id` | one row per state flip; the audit trail the UI and API show |
 | `incidents` | `id`, `monitor_id`, `project_id`, `opened_at`, `resolved_at`, `acked_by`, `acked_at`, `open_event_id`, `close_event_id` | opened on →`down`, closed on →`up`; ack silences repeats |
-| `channels` | `id`, `project_id`, `org_id`, `name`, `kind` (`smtp`/`webhook`/`ntfy`/`gotify`/`matrix`/`slackhook`/`alertmanager`), `config` (JSON, secrets encrypted with instance key), `enabled` |  |
+| `channels` | `id`, `project_id` (null for an org's channel), `org_id`, `name`, `kind` (`smtp`/`webhook`/`ntfy`/`gotify`/`matrix`/`slackhook`/`alertmanager`), `config` (JSON, secrets encrypted with instance key), `enabled` | names are unique per project and, for org channels, per org; an org channel is used only by org routes |
 | `routes` | `id`, `project_id`, `match_tags` (JSON, all-of), `on` (`down`,`up`,`late` set), `repeat_every_s` (0 = never), `priority` | empty `match_tags` matches all monitors; the first channel of a project gets a default route that sends every down and up |
 | `route_channels` | `route_id`, `channel_id`, `project_id` | a route fans out to one or more channels; deleting a channel deletes routes left without one |
-| `deliveries` | `id`, `event_id`, `channel_id`, `project_id`, `attempt`, `next_attempt_at`, `delivered_at`, `error` | the outbox; dispatcher polls it, exponential backoff to 6 attempts |
+| `org_routes` | `id`, `org_id`, `projects` (JSON project ids, empty for all), `match_tags`, `on`, `repeat_every_s`, `priority` | an org's route to its org channels for monitors of the projects it lists or, listing none, of every project, new ones included; fires beside the projects' own routes, so an event both match is sent by both; no default route |
+| `org_route_channels` | `route_id`, `channel_id`, `org_id` | as `route_channels`; deleting an org channel deletes org routes left without one |
+| `deliveries` | `id`, `event_id`, `channel_id`, `project_id`, `route_id`, `attempt`, `next_attempt_at`, `delivered_at`, `error` | the outbox; dispatcher polls it, exponential backoff to 6 attempts; `route_id` names a project's route or an org route |
 | `maintenance` | `id`, `project_id`, `name`, `match_tags`, `starts_at`, `ends_at` (one-off), `rrule` (`FREQ=WEEKLY;BYDAY=…`), `from_time`, `to_time` (weekly, `HH:MM`), `timezone`, `ended_until` (set by End now on a weekly window) | while active, matching monitors observe but do not alert or flip to `down`; a heartbeat held at `late` is looked at again when the window ends |
 | `status_pages` | `id`, `org_id`, `project_id` (null for an org's page), `slug` (unique per instance), `title`, `match_tags`, `projects` (an org page's project ids, empty for all), `group_by` (`tag`, or `project` on an org page), `incidents` (`none`, `open`, `7d`, `30d`, `90d`), `public` (bool), `password_hash` (optional), `custom_domain` | renders monitors whose tags match, of its project or the org's chosen projects |
 | `agents` | `id`, `org_id`, `name`, `token_hash`, `last_seen_at`, `version`, `labels` (JSON) | phase 2 |
@@ -141,7 +143,7 @@ One state machine serves both kinds; the only difference is who produces the obs
 
 ![Monitor state machine: new, up, late, down, paused](diagrams/state-machine.png)
 
-Every transition writes an `events` row. →`down` opens an incident and enqueues deliveries for routes with `on` containing `down`; →`up` from `down` closes it and enqueues `up` deliveries; →`late` enqueues only for routes that opted into `late`. Repeats: while `down` and unacknowledged, a route with `repeat_every_s > 0` re-enqueues at that interval. A monitor inside an active maintenance window records observations and events but never enters `down` and never enqueues.
+Every transition writes an `events` row. →`down` opens an incident and enqueues deliveries for routes with `on` containing `down`; →`up` from `down` closes it and enqueues `up` deliveries; →`late` enqueues only for routes that opted into `late`. Repeats: while `down` and unacknowledged, a route with `repeat_every_s > 0` re-enqueues at that interval. The routes of a monitor are its project's and the org routes that cover the project. A monitor inside an active maintenance window records observations and events but never enters `down` and never enqueues.
 
 **Heartbeat monitors (`kind: heartbeat`)**
 
@@ -231,6 +233,8 @@ The API is the product's real interface: the CLI is a client of it, the web UI c
 | `GET` and `POST /api/v1/maintenance` · `PUT` and `DELETE /api/v1/maintenance/{id}` |  |
 | `GET` and `POST /api/v1/status-pages` · `PUT` and `DELETE /api/v1/status-pages/{slug}` | a project's pages; `incidents` per page |
 | `GET` and `POST /api/v1/orgs/{org}/status-pages` · `GET`, `PUT` and `DELETE …/{slug}` | the org's own pages, for sessions of org admins and owners; `projects` by slug, `group_by` |
+| `GET` and `POST /api/v1/orgs/{org}/channels` · `GET`, `PUT` and `DELETE …/{id}` · `POST …/{id}/test` | the org's own channels, for sessions of org admins and owners; secrets write-only as for a project's |
+| `GET` and `POST /api/v1/orgs/{org}/routes` · `GET`, `PUT` and `DELETE …/{id}` | the org's routes, same callers; `projects` by slug, empty for every project; `channels` the org's own |
 | `GET /api/v1/keys` · `POST /api/v1/keys` · `DELETE /api/v1/keys/{id}` | rw keys only; plaintext returned once on create |
 | `POST /api/v1/ping-key/rotate` | returns the new key; old key valid for `grace` |
 | `GET /api/v1/export` | the project as the apply YAML (secrets redacted unless `?secrets=1` with an rw key) |
@@ -292,7 +296,7 @@ status_pages:
   - {slug: homelab, title: Homelab status, match_tags: [prod], public: true, incidents: 30d}
 ```
 
-**Org file**: the same schema has a second shape for a whole org, which `vink export --org` writes and an org key applies. Each entry is a project file plus the project's slug, name and timezone, so a section can be cut out and applied on its own. A top-level `status_pages` holds the org's own pages, with `projects` by slug and `group_by`; they are applied after the projects, so they may name one the file creates, and like a project's pages they are created or updated, never deleted. Apply creates a project the file names but the org lacks (with an rw key), leaves projects the file does not name alone, and never deletes a project; `--prune` works inside each listed project.
+**Org file**: the same schema has a second shape for a whole org, which `vink export --org` writes and an org key applies. Each entry is a project file plus the project's slug, name and timezone, so a section can be cut out and applied on its own. A top-level `status_pages` holds the org's own pages, with `projects` by slug and `group_by`; they are applied after the projects, so they may name one the file creates, and like a project's pages they are created or updated, never deleted. Top-level `channels` and `routes` hold the org's own channels and routes, a route's `projects` by slug (none for every project); they too come after the projects. A file with either key brings them to the file, and `--prune` deletes the org channels and routes it leaves out; a file with neither leaves them alone. Apply creates a project the file names but the org lacks (with an rw key), leaves projects the file does not name alone, and never deletes a project; `--prune` works inside each listed project.
 
 ```yaml
 version: 1
@@ -306,6 +310,11 @@ projects:
     monitors: [...]
   - slug: lab
     monitors: [...]
+channels:
+  - {name: oncall, kind: webhook, url: https://hooks.example.com/oncall}
+routes:
+  - {channels: [oncall], on: [down, up]}                      # every project
+  - {projects: [prod], match_tags: [db], channels: [oncall], repeat_every: 1h}
 ```
 
 `${VAR}` in the file is expanded by the CLI from its environment, never by the server. Apply is idempotent and transactional: it computes a diff by slug/name, applies it in one transaction, and returns `{created, updated, deleted, unchanged}` lists. Monitor state is never touched by apply; a monitor whose `kind` changes is recreated (state reset) and the diff says so.
@@ -364,7 +373,7 @@ The UI is one list and one drawer per entity, rendered by the server, with htmx 
 | `…/m/new` | create form: kind selector first, then only that kind's fields; advanced fields (thresholds, confirm, methods, body limit) behind one `Advanced` disclosure; `…/m/{slug}/edit` is the same form filled in. `POST …/m/preview` and `…/m/{slug}/preview` validate the form without saving and return the schedule and grace sentences, the `Advanced` summary and the YAML as `hx-partial`s |  |
 | `…/incidents` | open incidents on top with ack buttons, resolved below, filter by monitor/tag | polls every 15 s |
 | `…/settings/{tab}` with tab = channels, routes, maintenance, pages, keys | one tab per table; each tab is a list with inline add/edit forms; channel rows have a `Test` button | no polling |
-| `/o/{org}/admin/{tab}` with tab = members, projects, pages, agents, audit | org settings for org admins and owners: members (rows with an inline role select, the invite panel with the link shown once, Add member by sign-in name in its place while a provider's roles are set in vink, open/expired/used invites, owner actions: transfer ownership and delete org), projects (quota line, add and edit panels, state counts per project), status pages (the project tab's panel with Projects and Group by added), agents (add panel, the token and `vink agent` command shown once, rows with connected/offline/waiting); `…/agents/{name}` opens the agent drawer (labels, connection facts, assigned monitors, revoke). The audit tab is open to every member: kind chips (additive), project, who and period as query parameters, 50 rows a page grouped by day with Older; members and viewers see their projects' rows only, and for them it is the only tab | the filter bar swaps the tab in place |
+| `/o/{org}/admin/{tab}` with tab = members, projects, channels, routes, pages, agents, audit | org settings for org admins and owners: members (rows with an inline role select, the invite panel with the link shown once, Add member by sign-in name in its place while a provider's roles are set in vink, open/expired/used invites, owner actions: transfer ownership and delete org), projects (quota line, add and edit panels, state counts per project), channels and routes (the project tabs' rows and panels; a route's panel adds Projects, none ticked for every project, and its row names them before its channels), status pages (the project tab's panel with Projects and Group by added), agents (add panel, the token and `vink agent` command shown once, rows with connected/offline/waiting); `…/agents/{name}` opens the agent drawer (labels, connection facts, assigned monitors, revoke). The audit tab is open to every member: kind chips (additive), project, who and period as query parameters, 50 rows a page grouped by day with Older; members and viewers see their projects' rows only, and for them it is the only tab | the filter bar swaps the tab in place |
 | `/admin/{tab}` with tab = orgs, users, keys, server, audit | instance admins only, a 404 for anyone else: orgs (add with quotas and an optional first owner, edit, delete when empty, usage against quota), users (chips by source and flag, edit panel: instance admin checkbox, locked while the groups decide it, while the name is listed in `instance_admins`, or for yourself; reset two-factor, one-time reset link shown once, disable and enable), API keys (instance admin keys: name, access and a 30, 90 or 365 day lifetime; the key and its `vink ctx add` line shown once; rows with creator, expiry and last use; revoke), server (read-only facts, role sources and admin key networks included, and the backup warning), audit (the same log across orgs with an org select) | no polling |
 | `/account` | from the user menu: profile and sessions for everyone, password and two-factor for local accounts; the two-factor setup panel (server-rendered QR, the key typed out, the code to confirm) and the recovery codes shown once; a session can be signed out, or all the others | no polling |
 | `/invite/{token}` · `/reset/{token}` | one-time links on the auth layout: join an org with a new local account; set a new password. Expired, used and unknown links show the same page | no polling |
@@ -440,7 +449,7 @@ The UI is one list and one drawer per entity, rendered by the server, with htmx 
 | create/edit/delete monitors, channels, routes, maintenance, pages; `apply` |  | ✓ | ✓ | ✓ | ✓ |
 | see ping key; create `ro` API keys |  | ✓ | ✓ | ✓ | ✓ |
 | rotate ping key; create/revoke `rw` keys; project settings; delete project |  |  | ✓ | ✓ | ✓ |
-| create projects; manage members and agents |  |  | ✓ | ✓ | ✓ |
+| create projects; manage members, agents, org channels, org routes and org pages |  |  | ✓ | ✓ | ✓ |
 | transfer ownership; delete org |  |  |  | ✓ | ✓ |
 | create orgs; quotas; instance settings; see every org |  |  |  |  | ✓ |
 

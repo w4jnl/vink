@@ -119,3 +119,44 @@ func TestOrgFileStatusPages(t *testing.T) {
 		t.Fatalf("incidents on a project page: %v", err)
 	}
 }
+
+// TestOrgFileAlerts: an org file's own channels and routes, the routes
+// naming projects; a project route may not.
+func TestOrgFileAlerts(t *testing.T) {
+	src := orgSample + `channels:
+  - name: oncall
+    kind: webhook
+    url: https://hooks.example.com/oncall
+routes:
+  - projects: [prod, lab]
+    match_tags: [critical]
+    channels: [oncall]
+    repeat_every: 30m
+  - channels: [oncall]
+    on: [late]
+`
+	f, err := ParseOrg([]byte(src), true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(f.Channels) != 1 || f.Channels[0].Config["url"] != "https://hooks.example.com/oncall" || len(f.Routes) != 2 ||
+		strings.Join(f.Routes[0].Projects, ",") != "prod,lab" || f.Routes[0].RepeatEvery.String() != "30m" || len(f.Routes[1].Projects) != 0 {
+		t.Fatalf("parsed: %+v %+v", f.Channels, f.Routes)
+	}
+	out, err := EncodeOrg(f)
+	if err != nil || !strings.Contains(string(out), "projects: [prod, lab]") {
+		t.Fatalf("encoded: %v\n%s", err, out)
+	}
+	if again, err := ParseOrg(out, true); err != nil || len(again.Routes) != 2 || len(again.Channels) != 1 {
+		t.Fatalf("round trip: %v\n%s", err, out)
+	}
+	for name, bad := range map[string]string{
+		"projects on a project route": projectSample + "channels:\n  - {name: c, kind: webhook, url: https://x}\nroutes:\n  - {channels: [c], projects: [prod]}\n",
+		"a route without channels":    orgSample + "routes:\n  - {projects: [prod]}\n",
+		"a slug that is no slug":      strings.Replace(src, "projects: [prod, lab]", "projects: [Prod Lab]", 1),
+	} {
+		if _, _, err := ParseAny([]byte(bad), true); err == nil {
+			t.Errorf("%s: the schema let it through", name)
+		}
+	}
+}

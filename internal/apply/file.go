@@ -138,6 +138,9 @@ func (c Channel) ConfigJSON() (json.RawMessage, error) {
 
 // Route names its channels.
 type Route struct {
+	// Projects belongs to an org file's routes: the project slugs covered
+	// (none for all, new ones included).
+	Projects    []string        `json:"projects,omitempty" yaml:"projects,flow,omitempty"`
 	MatchTags   []string        `json:"match_tags,omitempty" yaml:"match_tags,flow,omitempty"`
 	Channels    []string        `json:"channels" yaml:"channels,flow"`
 	On          []domain.State  `json:"on,omitempty" yaml:"on,flow,omitempty"`
@@ -563,6 +566,11 @@ type OrgFile struct {
 	// StatusPages are the org's own pages, with projects by slug. Pages the
 	// file does not name are left alone, as a project apply leaves its pages.
 	StatusPages []StatusPage `json:"status_pages,omitempty" yaml:"status_pages,omitempty"`
+	// Channels and Routes are the org's own alerting: channels of the org
+	// and routes to them, with projects by slug. As in a project file, what
+	// the file does not name is deleted only with prune.
+	Channels []Channel `json:"channels,omitempty" yaml:"channels,omitempty"`
+	Routes   []Route   `json:"routes,omitempty" yaml:"routes,omitempty"`
 }
 
 // ProjectEntry is one project inside an org file.
@@ -661,6 +669,9 @@ type OrgDiff struct {
 	Projects []ProjectDiff `json:"projects"`
 	// StatusPages is the org's own pages, when the file names any.
 	StatusPages *Diff `json:"status_pages,omitempty"`
+	// Alerts is the org's own channels and routes, when the file names any
+	// or prune removes some.
+	Alerts *Diff `json:"alerts,omitempty"`
 }
 
 // ProjectDiff is one project's diff inside an org apply; Created says
@@ -682,6 +693,9 @@ func (d *OrgDiff) Changes() int {
 	}
 	if d.StatusPages != nil {
 		n += d.StatusPages.Changes()
+	}
+	if d.Alerts != nil {
+		n += d.Alerts.Changes()
 	}
 	return n
 }
