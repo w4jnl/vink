@@ -4,7 +4,7 @@ User-facing changes per release, newest first. `scripts/release.sh` refuses to t
 that has no section here and uses the section as the GitHub release notes, so every release
 updates this file first. Dates are the tag dates.
 
-## Unreleased
+## 0.2.3 (2026-10-09)
 
 - **Org channels and routes.** Org admins and owners can set up alert channels and routes once
   for the whole org, under Org settings › Channels and Routes. An org route picks the projects it
