@@ -4,6 +4,21 @@ User-facing changes per release, newest first. `scripts/release.sh` refuses to t
 that has no section here and uses the section as the GitHub release notes, so every release
 updates this file first. Dates are the tag dates.
 
+## Unreleased
+
+- **Built with Go 1.27.2**, which fixes security issues in the standard library's `net/http`
+  (HTTP/2) and `html/template`.
+- **Fixed: tags in the monitor list were cut off.** The tags column is wider (200px) and shows
+  whole tags only; those that don't fit are left out, and hovering the cell lists them all.
+- **The drawer stays beside the list on wide screens.** It docks right after the list's 1120px
+  column instead of the window's edge, and from 1745px wide the list beside it keeps its tags
+  and trend columns.
+- **Fixed: an acked incident's "acked by" ran over its duration.** Who acked and when are now
+  two lines in the row; a long name is cut with … and shown whole on hover.
+- **Status pages use wide screens.** The page grows to 1480px and each group's monitors flow
+  into columns (at least 440px each), so a long page is much shorter; narrow screens and phones
+  keep one column.
+
 ## 0.2.2 (2026-10-07)
 
 - **Set a monitor up from its first ping.** `?create=1` takes `name`, `period` or `cron`, `tz`,

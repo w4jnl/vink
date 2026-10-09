@@ -6,7 +6,7 @@ The people, hosts, keys and incidents in the screens are made up.
 
 | Screen | Route | Shows | Components |
 | --- | --- | --- | --- |
-| [monitors](monitors.html) | `/o/{org}/p/{project}` and `…/m/{slug}` | List with filter bar, drawer for the selected monitor. Beside an open drawer the list drops its tags column. | TopBar, Chip, MonitorRow, StateBadge, UptimeBar |
+| [monitors](monitors.html) | `/o/{org}/p/{project}` and `…/m/{slug}` | List with filter bar, drawer for the selected monitor. The drawer docks right after the list's `content-max` column; under 1744px, where both no longer fit, the list beside it drops its tags column. | TopBar, Chip, MonitorRow, StateBadge, UptimeBar |
 | monitor-history (no picture yet; the markup is the live `history.html` and `_history.html` templates) | `…/m/{slug}/history` | The drawer's head over the compact 24 h and 90 d bars, then one timeline of observations and state changes, newest first, grouped by day; kind chips and a period or exact window in one filter bar; Older at the bottom. | StateBadge, Tag, UptimeBar, Chip, Segmented, Notice, Button, `vk-listhead`, `vk-obs` |
 | [monitor-new-heartbeat](monitor-new-heartbeat.html) | `…/m/new` | Create form in the drawer: kind first, 7 fields, `Advanced` closed with its summary, ping URL, `As YAML` open. | KindPicker, FieldRow, Field, Segmented, Disclosure, PingUrl, Code |
 | [monitor-new-http](monitor-new-http.html) | `…/m/new?kind=http` | The HTTP fields, one inline error (timeout ≥ interval), `Advanced` open: request, failures, body match, TLS. | as above, Checkbox |
@@ -19,7 +19,7 @@ The people, hosts, keys and incidents in the screens are made up.
 | [login](login.html) | `/login` | Local sign-in with the one error message (never which field was wrong). | Field, Notice, Button |
 | [proxy-denied](proxy-denied.html) | any UI route, proxy mode, no identity | 403 page: what happened, what to do, request id. The reason goes to the log only. | auth layout, `vk-kv` |
 | [no-access](no-access.html) | any UI route, identity but no membership | Who the proxy said you are, your groups, the group pattern that grants access. | auth layout, `vk-kv` |
-| [status](status.html) | `/s/{slug}` | Public status page: banner, groups, 90-day bars, open incidents. The live page adds groups by project on an org page and, when the page asks, the incidents resolved lately, see [Status pages](#status-pages). | StatusBanner, UptimeBar |
+| [status](status.html) | `/s/{slug}` | Public status page: banner, groups, 90-day bars, open incidents. On a wide screen the page grows to 1480px and each group's monitors flow into columns (see StatusPage). The live page adds groups by project on an org page and, when the page asks, the incidents resolved lately, see [Status pages](#status-pages). | StatusBanner, UptimeBar |
 | [switcher-menu](switcher-menu.html) | any signed-in page | The project switcher open: projects per org with their down and late counts, New project, Org settings, a second org where you are viewer. | TopBar, Menu, StateCounts |
 | [org-members](org-members.html) | `/o/{org}/admin/members` | Members with roles (editable for local accounts, locked for proxy groups), an invite just created with its one-time link. | Tabs, SettingsRow, Avatar, InlineSelect, Notice |
 | [org-projects](org-projects.html) | `/o/{org}/admin/projects` | Quota line, Add project panel, projects with their state counts. | Usage, Panel, SettingsRow, StateCounts |

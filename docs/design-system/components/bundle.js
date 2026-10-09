@@ -175,7 +175,8 @@
     return '<a class="vk-row" href="' + esc(p.href || '#') + '"' + (p.current ? ' aria-current="true"' : '') + '>' +
       glyph(s, 'vk-row__glyph') + '<span class="vk-row__name"><span>' + esc(p.name) + '</span><span class="vk-row__slug">' + esc(p.slug) + '</span></span>' +
       KindIcon({ kind: p.kind }) + '<span class="vk-row__data' + lastCls + '" title="' + esc(p.lastAbs || '') + '">' + esc(p.last) + '</span>' +
-      trend + '<span class="vk-row__tags">' + (p.tags || []).map(function (t) { return Tag({ label: t }); }).join('') + '</span></a>';
+      trend + '<span class="vk-row__tags"' + ((p.tags || []).length ? ' title="' + esc(p.tags.join(' ')) + '"' : '') + '>' +
+      (p.tags || []).map(function (t) { return Tag({ label: t }); }).join('') + '</span></a>';
   }
 
   function UptimeBar(p) {
@@ -262,10 +263,10 @@
     }).join('') + '</nav>';
   }
 
-  /* one incident: open (with Ack), acked, or resolved (muted). The name links to the monitor. */
+  /* one incident: open (with Ack), acked (who over when), or resolved (muted). The name links to the monitor. */
   function IncidentRow(p) {
-    p = p || {}; var s = p.state || 'open', done = s === 'resolved';
-    var act = s === 'open' ? Button({ label: 'Ack' }) : s === 'acked' ? '<span>acked by ' + esc(p.ackedBy || 'j') + '</span>' : '<span>resolved ' + esc(p.resolved || '') + '</span>';
+    p = p || {}; var s = p.state || 'open', done = s === 'resolved', by = 'acked by ' + (p.ackedBy || 'j');
+    var act = s === 'open' ? Button({ label: 'Ack' }) : s === 'acked' ? '<span title="' + esc(by) + '">' + esc(by) + '</span>' + (p.ackedAt ? '<span>' + esc(p.ackedAt) + '</span>' : '') : '<span>resolved ' + esc(p.resolved || '') + '</span>';
     return '<div class="vk-irow vk-irow--' + esc(s) + '">' + glyph(done ? 'up' : 'down') +
       '<a class="vk-irow__name" href="' + esc(p.href || '#') + '"><span>' + esc(p.name) + '</span><span class="vk-row__slug">' + esc(p.slug) + '</span></a>' +
       '<span class="vk-irow__data" title="' + esc(p.reason) + '">' + esc(p.reason) + '</span>' +

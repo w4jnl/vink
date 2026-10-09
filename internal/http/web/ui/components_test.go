@@ -129,7 +129,7 @@ func render(t *testing.T, c goldenCase) string {
 		}
 		return string(Tabs(tabs, str("current"), str("label")))
 	case "IncidentRow":
-		return string(IncidentRow(IncidentRowProps{State: str("state"), Name: str("name"), Slug: str("slug"), Href: str("href"), Reason: str("reason"), Opened: str("opened"), OpenedAbs: str("openedAbs"), Duration: str("duration"), AckedBy: str("ackedBy"), Resolved: str("resolved")}))
+		return string(IncidentRow(IncidentRowProps{State: str("state"), Name: str("name"), Slug: str("slug"), Href: str("href"), Reason: str("reason"), Opened: str("opened"), OpenedAbs: str("openedAbs"), Duration: str("duration"), AckedBy: str("ackedBy"), AckedAt: str("ackedAt"), Resolved: str("resolved")}))
 	case "SettingsRow":
 		sp := SettingsRowProps{Title: str("title"), TitleHTML: HTML(str("titleHtml")), Sub: str("sub"), Prose: boolean("prose"), Muted: boolean("muted"), Href: str("href"), Current: boolean("current"), Actions: HTML(str("actions"))}
 		if lead, ok := p["lead"]; ok {

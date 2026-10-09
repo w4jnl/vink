@@ -804,7 +804,8 @@
    "reason": "connection refused",
    "opened": "13:51 \u00b7 20 min ago",
    "duration": "open 20 min",
-   "ackedBy": "j \u00b7 13:55"
+   "ackedBy": "j",
+   "ackedAt": "13:55"
   }
  },
  {

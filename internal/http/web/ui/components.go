@@ -898,6 +898,7 @@ type IncidentRowProps struct {
 	OpenedAbs string
 	Duration  string
 	AckedBy   string
+	AckedAt   string // when it was acked, the second line under AckedBy
 	Resolved  string
 	// AckHTML replaces the plain Ack button, for a form. Trusted.
 	AckHTML HTML
@@ -923,7 +924,11 @@ func IncidentRow(p IncidentRowProps) HTML {
 		if by == "" {
 			by = "j"
 		}
-		act = "<span>acked by " + esc(by) + "</span>"
+		by = "acked by " + by
+		act = `<span title="` + esc(by) + `">` + esc(by) + "</span>"
+		if p.AckedAt != "" {
+			act += "<span>" + esc(p.AckedAt) + "</span>"
+		}
 	default:
 		act = "<span>resolved " + esc(p.Resolved) + "</span>"
 	}
@@ -1123,7 +1128,11 @@ func MonitorRow(p MonitorRowProps) HTML {
 	} else {
 		b.WriteString(`<span class="vk-row__data">` + esc(p.Next) + `</span>`)
 	}
-	b.WriteString(`<span class="vk-row__tags">`)
+	b.WriteString(`<span class="vk-row__tags"`)
+	if len(p.Tags) > 0 {
+		b.WriteString(` title="` + esc(strings.Join(p.Tags, " ")) + `"`)
+	}
+	b.WriteString(">")
 	for _, t := range p.Tags {
 		b.WriteString(string(Tag(t)))
 	}
