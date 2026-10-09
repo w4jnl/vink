@@ -34,6 +34,8 @@ type tenant struct {
 	window              string
 	page, orgPage       string
 	agent               string
+	orgChannel          string
+	orgRoute            string
 }
 
 func TestCrossTenantIsolation(t *testing.T) {
@@ -104,6 +106,16 @@ func TestCrossTenantIsolation(t *testing.T) {
 			t.Fatal(err)
 		}
 		tn.orgPage = orgPage.Slug
+		orgCh, err := svc.CreateOrgChannel(ctx, sc, &domain.Channel{Name: "org hook", Kind: domain.ChannelWebhook, Config: json.RawMessage(`{"url":"https://hooks.example.com/org-` + name + `"}`), Enabled: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		tn.orgChannel = orgCh.ID
+		orgRoute, err := svc.CreateOrgRoute(ctx, sc, &domain.Route{ChannelIDs: []string{orgCh.ID}, Projects: []string{project.ID}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		tn.orgRoute = orgRoute.ID
 		return tn
 	}
 	a, b := mk("alpha"), mk("beta")
@@ -241,7 +253,13 @@ func TestCrossTenantIsolation(t *testing.T) {
 	// org-level routes: B's session sees nothing of alpha, keys are refused
 	for _, route := range spec.OrgRoutes {
 		method, path, _ := strings.Cut(route, " ")
-		filled := strings.Replace(strings.Replace(path, "{name}", a.agent, 1), "{slug}", a.orgPage, 1)
+		filled := strings.NewReplacer("{name}", a.agent, "{slug}", a.orgPage).Replace(path)
+		switch {
+		case strings.HasPrefix(path, "/channels/{id}"):
+			filled = strings.Replace(path, "{id}", a.orgChannel, 1)
+		case strings.HasPrefix(path, "/routes/{id}"):
+			filled = strings.Replace(path, "{id}", a.orgRoute, 1)
+		}
 		for _, c := range []struct {
 			name   string
 			prefix string
@@ -278,7 +296,8 @@ func TestCrossTenantIsolation(t *testing.T) {
 				if !strings.Contains(path, "{") && ownOrg && (c.want == 404 || (keyRoute && c.key == b.orgRW)) {
 					// a list, create, export or apply in B's own org: never
 					// A's agent, A's monitor, A's org page or A's org
-					leak := bytes.Contains(rec.Body.Bytes(), []byte(a.agent)) || bytes.Contains(rec.Body.Bytes(), []byte(a.monitor)) || bytes.Contains(rec.Body.Bytes(), []byte(a.orgPage)) || bytes.Contains(rec.Body.Bytes(), []byte("org: alpha"))
+					leak := bytes.Contains(rec.Body.Bytes(), []byte(a.agent)) || bytes.Contains(rec.Body.Bytes(), []byte(a.monitor)) || bytes.Contains(rec.Body.Bytes(), []byte(a.orgPage)) || bytes.Contains(rec.Body.Bytes(), []byte("org: alpha")) ||
+						bytes.Contains(rec.Body.Bytes(), []byte(a.orgChannel)) || bytes.Contains(rec.Body.Bytes(), []byte(a.orgRoute)) || bytes.Contains(rec.Body.Bytes(), []byte("hooks.example.com/org-alpha"))
 					if rec.Code == 404 || rec.Code == 403 || leak {
 						t.Fatalf("own org %s: %d %s", route, rec.Code, rec.Body.String())
 					}

@@ -202,48 +202,11 @@ func (h *Web) settingsData(c *reqCtx, tabName string, o settingsOpts) (settingsD
 	}
 	switch tabName {
 	case "channels":
-		routeCount := map[string]int{}
-		for _, r := range routes {
-			for _, rc := range r.Channels {
-				routeCount[rc.ID]++
-			}
-		}
-		for _, ch := range channels {
-			row := channelRow{ID: ch.ID, Name: ch.Name, Sub: string(ch.Kind) + " · " + channelSummary(ch), Enabled: ch.Enabled, Note: o.notes[ch.ID]}
-			sw := ui.Switch(ch.Enabled, ch.Name+" enabled", ui.Attr("hx-post", root+"channels/"+ch.ID+"/toggle")+ui.Attr("hx-target", "#tab"))
-			sent := "never sent"
-			if last, err := h.svc.LastSentForChannel(ctx, c.scope, ch.ID); err == nil && last != nil {
-				sent = "sent " + view.Ago(*last, c.now)
-			}
-			row.Cells = []ui.Cell{{HTML: sw, Size: "s"}, {Text: plural(routeCount[ch.ID], "route")}, {Text: sent, Mono: true}}
-			row.Actions = postForm(c, root+"channels/"+ch.ID+"/test", true, ui.Button(ui.ButtonProps{Label: "Test", Type: "submit"})) +
-				ui.Button(ui.ButtonProps{Label: "Edit", Href: d.TabPath + "?edit=" + url.QueryEscape(ch.ID)})
-			d.Channels = append(d.Channels, row)
-		}
+		d.Channels = channelRows(c, d.TabPath, channels, routes, o.notes, func(id string) (*time.Time, error) {
+			return h.svc.LastSentForChannel(ctx, c.scope, id)
+		})
 	case "routes":
-		for i, r := range routes {
-			row := routeRow{ID: r.ID, Lead: strconv.Itoa(i + 1), Sub: "→ " + strings.Join(r.ChannelNames(), ", ")}
-			if len(r.MatchTags) == 0 {
-				row.TitleHTML = "Every monitor"
-			} else {
-				var tags strings.Builder
-				for _, t := range r.MatchTags {
-					tags.WriteString(string(ui.Tag(t)))
-				}
-				row.TitleHTML = ui.HTML(tags.String())
-			}
-			var states strings.Builder
-			for _, s := range r.On {
-				states.WriteString(string(ui.StateBadge(ui.StateBadgeProps{State: string(s)})))
-			}
-			repeat := "no repeat"
-			if r.RepeatEvery > 0 {
-				repeat = "repeat every " + view.Span(r.RepeatEvery)
-			}
-			row.Cells = []ui.Cell{{HTML: ui.HTML(states.String()), Size: "l"}, {Text: repeat, Mono: true}}
-			row.Actions = ui.Button(ui.ButtonProps{Label: "Edit", Href: d.TabPath + "?edit=" + url.QueryEscape(r.ID)})
-			d.Routes = append(d.Routes, row)
-		}
+		d.Routes = routeRows(d.TabPath, routes, nil)
 	case "keys":
 		if d.CanSeePingKey {
 			d.PingKey = c.project.PingKey
@@ -315,6 +278,79 @@ func channelSummary(ch *domain.Channel) string {
 		}
 	}
 	return ""
+}
+
+// channelRows lists channels with their switch, how many of routes use
+// each and when it last sent; root is the channels tab.
+func channelRows(c *reqCtx, root string, channels []*domain.Channel, routes []*domain.Route, notes map[string]*noteData, lastSent func(id string) (*time.Time, error)) []channelRow {
+	routeCount := map[string]int{}
+	for _, r := range routes {
+		for _, rc := range r.Channels {
+			routeCount[rc.ID]++
+		}
+	}
+	rows := make([]channelRow, 0, len(channels))
+	for _, ch := range channels {
+		row := channelRow{ID: ch.ID, Name: ch.Name, Sub: string(ch.Kind) + " · " + channelSummary(ch), Enabled: ch.Enabled, Note: notes[ch.ID]}
+		sw := ui.Switch(ch.Enabled, ch.Name+" enabled", ui.Attr("hx-post", root+"/"+ch.ID+"/toggle")+ui.Attr("hx-target", "#tab"))
+		sent := "never sent"
+		if last, err := lastSent(ch.ID); err == nil && last != nil {
+			sent = "sent " + view.Ago(*last, c.now)
+		}
+		row.Cells = []ui.Cell{{HTML: sw, Size: "s"}, {Text: plural(routeCount[ch.ID], "route")}, {Text: sent, Mono: true}}
+		row.Actions = postForm(c, root+"/"+ch.ID+"/test", true, ui.Button(ui.ButtonProps{Label: "Test", Type: "submit"})) +
+			ui.Button(ui.ButtonProps{Label: "Edit", Href: root + "?edit=" + url.QueryEscape(ch.ID)})
+		rows = append(rows, row)
+	}
+	return rows
+}
+
+// routeRows lists routes in the order they are tried; root is the routes
+// tab. An org route's line names its projects, from projectNames, before
+// its channels.
+func routeRows(root string, routes []*domain.Route, projectNames map[string]string) []routeRow {
+	rows := make([]routeRow, 0, len(routes))
+	for i, r := range routes {
+		row := routeRow{ID: r.ID, Lead: strconv.Itoa(i + 1), Sub: "→ " + strings.Join(r.ChannelNames(), ", ")}
+		if r.IsOrg() {
+			row.Sub = routeProjects(r, projectNames) + " " + row.Sub
+		}
+		if len(r.MatchTags) == 0 {
+			row.TitleHTML = "Every monitor"
+		} else {
+			var tags strings.Builder
+			for _, t := range r.MatchTags {
+				tags.WriteString(string(ui.Tag(t)))
+			}
+			row.TitleHTML = ui.HTML(tags.String())
+		}
+		var states strings.Builder
+		for _, s := range r.On {
+			states.WriteString(string(ui.StateBadge(ui.StateBadgeProps{State: string(s)})))
+		}
+		repeat := "no repeat"
+		if r.RepeatEvery > 0 {
+			repeat = "repeat every " + view.Span(r.RepeatEvery)
+		}
+		row.Cells = []ui.Cell{{HTML: ui.HTML(states.String()), Size: "l"}, {Text: repeat, Mono: true}}
+		row.Actions = ui.Button(ui.ButtonProps{Label: "Edit", Href: root + "?edit=" + url.QueryEscape(r.ID)})
+		rows = append(rows, row)
+	}
+	return rows
+}
+
+// routeProjects names the projects an org route covers.
+func routeProjects(r *domain.Route, projectNames map[string]string) string {
+	var names []string
+	for _, id := range r.Projects {
+		if n, ok := projectNames[id]; ok {
+			names = append(names, n)
+		}
+	}
+	if len(names) == 0 {
+		return "every project"
+	}
+	return strings.Join(names, ", ")
 }
 
 func (h *Web) renderTab(c *reqCtx, status int, tab string, o settingsOpts) error {
@@ -440,7 +476,11 @@ func applyPanelValidation(p *panelData, err error) bool {
 // --- channels -------------------------------------------------------------
 
 func (h *Web) channelPanel(c *reqCtx, ch *domain.Channel, kind string) *panelData {
-	root := c.projectPath() + "/settings/channels"
+	return h.channelPanelAt(c, c.projectPath()+"/settings/channels", ch, kind)
+}
+
+// channelPanelAt is the add or edit panel of the channels tab at root.
+func (h *Web) channelPanelAt(c *reqCtx, root string, ch *domain.Channel, kind string) *panelData {
 	p := &panelData{
 		Title: "New channel", Action: root, KindPath: root + "?add=1", CancelPath: root, CSRF: c.csrf(), SubmitLabel: "Add channel",
 		Kind: kind, Kinds: channelKinds, SMTPFrom: h.smtpFrom, Values: map[string]string{"method": "POST"}, Errors: map[string]string{},
@@ -631,6 +671,32 @@ func esc(s string) string {
 	return r.Replace(s)
 }
 
+// readChannelForm fills the panel from the posted form and returns the
+// channel it describes; cur is the stored channel when editing.
+func readChannelForm(c *reqCtx, p *panelData, cur *domain.Channel) *domain.Channel {
+	for _, k := range channelFields {
+		if c.r.PostForm.Has(k) {
+			p.Values[k] = strings.TrimSpace(c.r.PostFormValue(k))
+		}
+	}
+	ch := &domain.Channel{Name: p.Values["name"], Kind: domain.ChannelKind(p.Kind), Config: channelConfig(p.Kind, p.Values, p.Errors), Enabled: true}
+	if cur != nil {
+		ch.Enabled = cur.Enabled
+	}
+	return ch
+}
+
+// testConfig is what a test of the unsaved form sends: its config, with
+// the stored secrets where the form still shows ***.
+func testConfig(ch, cur *domain.Channel) json.RawMessage {
+	if cur != nil {
+		if merged, err := service.KeepSecrets(cur.Kind, ch.Config, cur.Config); err == nil {
+			return merged
+		}
+	}
+	return ch.Config
+}
+
 // saveChannel creates (no id) or updates a channel; action=test sends a
 // test through the unsaved form instead.
 func (h *Web) saveChannel(c *reqCtx) error {
@@ -647,25 +713,10 @@ func (h *Web) saveChannel(c *reqCtx) error {
 		}
 	}
 	p := h.channelPanel(c, cur, strings.TrimSpace(c.r.PostFormValue("kind")))
-	for _, k := range channelFields {
-		if c.r.PostForm.Has(k) {
-			p.Values[k] = strings.TrimSpace(c.r.PostFormValue(k))
-		}
-	}
-	cfg := channelConfig(p.Kind, p.Values, p.Errors)
-	ch := &domain.Channel{Name: p.Values["name"], Kind: domain.ChannelKind(p.Kind), Config: cfg, Enabled: true}
-	if cur != nil {
-		ch.Enabled = cur.Enabled
-	}
+	ch := readChannelForm(c, p, cur)
 	opts := settingsOpts{panel: p}
 	if c.r.PostFormValue("action") == "test" {
-		testCfg := cfg
-		if cur != nil {
-			if merged, err := service.KeepSecrets(cur.Kind, cfg, cur.Config); err == nil {
-				testCfg = merged
-			}
-		}
-		err := h.svc.TestChannelConfig(ctx, c.scope, ch.Kind, testCfg)
+		err := h.svc.TestChannelConfig(ctx, c.scope, ch.Kind, testConfig(ch, cur))
 		if applyPanelValidation(p, err) {
 			return h.renderTab(c, http.StatusUnprocessableEntity, "channels", opts)
 		}
@@ -733,12 +784,17 @@ func (h *Web) toggleChannel(c *reqCtx) error {
 // --- routes ---------------------------------------------------------------
 
 func (h *Web) routePanel(c *reqCtx, rt *domain.Route) (*panelData, error) {
-	root := c.projectPath() + "/settings/routes"
-	p := &panelData{Title: "New route", Action: root, CancelPath: root, CSRF: c.csrf(), SubmitLabel: "Save route", Values: map[string]string{}, Errors: map[string]string{}}
 	channels, err := h.svc.ListChannels(c.r.Context(), c.scope)
 	if err != nil {
 		return nil, err
 	}
+	return routePanelAt(c, c.projectPath()+"/settings/routes", channels, rt), nil
+}
+
+// routePanelAt is the add or edit panel of the routes tab at root, with a
+// box for each of channels.
+func routePanelAt(c *reqCtx, root string, channels []*domain.Channel, rt *domain.Route) *panelData {
+	p := &panelData{Title: "New route", Action: root, CancelPath: root, CSRF: c.csrf(), SubmitLabel: "Save route", Values: map[string]string{}, Errors: map[string]string{}}
 	selected := map[string]bool{}
 	on := map[string]bool{"down": true, "up": true}
 	if rt != nil {
@@ -761,26 +817,12 @@ func (h *Web) routePanel(c *reqCtx, rt *domain.Route) (*panelData, error) {
 	for _, s := range []string{"down", "up", "late"} {
 		p.OnChecks = append(p.OnChecks, ui.CheckboxProps{Label: s, Name: "on", Value: s, ID: "on-" + s, Checked: on[s], Attrs: ui.Attr("form", "route-form")})
 	}
-	return p, nil
+	return p
 }
 
-func (h *Web) saveRoute(c *reqCtx) error {
-	if err := c.r.ParseForm(); err != nil {
-		return err
-	}
-	ctx := c.r.Context()
-	id := c.r.PathValue("id")
-	var cur *domain.Route
-	if id != "" {
-		var err error
-		if cur, err = h.svc.Route(ctx, c.scope, id); err != nil {
-			return err
-		}
-	}
-	p, err := h.routePanel(c, cur)
-	if err != nil {
-		return err
-	}
+// readRouteForm fills the panel from the posted form and returns the
+// route it describes; cur is the stored route when editing.
+func readRouteForm(c *reqCtx, p *panelData, cur *domain.Route) *domain.Route {
 	for _, k := range []string{"match_tags", "repeat_every"} {
 		p.Values[k] = strings.TrimSpace(c.r.PostFormValue(k))
 	}
@@ -807,6 +849,27 @@ func (h *Web) saveRoute(c *reqCtx) error {
 	if cur != nil {
 		rt.Priority = cur.Priority
 	}
+	return rt
+}
+
+func (h *Web) saveRoute(c *reqCtx) error {
+	if err := c.r.ParseForm(); err != nil {
+		return err
+	}
+	ctx := c.r.Context()
+	id := c.r.PathValue("id")
+	var cur *domain.Route
+	if id != "" {
+		var err error
+		if cur, err = h.svc.Route(ctx, c.scope, id); err != nil {
+			return err
+		}
+	}
+	p, err := h.routePanel(c, cur)
+	if err != nil {
+		return err
+	}
+	rt := readRouteForm(c, p, cur)
 	opts := settingsOpts{panel: p}
 	if len(p.Errors) > 0 {
 		return h.renderTab(c, http.StatusUnprocessableEntity, "routes", opts)

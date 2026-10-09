@@ -276,6 +276,21 @@ func routeOut(r *domain.Route) RouteOut {
 	return RouteOut{ID: r.ID, MatchTags: r.MatchTags, Channels: chans, On: on, RepeatEvery: domain.Duration(r.RepeatEvery), Priority: r.Priority}
 }
 
+// OrgRouteIn creates or replaces a route of the org: a route's fields and
+// the project slugs it covers (none for all, new ones included). Its
+// channels are channels of the org.
+type OrgRouteIn struct {
+	RouteIn
+	Projects []string `json:"projects"`
+}
+
+// OrgRouteOut is a route of the org with the projects it covers by slug
+// (empty for all).
+type OrgRouteOut struct {
+	RouteOut
+	Projects []string `json:"projects"`
+}
+
 // KeyOut is an API key without its secret.
 type KeyOut struct {
 	ID         string        `json:"id"`

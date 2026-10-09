@@ -52,8 +52,8 @@ func TestMigrateAppliesOnceAndIsIdempotent(t *testing.T) {
 	if err := d.Reader.QueryRowContext(ctx, `SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name <> 'schema_migrations'`).Scan(&n); err != nil {
 		t.Fatal(err)
 	}
-	if n != 25 {
-		t.Errorf("expected 25 tables, got %d", n)
+	if n != 27 {
+		t.Errorf("expected 27 tables, got %d", n)
 	}
 }
 
@@ -115,8 +115,11 @@ func TestRollbackAndDump(t *testing.T) {
 	if !strings.Contains(s, "('20260930000000')") || !strings.Contains(s, "CREATE TABLE route_channels") {
 		t.Errorf("dump missing the route_channels migration:\n%s", s)
 	}
+	if !strings.Contains(s, "('20261009000000')") || !strings.Contains(s, "CREATE TABLE org_route_channels") {
+		t.Errorf("dump missing the org channels and routes migration:\n%s", s)
+	}
 	// rolling back walks the migrations newest first, down to nothing
-	for _, want := range []string{"20261007000000", "20261006000000", "20261005000000", "20261004000000", "20261003000000", "20261002000000", "20261001000000", "20260930000000", "20260927000000"} {
+	for _, want := range []string{"20261009000000", "20261007000000", "20261006000000", "20261005000000", "20261004000000", "20261003000000", "20261002000000", "20261001000000", "20260930000000", "20260927000000"} {
 		v, err := Rollback(ctx, d.Writer, quiet())
 		if err != nil {
 			t.Fatal(err)
@@ -146,7 +149,7 @@ func TestOrgStatusPagesMigration(t *testing.T) {
 	if _, err := Migrate(ctx, d.Writer, quiet()); err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"20261007000000", "20261006000000"} {
+	for _, want := range []string{"20261009000000", "20261007000000", "20261006000000"} {
 		if v, err := Rollback(ctx, d.Writer, quiet()); err != nil || v != want {
 			t.Fatalf("rollback: %s %v, want %s", v, err, want)
 		}
@@ -173,7 +176,7 @@ func TestOrgStatusPagesMigration(t *testing.T) {
 	if _, err := d.Writer.ExecContext(ctx, `INSERT INTO status_pages (id, org_id, project_id, slug, title, group_by, created_at, updated_at) VALUES ('bad', 'o', 'p', 'bad', 'Bad', 'project', 0, 0)`); err == nil {
 		t.Error("a project page grouped by project must be refused")
 	}
-	for range 2 {
+	for range 3 {
 		if _, err := Rollback(ctx, d.Writer, quiet()); err != nil {
 			t.Fatal(err)
 		}
@@ -181,6 +184,63 @@ func TestOrgStatusPagesMigration(t *testing.T) {
 	var n int
 	if err := d.Reader.QueryRowContext(ctx, `SELECT COUNT(*) FROM status_pages`).Scan(&n); err != nil || n != 1 {
 		t.Fatalf("pages after rolling back: %d %v", n, err)
+	}
+}
+
+// TestOrgChannelsRoutesMigration: the channels rebuild keeps a project's
+// channels and the routes sending to them; rolling back keeps those and
+// drops the org's channels and routes.
+func TestOrgChannelsRoutesMigration(t *testing.T) {
+	d := openTemp(t)
+	ctx := context.Background()
+	if _, err := Migrate(ctx, d.Writer, quiet()); err != nil {
+		t.Fatal(err)
+	}
+	if v, err := Rollback(ctx, d.Writer, quiet()); err != nil || v != "20261009000000" {
+		t.Fatalf("rollback: %s %v, want 20261009000000", v, err)
+	}
+	exec := func(q string) {
+		t.Helper()
+		if _, err := d.Writer.ExecContext(ctx, q); err != nil {
+			t.Fatalf("%s: %v", q, err)
+		}
+	}
+	count := func(q string) int {
+		t.Helper()
+		var n int
+		if err := d.Reader.QueryRowContext(ctx, q).Scan(&n); err != nil {
+			t.Fatalf("%s: %v", q, err)
+		}
+		return n
+	}
+	exec(`INSERT INTO orgs (id, slug, name, created_at) VALUES ('o', 'o', 'O', 0)`)
+	exec(`INSERT INTO projects (id, org_id, slug, name, ping_key, created_at) VALUES ('p', 'o', 'p', 'P', 'k', 0)`)
+	exec(`INSERT INTO channels (id, project_id, org_id, name, kind, config, created_at, updated_at) VALUES ('c', 'p', 'o', 'ops', 'webhook', '{}', 0, 0)`)
+	exec(`INSERT INTO routes (id, project_id, created_at, updated_at) VALUES ('r', 'p', 0, 0)`)
+	exec(`INSERT INTO route_channels (route_id, channel_id, project_id) VALUES ('r', 'c', 'p')`)
+	if _, err := Migrate(ctx, d.Writer, quiet()); err != nil {
+		t.Fatal(err)
+	}
+	if n := count(`SELECT COUNT(*) FROM channels JOIN route_channels ON route_channels.channel_id = channels.id WHERE channels.id = 'c' AND channels.project_id = 'p' AND channels.org_id = 'o'`); n != 1 {
+		t.Fatalf("project channel and its route after the rebuild: %d", n)
+	}
+	exec(`INSERT INTO channels (id, org_id, name, kind, config, created_at, updated_at) VALUES ('oc', 'o', 'ops', 'webhook', '{}', 0, 0)`)
+	if _, err := d.Writer.ExecContext(ctx, `INSERT INTO channels (id, org_id, name, kind, config, created_at, updated_at) VALUES ('oc2', 'o', 'ops', 'webhook', '{}', 0, 0)`); err == nil {
+		t.Error("two org channels of one name must be refused")
+	}
+	exec(`INSERT INTO org_routes (id, org_id, projects, created_at, updated_at) VALUES ('or', 'o', '["p"]', 0, 0)`)
+	exec(`INSERT INTO org_route_channels (route_id, channel_id, org_id) VALUES ('or', 'oc', 'o')`)
+	if v, err := Rollback(ctx, d.Writer, quiet()); err != nil || v != "20261009000000" {
+		t.Fatalf("rollback: %s %v, want 20261009000000", v, err)
+	}
+	if n := count(`SELECT COUNT(*) FROM channels`); n != 1 || count(`SELECT COUNT(*) FROM channels WHERE id = 'c'`) != 1 {
+		t.Errorf("channels after rolling back: %d, want the project's only", n)
+	}
+	if n := count(`SELECT COUNT(*) FROM route_channels WHERE channel_id = 'c'`); n != 1 {
+		t.Errorf("route_channels after rolling back: %d", n)
+	}
+	if n := count(`SELECT COUNT(*) FROM sqlite_master WHERE name IN ('org_routes', 'org_route_channels')`); n != 0 {
+		t.Errorf("org route tables after rolling back: %d", n)
 	}
 }
 

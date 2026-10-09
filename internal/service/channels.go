@@ -16,7 +16,7 @@ func (s *Service) channelFromRow(r db.Channel) (*domain.Channel, error) {
 		return nil, fmt.Errorf("channel %s: decrypt config: %w", r.Name, err)
 	}
 	return &domain.Channel{
-		ID: r.ID, ProjectID: r.ProjectID, OrgID: r.OrgID, Name: r.Name, Kind: domain.ChannelKind(r.Kind), Config: cfg, Enabled: r.Enabled,
+		ID: r.ID, ProjectID: strp(r.ProjectID), OrgID: r.OrgID, Name: r.Name, Kind: domain.ChannelKind(r.Kind), Config: cfg, Enabled: r.Enabled,
 		CreatedAt: domain.FromMillis(r.CreatedAt), UpdatedAt: domain.FromMillis(r.UpdatedAt),
 	}, nil
 }
@@ -55,7 +55,7 @@ func (s *Service) CreateChannel(ctx context.Context, sc domain.Scope, c *domain.
 	var out *domain.Channel
 	err = s.db.Tx(ctx, func(q *db.Queries) error {
 		row, err := q.CreateChannel(ctx, db.CreateChannelParams{
-			ID: domain.NewID(), ProjectID: sc.ProjectID, OrgID: sc.OrgID, Name: c.Name, Kind: string(c.Kind), Config: sealed, Enabled: c.Enabled,
+			ID: domain.NewID(), ProjectID: &sc.ProjectID, OrgID: sc.OrgID, Name: c.Name, Kind: string(c.Kind), Config: sealed, Enabled: c.Enabled,
 			CreatedAt: domain.Millis(now), UpdatedAt: domain.Millis(now),
 		})
 		if err != nil {
@@ -98,16 +98,26 @@ func (s *Service) Channel(ctx context.Context, sc domain.Scope, id string) (*dom
 	if err := requireProject(sc); err != nil {
 		return nil, err
 	}
-	row, err := s.db.Read().GetChannel(ctx, db.GetChannelParams{ProjectID: sc.ProjectID, ID: id})
+	row, err := s.db.Read().GetChannel(ctx, db.GetChannelParams{ProjectID: &sc.ProjectID, ID: id})
 	if err != nil {
 		return nil, notFoundIfNoRows(err, "channel")
 	}
 	return s.channelFromRow(row)
 }
 
-// ChannelByID loads a channel without a scope, for the dispatcher.
+// ChannelByID loads a channel without a scope, for the dispatcher: the
+// project's own channel or, for a delivery of an org route, a channel of
+// the project's org.
 func (s *Service) ChannelByID(ctx context.Context, projectID, id string) (*domain.Channel, error) {
-	row, err := s.db.Read().GetChannel(ctx, db.GetChannelParams{ProjectID: projectID, ID: id})
+	q := s.db.Read()
+	row, err := q.GetChannel(ctx, db.GetChannelParams{ProjectID: &projectID, ID: id})
+	if db.IsNotFound(err) {
+		p, perr := q.GetProjectByID(ctx, projectID)
+		if perr != nil {
+			return nil, notFoundIfNoRows(perr, "channel")
+		}
+		row, err = q.GetOrgChannel(ctx, db.GetOrgChannelParams{OrgID: p.OrgID, ID: id})
+	}
 	if err != nil {
 		return nil, notFoundIfNoRows(err, "channel")
 	}
@@ -119,7 +129,7 @@ func (s *Service) ListChannels(ctx context.Context, sc domain.Scope) ([]*domain.
 	if err := requireProject(sc); err != nil {
 		return nil, err
 	}
-	rows, err := s.db.Read().ListChannels(ctx, sc.ProjectID)
+	rows, err := s.db.Read().ListChannels(ctx, &sc.ProjectID)
 	if err != nil {
 		return nil, err
 	}
@@ -171,7 +181,7 @@ func (s *Service) UpdateChannel(ctx context.Context, sc domain.Scope, id string,
 	var out *domain.Channel
 	err = s.db.Tx(ctx, func(q *db.Queries) error {
 		row, err := q.UpdateChannel(ctx, db.UpdateChannelParams{
-			Name: next.Name, Kind: string(next.Kind), Config: sealed, Enabled: next.Enabled, UpdatedAt: domain.Millis(s.now()), ProjectID: sc.ProjectID, ID: id,
+			Name: next.Name, Kind: string(next.Kind), Config: sealed, Enabled: next.Enabled, UpdatedAt: domain.Millis(s.now()), ProjectID: &sc.ProjectID, ID: id,
 		})
 		if err != nil {
 			return conflictIfUnique(err, "a channel named "+next.Name+" exists")
@@ -207,7 +217,7 @@ func (s *Service) SetChannelEnabled(ctx context.Context, sc domain.Scope, id str
 	}
 	var out *domain.Channel
 	err = s.db.Tx(ctx, func(q *db.Queries) error {
-		row, err := q.SetChannelEnabled(ctx, db.SetChannelEnabledParams{Enabled: enabled, UpdatedAt: domain.Millis(s.now()), ProjectID: sc.ProjectID, ID: id})
+		row, err := q.SetChannelEnabled(ctx, db.SetChannelEnabledParams{Enabled: enabled, UpdatedAt: domain.Millis(s.now()), ProjectID: &sc.ProjectID, ID: id})
 		if err != nil {
 			return notFoundIfNoRows(err, "channel")
 		}
@@ -237,7 +247,7 @@ func (s *Service) DeleteChannel(ctx context.Context, sc domain.Scope, id string)
 		return err
 	}
 	err = s.db.Tx(ctx, func(q *db.Queries) error {
-		n, err := q.DeleteChannel(ctx, db.DeleteChannelParams{ProjectID: sc.ProjectID, ID: id})
+		n, err := q.DeleteChannel(ctx, db.DeleteChannelParams{ProjectID: &sc.ProjectID, ID: id})
 		if err != nil {
 			return err
 		}

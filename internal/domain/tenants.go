@@ -230,7 +230,8 @@ func (c *Channel) Validate() error {
 	return ve.OrNil()
 }
 
-// Channel is a configured notifier. Config is the decrypted JSON.
+// Channel is a configured notifier. Config is the decrypted JSON. An org
+// channel has no ProjectID; only the org's routes send to it.
 type Channel struct {
 	ID        string
 	ProjectID string
@@ -243,6 +244,9 @@ type Channel struct {
 	UpdatedAt time.Time
 }
 
+// IsOrg reports whether the channel belongs to the org rather than a project.
+func (c *Channel) IsOrg() bool { return c.ProjectID == "" }
+
 // RouteChannel is one channel a route sends to.
 type RouteChannel struct {
 	ID      string
@@ -252,9 +256,14 @@ type RouteChannel struct {
 }
 
 // Route sends events for monitors matching all of MatchTags to its channels.
+// An org route has OrgID and no ProjectID: it sends to the org's channels
+// for monitors of the projects in Projects, or of every project when
+// Projects is empty.
 type Route struct {
 	ID        string
 	ProjectID string
+	OrgID     string
+	Projects  []string
 	MatchTags []string
 	// Channels are the targets; ChannelIDs is the input form.
 	Channels   []RouteChannel
@@ -274,6 +283,27 @@ func (r *Route) ChannelNames() []string {
 		out = append(out, c.Name)
 	}
 	return out
+}
+
+// IsOrg reports whether the route belongs to the org rather than a project.
+func (r *Route) IsOrg() bool { return r.ProjectID == "" && r.OrgID != "" }
+
+// Covers reports whether the route applies to monitors of projectID: a
+// project route to its own project, an org route to the projects it
+// lists or, listing none, to all of them.
+func (r *Route) Covers(projectID string) bool {
+	if !r.IsOrg() {
+		return r.ProjectID == projectID
+	}
+	if len(r.Projects) == 0 {
+		return true
+	}
+	for _, id := range r.Projects {
+		if id == projectID {
+			return true
+		}
+	}
+	return false
 }
 
 // Fires reports whether the route wants deliveries for a flip to state.

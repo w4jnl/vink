@@ -190,6 +190,23 @@ func printOrgDiff(out io.Writer, diff apply.OrgDiff) {
 		unchanged += len(pages.Unchanged)
 		scope += " and the org's pages"
 	}
+	if alerts := diff.Alerts; alerts != nil {
+		fmt.Fprintln(out, "channels and routes of the org")
+		for _, name := range alerts.Created {
+			fmt.Fprintf(out, "  + %s\n", name)
+		}
+		for _, name := range alerts.Updated {
+			fmt.Fprintf(out, "  ~ %s\n", name)
+		}
+		for _, name := range alerts.Deleted {
+			fmt.Fprintf(out, "  - %s\n", name)
+		}
+		created += len(alerts.Created)
+		updated += len(alerts.Updated)
+		deleted += len(alerts.Deleted)
+		unchanged += len(alerts.Unchanged)
+		scope += " and the org's alerts"
+	}
 	summary := fmt.Sprintf("%s: %d created, %d updated, %d recreated, %d deleted, %d unchanged", scope, created, updated, recreated, deleted, unchanged)
 	if diff.DryRun {
 		summary += " (dry run, nothing applied)"

@@ -98,6 +98,20 @@
           "items": {
             "$ref": "#/$defs/org_status_page"
           }
+        },
+        "channels": {
+          "description": "Channels of the org itself; only the org's routes send to them.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/channel"
+          }
+        },
+        "routes": {
+          "description": "Routes of the org to its channels, beside the projects' own routes.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/org_route"
+          }
         }
       }
     },
@@ -219,6 +233,51 @@
           },
           "minItems": 1,
           "description": "channel names"
+        },
+        "on": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "down",
+              "up",
+              "late"
+            ]
+          }
+        },
+        "repeat_every": {
+          "$ref": "#/$defs/duration"
+        },
+        "priority": {
+          "type": "integer"
+        }
+      }
+    },
+    "org_route": {
+      "description": "A route of the org: events of monitors in the projects it covers go to the org's channels it names.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "channels"
+      ],
+      "properties": {
+        "projects": {
+          "description": "project slugs; none covers every project of the org, new ones included",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/slug"
+          }
+        },
+        "match_tags": {
+          "$ref": "#/$defs/tags"
+        },
+        "channels": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "description": "names of the org's channels"
         },
         "on": {
           "type": "array",

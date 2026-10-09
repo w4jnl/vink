@@ -128,6 +128,25 @@ func (q *Queries) LastSentForChannel(ctx context.Context, arg LastSentForChannel
 	return last_sent, err
 }
 
+const lastSentForOrgChannel = `-- name: LastSentForOrgChannel :one
+SELECT CAST(COALESCE(MAX(d.delivered_at), 0) AS INTEGER) AS last_sent
+FROM deliveries d JOIN channels c ON c.id = d.channel_id
+WHERE c.org_id = ? AND c.project_id IS NULL AND d.channel_id = ? AND d.delivered_at IS NOT NULL
+`
+
+type LastSentForOrgChannelParams struct {
+	OrgID     string
+	ChannelID string
+}
+
+// tenancy: org (deliveries of an org channel span the org's projects)
+func (q *Queries) LastSentForOrgChannel(ctx context.Context, arg LastSentForOrgChannelParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, lastSentForOrgChannel, arg.OrgID, arg.ChannelID)
+	var last_sent int64
+	err := row.Scan(&last_sent)
+	return last_sent, err
+}
+
 const listDeliveriesForEvent = `-- name: ListDeliveriesForEvent :many
 SELECT id, event_id, channel_id, project_id, monitor_id, route_id, kind, repeat, attempt, next_attempt_at, delivered_at, failed_at, error, created_at FROM deliveries WHERE project_id = ? AND event_id = ? ORDER BY created_at, id
 `

@@ -34,6 +34,7 @@ type Querier interface {
 	CountOpenIncidents(ctx context.Context, projectID string) (int64, error)
 	// tenancy: root (metrics endpoint, instance-wide)
 	CountOpenIncidentsByProject(ctx context.Context) ([]CountOpenIncidentsByProjectRow, error)
+	CountOrgRoutesForChannel(ctx context.Context, arg CountOrgRoutesForChannelParams) (int64, error)
 	CountOrgs(ctx context.Context) (int64, error)
 	// tenancy: org
 	CountOwners(ctx context.Context, orgID string) (int64, error)
@@ -59,6 +60,7 @@ type Querier interface {
 	CreateMaintenance(ctx context.Context, arg CreateMaintenanceParams) (Maintenance, error)
 	CreateMonitor(ctx context.Context, arg CreateMonitorParams) (Monitor, error)
 	CreateOrg(ctx context.Context, arg CreateOrgParams) (Org, error)
+	CreateOrgRoute(ctx context.Context, arg CreateOrgRouteParams) (OrgRoute, error)
 	CreateProject(ctx context.Context, arg CreateProjectParams) (Project, error)
 	// tenancy: root (instance admin)
 	CreateResetToken(ctx context.Context, arg CreateResetTokenParams) error
@@ -86,7 +88,12 @@ type Querier interface {
 	DeleteObservationsBefore(ctx context.Context, at int64) (int64, error)
 	DeleteOrg(ctx context.Context, id string) (int64, error)
 	// tenancy: org
+	DeleteOrgChannel(ctx context.Context, arg DeleteOrgChannelParams) (int64, error)
+	DeleteOrgRoute(ctx context.Context, arg DeleteOrgRouteParams) (int64, error)
+	DeleteOrgRouteChannels(ctx context.Context, arg DeleteOrgRouteChannelsParams) error
+	// tenancy: org
 	DeleteOrgStatusPage(ctx context.Context, arg DeleteOrgStatusPageParams) (int64, error)
+	DeleteOrphanOrgRoutes(ctx context.Context, orgID string) (int64, error)
 	DeleteOrphanRoutes(ctx context.Context, projectID string) (int64, error)
 	DeleteOtherSessions(ctx context.Context, arg DeleteOtherSessionsParams) (int64, error)
 	DeleteProject(ctx context.Context, arg DeleteProjectParams) (int64, error)
@@ -129,6 +136,9 @@ type Querier interface {
 	GetOpenIncidentForMonitor(ctx context.Context, arg GetOpenIncidentForMonitorParams) (Incident, error)
 	GetOrg(ctx context.Context, id string) (Org, error)
 	GetOrgBySlug(ctx context.Context, slug string) (Org, error)
+	// tenancy: org (a channel of the org itself, project_id NULL)
+	GetOrgChannel(ctx context.Context, arg GetOrgChannelParams) (Channel, error)
+	GetOrgRoute(ctx context.Context, arg GetOrgRouteParams) (OrgRoute, error)
 	// tenancy: org (a page of the org itself, project_id NULL)
 	GetOrgStatusPage(ctx context.Context, arg GetOrgStatusPageParams) (StatusPage, error)
 	GetProject(ctx context.Context, arg GetProjectParams) (Project, error)
@@ -154,12 +164,15 @@ type Querier interface {
 	InsertDelivery(ctx context.Context, arg InsertDeliveryParams) error
 	InsertEvent(ctx context.Context, arg InsertEventParams) error
 	InsertObservation(ctx context.Context, arg InsertObservationParams) error
+	InsertOrgRouteChannel(ctx context.Context, arg InsertOrgRouteChannelParams) error
 	InsertRecoveryCode(ctx context.Context, arg InsertRecoveryCodeParams) error
 	InsertRouteChannel(ctx context.Context, arg InsertRouteChannelParams) error
 	// tenancy: root (dispatcher, repeat_every)
 	LastDeliveryForRoute(ctx context.Context, arg LastDeliveryForRouteParams) (Delivery, error)
 	LastObservation(ctx context.Context, arg LastObservationParams) (Observation, error)
 	LastSentForChannel(ctx context.Context, arg LastSentForChannelParams) (int64, error)
+	// tenancy: org (deliveries of an org channel span the org's projects)
+	LastSentForOrgChannel(ctx context.Context, arg LastSentForOrgChannelParams) (int64, error)
 	ListAPIKeys(ctx context.Context, projectID *string) ([]ApiKey, error)
 	// tenancy: root (bearer lookup establishes the scope)
 	ListAPIKeysByPrefix(ctx context.Context, prefix string) ([]ApiKey, error)
@@ -189,7 +202,7 @@ type Querier interface {
 	ListAudit(ctx context.Context, arg ListAuditParams) ([]ListAuditRow, error)
 	// tenancy: root (the service scopes by org_id and project_id)
 	ListAuditActors(ctx context.Context, arg ListAuditActorsParams) ([]string, error)
-	ListChannels(ctx context.Context, projectID string) ([]Channel, error)
+	ListChannels(ctx context.Context, projectID *string) ([]Channel, error)
 	ListDeliveriesForEvent(ctx context.Context, arg ListDeliveriesForEventParams) ([]Delivery, error)
 	// tenancy: root (checker pool; remote checks belong to an agent)
 	ListDueChecks(ctx context.Context, arg ListDueChecksParams) ([]string, error)
@@ -221,7 +234,12 @@ type Querier interface {
 	// tenancy: org (org keys have no project)
 	ListOrgAPIKeys(ctx context.Context, orgID string) ([]ApiKey, error)
 	// tenancy: org
+	ListOrgChannels(ctx context.Context, orgID string) ([]Channel, error)
+	// tenancy: org
 	ListOrgMembers(ctx context.Context, orgID string) ([]ListOrgMembersRow, error)
+	// tenancy: org (org channels, project_id NULL)
+	ListOrgRouteChannels(ctx context.Context, orgID string) ([]ListOrgRouteChannelsRow, error)
+	ListOrgRoutes(ctx context.Context, orgID string) ([]OrgRoute, error)
 	// tenancy: org
 	ListOrgStatusPages(ctx context.Context, orgID string) ([]StatusPage, error)
 	ListOrgs(ctx context.Context) ([]Org, error)
@@ -276,6 +294,8 @@ type Querier interface {
 	// tenancy: root (agent gateway)
 	SetMonitorAgent(ctx context.Context, arg SetMonitorAgentParams) error
 	SetMonitorPaused(ctx context.Context, arg SetMonitorPausedParams) error
+	// tenancy: org
+	SetOrgChannelEnabled(ctx context.Context, arg SetOrgChannelEnabledParams) (Channel, error)
 	SetOrgQuotas(ctx context.Context, arg SetOrgQuotasParams) error
 	SetSessionProject(ctx context.Context, arg SetSessionProjectParams) error
 	// tenancy: root (instance admin)
@@ -300,7 +320,10 @@ type Querier interface {
 	UpdateMaintenance(ctx context.Context, arg UpdateMaintenanceParams) (Maintenance, error)
 	UpdateMonitor(ctx context.Context, arg UpdateMonitorParams) (Monitor, error)
 	UpdateMonitorState(ctx context.Context, arg UpdateMonitorStateParams) error
+	// tenancy: org
+	UpdateOrgChannel(ctx context.Context, arg UpdateOrgChannelParams) (Channel, error)
 	UpdateOrgName(ctx context.Context, arg UpdateOrgNameParams) error
+	UpdateOrgRoute(ctx context.Context, arg UpdateOrgRouteParams) (OrgRoute, error)
 	// tenancy: org
 	UpdateOrgStatusPage(ctx context.Context, arg UpdateOrgStatusPageParams) (StatusPage, error)
 	UpdateProject(ctx context.Context, arg UpdateProjectParams) error

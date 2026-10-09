@@ -181,8 +181,9 @@ func (s *Service) links(p *domain.Project, m *domain.Monitor, inc *domain.Incide
 }
 
 // EnqueueRepeats adds a repeat delivery for every open, unacknowledged
-// incident whose route has repeat_every set and whose last delivery on
-// that route is older than the interval.
+// incident whose route (the project's or an org route covering it) has
+// repeat_every set and whose last delivery on that route is older than
+// the interval.
 func (s *Service) EnqueueRepeats(ctx context.Context, now time.Time) (int, error) {
 	incidents, err := s.db.Read().ListOpenUnackedIncidents(ctx)
 	if err != nil {
@@ -203,7 +204,7 @@ func (s *Service) EnqueueRepeats(ctx context.Context, now time.Time) (int, error
 		} else if covered {
 			continue // maintenance silences repeats too
 		}
-		routes, err := s.listRoutes(ctx, s.db.Read(), inc.ProjectID)
+		routes, err := s.routesFor(ctx, s.db.Read(), inc.ProjectID)
 		if err != nil {
 			return added, err
 		}

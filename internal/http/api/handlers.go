@@ -1011,6 +1011,186 @@ func (a *API) deleteOrgStatusPage(w http.ResponseWriter, r *http.Request) error 
 	return nil
 }
 
+// --- channels and routes (org level) ----------------------------------------
+
+func (a *API) listOrgChannels(w http.ResponseWriter, r *http.Request) error {
+	channels, err := a.svc.ListOrgChannels(r.Context(), scope(r))
+	if err != nil {
+		return err
+	}
+	items := make([]ChannelOut, 0, len(channels))
+	for _, c := range channels {
+		items = append(items, channelOut(c))
+	}
+	writeJSON(w, http.StatusOK, page[ChannelOut]{Items: items})
+	return nil
+}
+
+func (a *API) createOrgChannel(w http.ResponseWriter, r *http.Request) error {
+	var in ChannelIn
+	if err := decodeJSON(r, &in); err != nil {
+		return err
+	}
+	c, err := a.svc.CreateOrgChannel(r.Context(), scope(r), in.toDomain())
+	if err != nil {
+		return err
+	}
+	w.Header().Set("Location", locationFor(r, "/channels/"+c.ID))
+	writeJSON(w, http.StatusCreated, channelOut(c))
+	return nil
+}
+
+func (a *API) getOrgChannel(w http.ResponseWriter, r *http.Request) error {
+	c, err := a.svc.OrgChannel(r.Context(), scope(r), r.PathValue("id"))
+	if err != nil {
+		return err
+	}
+	writeJSON(w, http.StatusOK, channelOut(c))
+	return nil
+}
+
+func (a *API) putOrgChannel(w http.ResponseWriter, r *http.Request) error {
+	var in ChannelIn
+	if err := decodeJSON(r, &in); err != nil {
+		return err
+	}
+	c, err := a.svc.UpdateOrgChannel(r.Context(), scope(r), r.PathValue("id"), in.toDomain())
+	if err != nil {
+		return err
+	}
+	writeJSON(w, http.StatusOK, channelOut(c))
+	return nil
+}
+
+func (a *API) deleteOrgChannel(w http.ResponseWriter, r *http.Request) error {
+	if err := a.svc.DeleteOrgChannel(r.Context(), scope(r), r.PathValue("id")); err != nil {
+		return err
+	}
+	w.WriteHeader(http.StatusNoContent)
+	return nil
+}
+
+// orgProjects maps the org's project slugs to ids and back.
+func (a *API) orgProjects(r *http.Request) (ids, slugs map[string]string, err error) {
+	projects, err := a.svc.ListProjects(r.Context(), scope(r))
+	if err != nil {
+		return nil, nil, err
+	}
+	ids, slugs = make(map[string]string, len(projects)), make(map[string]string, len(projects))
+	for _, p := range projects {
+		ids[p.Slug], slugs[p.ID] = p.ID, p.Slug
+	}
+	return ids, slugs, nil
+}
+
+// orgRouteIn turns an org route's input into the domain, its project slugs
+// into ids.
+func (a *API) orgRouteIn(r *http.Request, in OrgRouteIn) (*domain.Route, error) {
+	rt := in.toDomain()
+	if len(in.Projects) == 0 {
+		return rt, nil
+	}
+	ids, _, err := a.orgProjects(r)
+	if err != nil {
+		return nil, err
+	}
+	ve := &domain.ValidationError{}
+	for _, slug := range in.Projects {
+		if id, ok := ids[slug]; ok {
+			rt.Projects = append(rt.Projects, id)
+		} else {
+			ve.Addf("projects", "no project %s in this org", slug)
+		}
+	}
+	return rt, ve.OrNil()
+}
+
+// orgRouteOut shows an org route with its projects by slug.
+func orgRouteOut(rt *domain.Route, slugs map[string]string) OrgRouteOut {
+	out := OrgRouteOut{RouteOut: routeOut(rt), Projects: []string{}}
+	for _, id := range rt.Projects {
+		if slug, ok := slugs[id]; ok {
+			out.Projects = append(out.Projects, slug)
+		}
+	}
+	return out
+}
+
+func (a *API) writeOrgRoute(w http.ResponseWriter, r *http.Request, status int, rt *domain.Route) error {
+	_, slugs, err := a.orgProjects(r)
+	if err != nil {
+		return err
+	}
+	writeJSON(w, status, orgRouteOut(rt, slugs))
+	return nil
+}
+
+func (a *API) listOrgRoutes(w http.ResponseWriter, r *http.Request) error {
+	routes, err := a.svc.ListOrgRoutes(r.Context(), scope(r))
+	if err != nil {
+		return err
+	}
+	_, slugs, err := a.orgProjects(r)
+	if err != nil {
+		return err
+	}
+	items := make([]OrgRouteOut, 0, len(routes))
+	for _, rt := range routes {
+		items = append(items, orgRouteOut(rt, slugs))
+	}
+	writeJSON(w, http.StatusOK, page[OrgRouteOut]{Items: items})
+	return nil
+}
+
+func (a *API) createOrgRoute(w http.ResponseWriter, r *http.Request) error {
+	var in OrgRouteIn
+	if err := decodeJSON(r, &in); err != nil {
+		return err
+	}
+	want, err := a.orgRouteIn(r, in)
+	if err != nil {
+		return err
+	}
+	rt, err := a.svc.CreateOrgRoute(r.Context(), scope(r), want)
+	if err != nil {
+		return err
+	}
+	w.Header().Set("Location", locationFor(r, "/routes/"+rt.ID))
+	return a.writeOrgRoute(w, r, http.StatusCreated, rt)
+}
+
+func (a *API) getOrgRoute(w http.ResponseWriter, r *http.Request) error {
+	rt, err := a.svc.OrgRoute(r.Context(), scope(r), r.PathValue("id"))
+	if err != nil {
+		return err
+	}
+	return a.writeOrgRoute(w, r, http.StatusOK, rt)
+}
+
+func (a *API) putOrgRoute(w http.ResponseWriter, r *http.Request) error {
+	var in OrgRouteIn
+	if err := decodeJSON(r, &in); err != nil {
+		return err
+	}
+	want, err := a.orgRouteIn(r, in)
+	if err != nil {
+		return err
+	}
+	rt, err := a.svc.UpdateOrgRoute(r.Context(), scope(r), r.PathValue("id"), want)
+	if err != nil {
+		return err
+	}
+	return a.writeOrgRoute(w, r, http.StatusOK, rt)
+}
+
+func (a *API) deleteOrgRoute(w http.ResponseWriter, r *http.Request) error {
+	if err := a.svc.DeleteOrgRoute(r.Context(), scope(r), r.PathValue("id")); err != nil {
+		return err
+	}
+	w.WriteHeader(http.StatusNoContent)
+	return nil
+}
+
 // --- agents (org level) -----------------------------------------------------
 
 func (a *API) listAgents(w http.ResponseWriter, r *http.Request) error {

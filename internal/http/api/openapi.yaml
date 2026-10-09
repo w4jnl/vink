@@ -319,6 +319,19 @@ components:
         on: {type: array, items: {type: string}}
         repeat_every: {type: string}
         priority: {type: integer}
+    OrgRouteIn:
+      description: A route of the org sends events of monitors in the projects it covers to channels of the org, beside the projects' own routes.
+      allOf:
+        - $ref: "#/components/schemas/RouteIn"
+        - type: object
+          properties:
+            projects: {type: array, items: {type: string}, description: project slugs; empty covers every project of the org, new ones included}
+    OrgRoute:
+      allOf:
+        - $ref: "#/components/schemas/Route"
+        - type: object
+          properties:
+            projects: {type: array, items: {type: string}, description: project slugs; empty for all}
     Key:
       type: object
       properties:
@@ -448,6 +461,39 @@ paths:
       requestBody: {content: {application/json: {schema: {$ref: "#/components/schemas/OrgStatusPageIn"}}}}
       responses: {"200": {description: The page.}}
     delete: {summary: Delete a status page of the org, responses: {"204": {description: Deleted.}}}
+  /orgs/{org}/channels:
+    parameters: [{$ref: "#/components/parameters/org"}]
+    get: {summary: List the org's own channels (sessions of org admins and owners), responses: {"200": {description: "{items: [Channel]}, secrets redacted"}}}
+    post:
+      summary: Create a channel of the org; only the org's routes send to it, and it gets no default route
+      requestBody: {required: true, content: {application/json: {schema: {$ref: "#/components/schemas/ChannelIn"}}}}
+      responses: {"201": {description: The channel, with Location.}, "409": {description: The name is taken.}, "422": {description: Validation failed.}}
+  /orgs/{org}/channels/{id}:
+    parameters: [{$ref: "#/components/parameters/org"}, {$ref: "#/components/parameters/id"}]
+    get: {summary: One channel of the org, responses: {"200": {description: The channel.}, "404": {description: "Unknown, or a project's channel."}}}
+    put:
+      summary: Replace a channel of the org
+      requestBody: {required: true, content: {application/json: {schema: {$ref: "#/components/schemas/ChannelIn"}}}}
+      responses: {"200": {description: Updated.}}
+    delete: {summary: "Delete a channel of the org; an org route left without channels goes too", responses: {"204": {description: Deleted.}}}
+  /orgs/{org}/channels/{id}/test:
+    parameters: [{$ref: "#/components/parameters/org"}, {$ref: "#/components/parameters/id"}]
+    post: {summary: Send a synthetic notification through a channel of the org and return the error verbatim, responses: {"200": {description: Sent.}, "502": {description: The notifier failed; the body carries the error.}}}
+  /orgs/{org}/routes:
+    parameters: [{$ref: "#/components/parameters/org"}]
+    get: {summary: List the org's own routes by priority (sessions of org admins and owners), responses: {"200": {description: "{items: [OrgRoute]}: the route, projects by slug"}}}
+    post:
+      summary: Create a route of the org to channels of the org
+      requestBody: {required: true, content: {application/json: {schema: {$ref: "#/components/schemas/OrgRouteIn"}}}}
+      responses: {"201": {description: The route, with Location.}, "422": {description: "Validation failed, or a channel or project is not the org's."}}
+  /orgs/{org}/routes/{id}:
+    parameters: [{$ref: "#/components/parameters/org"}, {$ref: "#/components/parameters/id"}]
+    get: {summary: One route of the org, responses: {"200": {description: The route.}}}
+    put:
+      summary: Replace a route of the org
+      requestBody: {required: true, content: {application/json: {schema: {$ref: "#/components/schemas/OrgRouteIn"}}}}
+      responses: {"200": {description: Updated.}}
+    delete: {summary: Delete a route of the org, responses: {"204": {description: Deleted.}}}
   /orgs/{org}/agents:
     parameters: [{$ref: "#/components/parameters/org"}]
     get: {summary: List the org's agents with their state (sessions of org admins and owners), responses: {"200": {description: "{items: [Agent]}"}}}
@@ -469,10 +515,10 @@ paths:
     parameters: [{$ref: "#/components/parameters/org"}]
     put:
       summary: Apply an org file to every project it names, in one transaction (org key or an org admin's session)
-      description: The body is an org file (docs/apply-schema.json, org_file). A project that does not exist is created; projects the file does not name are left alone; no project is ever deleted.
+      description: The body is an org file (docs/apply-schema.json, org_file). A project that does not exist is created; projects the file does not name are left alone; no project is ever deleted. The org's own status pages, channels and routes may be listed beside the projects.
       parameters:
         - {name: dry_run, in: query, schema: {type: string, enum: ["1"]}, description: compute the diff and roll back}
-        - {name: prune, in: query, schema: {type: string, enum: ["1"]}, description: inside each listed project, delete what the file does not name}
+        - {name: prune, in: query, schema: {type: string, enum: ["1"]}, description: "inside each listed project, delete what the file does not name; with a channels or routes key, the same for the org's own channels and routes"}
       requestBody: {content: {application/yaml: {schema: {type: string}}, application/json: {schema: {type: object}}}}
       responses: {"200": {description: OrgDiff.}, "403": {description: A project key, a read-only key, or no admin role.}, "422": {description: The file is not valid, or is for another org.}}
   /orgs/{org}/export:

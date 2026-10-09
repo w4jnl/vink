@@ -28,7 +28,7 @@ func (s *Service) prepareRoute(ctx context.Context, q *db.Queries, sc domain.Sco
 		return err
 	}
 	for _, id := range r.ChannelIDs {
-		if _, err := q.GetChannel(ctx, db.GetChannelParams{ProjectID: sc.ProjectID, ID: id}); err != nil {
+		if _, err := q.GetChannel(ctx, db.GetChannelParams{ProjectID: &sc.ProjectID, ID: id}); err != nil {
 			if db.IsNotFound(err) {
 				return (&domain.ValidationError{Errors: []domain.FieldError{{Field: "channels", Msg: "no such channel in this project"}}}).OrNil()
 			}
