@@ -447,7 +447,7 @@ func TestMonitorsPageEmptyAndRows(t *testing.T) {
 	}
 	p = e.get(projPath, false)
 	p.has(t, `class="vk-row"`, `vk-glyph--down`, "Nightly", "Hourly", `hx-get="/o/homelab/p/prod/m/nightly"`, `vk-chip`, `data-down-count="2"`, `favicon-down.svg`, `title="2 open"`,
-		`<span class="vk-row__tags"><span class="vk-tag">backup</span><span class="vk-tag">prod</span></span>`, `class="vk-page vk-page--full" id="page"`)
+		`<span class="vk-row__tags" title="backup prod"><span class="vk-tag">backup</span><span class="vk-tag">prod</span></span>`, `class="vk-page vk-page--full" id="page"`)
 	if strings.Contains(p.body, `id="drawer"`) || strings.Contains(p.body, "No monitor selected") {
 		t.Error("with nothing selected the page has no drawer")
 	}
@@ -750,7 +750,7 @@ func TestIncidentsPage(t *testing.T) {
 	p.has(t, `1 open`, `>Ack<`, "Job", `vk-irow--open`, "open under a minute", `>prod<span class="vk-chip__n">1</span>`, `name="period" value="30d" checked`, `class="vk-top__count"`)
 	incs, _ := e.svc.ListIncidents(ctx, e.scope, true, 0, time.Time{})
 	acked := e.post(projPath+"/incidents/"+incs[0].ID+"/ack", nil, true)
-	if acked.code != 200 || !strings.Contains(acked.body, "acked by j · 14:00") || strings.Contains(acked.body, ">Ack<") || !strings.Contains(acked.body, "vk-irow--acked") {
+	if acked.code != 200 || !strings.Contains(acked.body, `>acked by j</span><span>14:00</span>`) || strings.Contains(acked.body, ">Ack<") || !strings.Contains(acked.body, "vk-irow--acked") {
 		t.Fatalf("ack: %d %s", acked.code, acked.body)
 	}
 	e.now = e.now.Add(time.Hour)

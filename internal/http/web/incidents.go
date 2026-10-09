@@ -87,7 +87,8 @@ func (h *Web) incidentsData(c *reqCtx) (incidentsData, error) {
 			row.Duration = "open " + spanLong(c.now.Sub(inc.OpenedAt))
 			if inc.AckedAt != nil {
 				row.State = "acked"
-				row.AckedBy = actorName(inc.AckedBy) + " · " + timefmt.Clock(*inc.AckedAt, loc)[:5]
+				row.AckedBy = actorName(inc.AckedBy)
+				row.AckedAt = timefmt.Clock(*inc.AckedAt, loc)[:5]
 			} else {
 				row.State = "open"
 				if c.scope.CanOperate() {

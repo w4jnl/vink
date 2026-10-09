@@ -82,7 +82,7 @@ a.vk-btn { text-decoration: none; box-sizing: border-box; }
 
 /* MonitorRow */
 .vk-list { border-top: 1px solid var(--line); max-width: var(--content-max); }
-.vk-row { display: grid; grid-template-columns: 16px minmax(0, 1fr) 16px 152px 104px 112px; align-items: center; column-gap: var(--space-4); height: var(--row-h); padding: 0 var(--space-4); border-bottom: 1px solid var(--line); color: var(--ink); text-decoration: none; cursor: pointer; }
+.vk-row { display: grid; grid-template-columns: 16px minmax(0, 1fr) 16px 152px 104px 200px; align-items: center; column-gap: var(--space-4); height: var(--row-h); padding: 0 var(--space-4); border-bottom: 1px solid var(--line); color: var(--ink); text-decoration: none; cursor: pointer; }
 .vk-row:hover, .vk-row[aria-current="true"] { background: var(--surface); }
 .vk-row__glyph.vk-glyph--up { color: var(--up); } .vk-row__glyph.vk-glyph--late { color: var(--late); } .vk-row__glyph.vk-glyph--down { color: var(--down); } .vk-row__glyph.vk-glyph--paused { color: var(--paused); } .vk-row__glyph.vk-glyph--new { color: var(--new); }
 .vk-row__name { display: flex; align-items: baseline; gap: var(--space-2); min-width: 0; font-size: 14px; font-weight: 500; }
@@ -92,10 +92,9 @@ a.vk-btn { text-decoration: none; box-sizing: border-box; }
 .vk-row__name > .vk-row__slug { flex: 0 4 auto; min-width: 0; }
 .vk-row__data { color: var(--ink-muted); font: 400 13px/20px var(--font-mono); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .vk-row__data--down { color: var(--down); font-weight: 700; } .vk-row__data--late { color: var(--late); font-weight: 700; }
-.vk-row__tags { display: flex; gap: 4px; justify-content: flex-end; overflow: hidden; }
-/* beside an open drawer the list drops its tags column; the drawer shows them */
-.vk-page:not(.vk-page--full) .vk-row { grid-template-columns: 16px minmax(0, 1fr) 16px 152px 104px; }
-.vk-page:not(.vk-page--full) .vk-row__tags { display: none; }
+/* whole tags only: a tag that does not fit wraps to a second line, which the 20px height hides; title lists them all */
+.vk-row__tags { display: flex; flex-wrap: wrap; align-content: flex-start; gap: 0 4px; justify-content: flex-end; height: 20px; min-width: 0; overflow: hidden; }
+.vk-row__tags .vk-tag { max-width: 100%; box-sizing: border-box; overflow: hidden; text-overflow: ellipsis; }
 
 /* UptimeBar */
 .vk-uptime { display: flex; gap: 2px; align-items: stretch; height: 28px; }
@@ -140,11 +139,12 @@ a.vk-btn { text-decoration: none; box-sizing: border-box; }
 .vk-top__search { margin-left: auto; width: 220px; }
 .vk-top__user { width: 28px; height: 28px; padding: 0; border-radius: 50%; background: var(--surface-sunk); border: 1px solid var(--line); color: var(--ink-muted); display: grid; place-items: center; font: 500 12px/1 var(--font-sans); cursor: pointer; }
 
-.vk-page { display: grid; grid-template-columns: minmax(0, 1fr) var(--drawer-w); min-height: 0; }
+/* an open drawer docks right after the list's content-max column (plus .vk-main's padding); wider screens keep ground beyond it */
+.vk-page { display: grid; grid-template-columns: minmax(0, calc(var(--content-max) + 2 * var(--space-6))) var(--drawer-w); justify-content: start; min-height: 0; }
 .vk-main { padding: var(--space-5) var(--space-6); display: flex; flex-direction: column; gap: var(--space-4); min-width: 0; }
 .vk-main__head { display: flex; align-items: baseline; gap: var(--space-3); max-width: var(--content-max); }
 .vk-main__head h1 { margin: 0; font-size: 20px; line-height: 28px; font-weight: 600; }
-.vk-drawer { background: var(--surface); border-left: 1px solid var(--line); box-shadow: var(--shadow-drawer); padding: var(--space-5); display: flex; flex-direction: column; gap: var(--space-5); min-width: 0; }
+.vk-drawer { background: var(--surface); border-left: 1px solid var(--line); border-right: 1px solid var(--line); box-shadow: var(--shadow-drawer); padding: var(--space-5); display: flex; flex-direction: column; gap: var(--space-5); min-width: 0; }
 .vk-drawer__head { display: flex; flex-direction: column; gap: var(--space-2); }
 .vk-drawer__title { display: flex; align-items: baseline; gap: var(--space-2); margin: 0; font-size: 20px; line-height: 28px; font-weight: 600; }
 .vk-drawer__actions { display: flex; gap: var(--space-2); }
@@ -161,12 +161,14 @@ a.vk-btn { text-decoration: none; box-sizing: border-box; }
 .vk-obsrow__body { display: flex; flex-direction: column; gap: var(--space-3); padding: var(--space-3) 0 var(--space-4) calc(28px + 2 * var(--space-3)); }
 .vk-obsrow__msg { margin: 0; color: var(--ink); font: 400 13px/20px var(--font-mono); white-space: pre-wrap; overflow-wrap: anywhere; }
 .vk-obsrow__body .vk-code { max-height: 480px; overflow: auto; padding-right: calc(var(--space-4) + 80px); white-space: pre-wrap; overflow-wrap: anywhere; }
-.vk-status { max-width: 720px; margin: 0 auto; padding: var(--space-7) var(--space-5); display: flex; flex-direction: column; gap: var(--space-5); }
+.vk-status { max-width: 1480px; margin: 0 auto; padding: var(--space-7) var(--space-5); display: flex; flex-direction: column; gap: var(--space-5); }
 .vk-status__head { display: flex; align-items: center; gap: var(--space-3); }
 .vk-status__head h1 { margin: 0; font: 700 28px/36px var(--font-mono); letter-spacing: -0.5px; }
-.vk-status__group { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-md); padding: var(--space-2) var(--space-5) var(--space-4); }
-.vk-status__group h2 { margin: var(--space-3) 0 0; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.02em; color: var(--ink-muted); }
-.vk-status__item { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-4) 0 0; }
+/* a group's monitors flow into columns at least 440px wide, the same in every group so bars line up; a narrow page has one */
+.vk-status__group { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 440px), 1fr)); column-gap: var(--space-6); align-items: start; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-md); padding: var(--space-2) var(--space-5) var(--space-4); }
+.vk-status__group h2 { grid-column: 1 / -1; margin: var(--space-3) 0 0; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.02em; color: var(--ink-muted); }
+.vk-status__item { display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; padding: var(--space-4) 0 0; }
+.vk-status__item .vk-uptime__cell { max-width: none; }
 .vk-status__line { display: flex; justify-content: space-between; align-items: center; }
 .vk-status__foot { display: flex; justify-content: space-between; color: var(--ink-muted); font: 400 12px/16px var(--font-mono); }
 .vk-status__foot a { color: var(--accent); }
@@ -292,7 +294,7 @@ a.vk-btn { text-decoration: none; box-sizing: border-box; }
 
 /* IncidentRow */
 .vk-irows { border-top: 1px solid var(--line); max-width: var(--content-max); }
-.vk-irow { display: grid; grid-template-columns: 16px minmax(160px, 1fr) minmax(0, 200px) 152px 144px 144px; align-items: center; column-gap: var(--space-4); height: var(--row-h); padding: 0 var(--space-4); border-bottom: 1px solid var(--line); }
+.vk-irow { display: grid; grid-template-columns: 16px minmax(160px, 1fr) minmax(0, 160px) 152px 144px 184px; align-items: center; column-gap: var(--space-4); height: var(--row-h); padding: 0 var(--space-4); border-bottom: 1px solid var(--line); }
 .vk-irow > .vk-glyph--down { color: var(--down); } .vk-irow > .vk-glyph--up { color: var(--up); }
 .vk-irow__name { display: flex; align-items: baseline; gap: var(--space-2); min-width: 0; color: var(--ink); font-size: 14px; font-weight: 500; text-decoration: none; }
 .vk-irow__name span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -301,7 +303,9 @@ a.vk-btn { text-decoration: none; box-sizing: border-box; }
 .vk-irow__name:hover > span:first-child { text-decoration: underline; }
 .vk-irow__data { color: var(--ink-muted); font: 400 13px/20px var(--font-mono); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .vk-irow__data--live { color: var(--down); font-weight: 700; }
-.vk-irow__act { display: flex; justify-content: flex-end; color: var(--ink-muted); font: 400 12px/16px var(--font-mono); white-space: nowrap; }
+/* the action: the Ack button, or who acked over when (a long name is cut, its title says it whole), or when it resolved */
+.vk-irow__act { display: flex; flex-direction: column; align-items: flex-end; justify-content: center; min-width: 0; color: var(--ink-muted); font: 400 12px/16px var(--font-mono); white-space: nowrap; }
+.vk-irow__act > span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
 .vk-irow--resolved .vk-irow__name { color: var(--ink-muted); font-weight: 400; }
 
 /* SettingsRow */
@@ -409,9 +413,6 @@ p.vk-field__hint { margin: 0; }
 .vk-main > .vk-notice { box-sizing: border-box; max-width: var(--content-max); }
 .vk-input:disabled { opacity: 1; -webkit-text-fill-color: var(--ink-muted); }
 .vk-drawer__foot .vk-btn--danger { margin-left: auto; }
-/* beside an open drawer a settings list keeps the name and its first cell */
-.vk-page:not(.vk-page--full) .vk-srow__cell ~ .vk-srow__cell, .vk-page:not(.vk-page--full) .vk-srow__actions { display: none; }
-.vk-page:not(.vk-page--full) .vk-srow__cell { width: auto; }
 
 /* One-time code */
 .vk-input--otp { height: 44px; font: 700 22px/1 var(--font-mono); letter-spacing: 0.45em; text-align: center; padding-left: calc(10px + 0.45em); }
@@ -472,9 +473,19 @@ p.vk-field__hint { margin: 0; }
 
 /* Responsive. Everything width-dependent lives here, after every base rule, so a conflict resolves by
    "same selector, later wins": repeat a base selector exactly when you override it (`:not()` carries its
-   argument's specificity). Order: 1280 (beside a drawer the list loses its trend column), 960 (the drawer
+   argument's specificity). Order: 1744 (an open drawer no longer fits beside the full list: the list drops
+   its tags column and a settings list keeps its first cell; 1744 = content-max 1120 + 2 * space-6 + drawer-w
+   560, since a media query cannot read var()), 1280 (beside a drawer the list loses its trend column), 960 (the drawer
    is the page; the one-row top bar shrinks), 640 (phones: two-row top bar, two-line rows, stacked forms),
    then (pointer: coarse) for tap sizes and 16px inputs. */
+@media (max-width: 1744px) {
+  /* the drawer reaches the window's edge, so it needs no right border; the drawer shows the tags */
+  .vk-drawer { border-right: 0; }
+  .vk-page:not(.vk-page--full) .vk-row { grid-template-columns: 16px minmax(0, 1fr) 16px 152px 104px; }
+  .vk-page:not(.vk-page--full) .vk-row__tags { display: none; }
+  .vk-page:not(.vk-page--full) .vk-srow__cell ~ .vk-srow__cell, .vk-page:not(.vk-page--full) .vk-srow__actions { display: none; }
+  .vk-page:not(.vk-page--full) .vk-srow__cell { width: auto; }
+}
 @media (max-width: 1280px) {
   .vk-page:not(.vk-page--full) .vk-row { grid-template-columns: 16px minmax(0, 1fr) 16px 152px; }
   .vk-page:not(.vk-page--full) .vk-row > :nth-child(5) { display: none; }
@@ -484,6 +495,7 @@ p.vk-field__hint { margin: 0; }
   .vk-top__mark span { display: none; }
   .vk-top__search { flex: 0 3 220px; min-width: 72px; }
   .vk-page { grid-template-columns: minmax(0, 1fr); }
+  .vk-row { grid-template-columns: 16px minmax(0, 1fr) 16px 152px 104px 112px; }
   .vk-page:not(.vk-page--full) > .vk-main { display: none; }
   .vk-drawer { border-left: 0; box-shadow: none; }
   .vk-drawer__actions { flex-wrap: wrap; }
@@ -536,7 +548,8 @@ p.vk-field__hint { margin: 0; }
   .vk-irow > :nth-child(3) { grid-column: 2; grid-row: 2; }
   .vk-irow > :nth-child(4) { grid-column: 3; grid-row: 2; text-align: right; }
   .vk-irow > :nth-child(5), .vk-irow__name > .vk-row__slug { display: none; }
-  .vk-irow__act { grid-column: 3; grid-row: 1; }
+  .vk-irow__act { grid-column: 3; grid-row: 1; flex-direction: row; }
+  .vk-irow__act > span + span::before { content: "\a0\b7\20"; }
   .vk-obs { grid-template-columns: 12px 16px 72px minmax(0, 1fr) auto; column-gap: var(--space-2); }
   .vk-obsrow__body { padding-left: 0; }
   .vk-audit__sum { grid-template-columns: 12px 44px 96px minmax(0, 1fr); column-gap: var(--space-2); }
