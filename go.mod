@@ -1,6 +1,6 @@
 module github.com/w4jnl/vink
 
-go 1.27.1
+go 1.27.2
 
 require (
 	github.com/SladkyCitron/slogcolor v1.9.0

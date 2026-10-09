@@ -6,6 +6,8 @@ updates this file first. Dates are the tag dates.
 
 ## Unreleased
 
+- **Built with Go 1.27.2**, which fixes security issues in the standard library's `net/http`
+  (HTTP/2) and `html/template`.
 - **Fixed: tags in the monitor list were cut off.** The tags column is wider (200px) and shows
   whole tags only; those that don't fit are left out, and hovering the cell lists them all.
 - **The drawer stays beside the list on wide screens.** It docks right after the list's 1120px
